@@ -247,7 +247,7 @@ Output and exit status:
     )
     video_group.add_argument(
         "--video-concat-mode",
-        choices=["random", "sequential"],
+        choices=["random", "sequential", "continuous"],
         default=None,
         help="source clip concatenation order (default: random)",
     )

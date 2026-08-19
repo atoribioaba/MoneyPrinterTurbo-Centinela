@@ -97,6 +97,9 @@ CUSTOM_LLM_ENDPOINT_ID = "custom"
 VOICE_MODE_TTS = "tts"
 VOICE_MODE_UPLOAD = "upload"
 VOICE_MODE_NONE = "none"
+
+QWEN3_TTS_SERVER = "qwen3-tts"
+QWEN3_TTS_VOICE_NAME = tm._QWEN3_TTS_VOICE_NAME
 LOOMLOOM_MAX_POLL_FAILURES = 5
 # “默认”是 WebUI 专用哨兵，不会写入 config.toml，也不会传给 FFmpeg。
 # 后端在 video_codec 未配置时继续采用稳定的 libx264；单独保留该哨兵可以区分
@@ -104,13 +107,13 @@ LOOMLOOM_MAX_POLL_FAILURES = 5
 DEFAULT_VIDEO_CODEC_OPTION = "__default__"
 DEFAULT_SUBTITLE_SETTINGS = {
     "subtitle_enabled": True,
-    "font_name": "MicrosoftYaHeiBold.ttc",
-    "subtitle_position": "bottom",
-    "custom_position": 70.0,
+    "font_name": "BeVietnamPro-Bold.ttf",
+    "subtitle_position": "custom",
+    "custom_position": 72.0,
     "text_fore_color": "#FFFFFF",
     "font_size": 60,
     "stroke_color": "#000000",
-    "stroke_width": 1.5,
+    "stroke_width": 3.0,
     "subtitle_background_enabled": False,
     "subtitle_background_color": "#000000",
     "rounded_subtitle_background": False,
@@ -1100,6 +1103,8 @@ def _load_task_restore_payload(task_id):
 def _infer_tts_server_from_voice(voice_name):
     if voice.is_no_voice(voice_name):
         return voice.NO_VOICE_NAME
+    if tm._is_qwen3_tts_voice(voice_name):
+        return QWEN3_TTS_SERVER
     if voice.is_siliconflow_voice(voice_name):
         return "siliconflow"
     if voice.is_gemini_voice(voice_name):
@@ -1849,23 +1854,50 @@ def stable_selectbox(label, options, default_value, key, format_func=None, **kwa
 
 
 def sync_script_order_concat_mode():
-    """在文案顺序匹配开启时固定使用顺序拼接，并在关闭后恢复原选择。"""
+    """Fuerza secuencial durante el matching y restaura la preferencia del usuario."""
     widget_key = localized_widget_key("video_concat_mode_select")
     previous_key = "video_concat_mode_before_script_order_match"
-    match_script_order = bool(st.session_state.get("match_materials_to_script", False))
+
+    allowed_modes = {
+        VideoConcatMode.sequential.value,
+        VideoConcatMode.random.value,
+        VideoConcatMode.continuous.value,
+    }
+
+    match_script_order = bool(
+        st.session_state.get("match_materials_to_script", False)
+    )
 
     if match_script_order:
-        current_mode = st.session_state.get(widget_key, VideoConcatMode.random.value)
-        if current_mode != VideoConcatMode.sequential.value:
+        current_mode = st.session_state.get(widget_key)
+
+        # Streamlit puede alterar el estado del selectbox cuando pasa a disabled.
+        # Si ya aparece como sequential antes de poder conservar la elección
+        # anterior, recuperamos la preferencia persistida de la WebUI.
+        if current_mode not in allowed_modes or (
+            current_mode == VideoConcatMode.sequential.value
+            and previous_key not in st.session_state
+        ):
+            saved_mode = config.ui.get(
+                "video_concat_mode",
+                VideoConcatMode.random.value,
+            )
+
+            if saved_mode in allowed_modes:
+                current_mode = saved_mode
+
+        if (
+            current_mode in allowed_modes
+            and current_mode != VideoConcatMode.sequential.value
+        ):
             st.session_state[previous_key] = current_mode
+
         st.session_state[widget_key] = VideoConcatMode.sequential.value
         return
 
     previous_mode = st.session_state.pop(previous_key, None)
-    if previous_mode in {
-        VideoConcatMode.sequential.value,
-        VideoConcatMode.random.value,
-    }:
+
+    if previous_mode in allowed_modes:
         st.session_state[widget_key] = previous_mode
 
 
@@ -3226,6 +3258,79 @@ def _render_script_settings(panel, params):
             )
 
 
+
+def _resolve_direct_local_material_paths(raw_paths: str):
+    """Valida materiales existentes en disco sin subirlos por Streamlit."""
+    allowed_roots = (
+        Path(r"D:\ASTRONOMÍA"),
+        Path(root_dir) / "storage" / "local_videos",
+    )
+
+    resolved_roots = []
+    for root in allowed_roots:
+        try:
+            resolved_roots.append(root.resolve(strict=True))
+        except (OSError, RuntimeError):
+            continue
+
+    materials = []
+    errors = []
+    seen = set()
+
+    for line in (raw_paths or "").splitlines():
+        raw_path = line.strip().strip('"').strip("'")
+
+        if not raw_path:
+            continue
+
+        try:
+            candidate = (
+                Path(os.path.expandvars(raw_path))
+                .expanduser()
+                .resolve(strict=True)
+            )
+        except (OSError, RuntimeError) as exc:
+            errors.append(
+                f"No existe o no es accesible: {raw_path} ({exc})"
+            )
+            continue
+
+        if not candidate.is_file():
+            errors.append(f"No es un archivo: {candidate}")
+            continue
+
+        if candidate.suffix.lower() not in LOCAL_MATERIAL_EXTENSIONS:
+            errors.append(
+                f"Extensión no permitida: {candidate.name}"
+            )
+            continue
+
+        is_allowed = False
+
+        for root in resolved_roots:
+            try:
+                candidate.relative_to(root)
+                is_allowed = True
+                break
+            except ValueError:
+                pass
+
+        if not is_allowed:
+            errors.append(
+                f"Ruta fuera de las carpetas autorizadas: {candidate}"
+            )
+            continue
+
+        normalized = os.path.normcase(str(candidate))
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        materials.append(str(candidate))
+
+    return materials, errors
+
 def _render_video_settings(panel, params):
     """渲染视频设置并返回本次选择的本地素材。"""
     uploaded_files = []
@@ -3235,6 +3340,7 @@ def _render_video_settings(panel, params):
             video_concat_modes = [
                 (tr("Sequential"), "sequential"),
                 (tr("Random"), "random"),
+                ("Continuous", "continuous"),
             ]
             video_sources = [
                 (tr("Pexels"), "pexels"),
@@ -3258,18 +3364,123 @@ def _render_video_settings(panel, params):
             _set_runtime_config("app", "video_source", params.video_source)
 
             if params.video_source == "local":
-                # Streamlit 的文件类型校验对扩展名大小写敏感，这里同时放行大小写两种形式。
-                local_file_types = sorted(
-                    extension.removeprefix(".")
-                    for extension in LOCAL_MATERIAL_EXTENSIONS
+                local_material_modes = [
+                    ("Subir archivos", "upload"),
+                    ("Usar rutas locales existentes", "path"),
+                ]
+                local_material_mode_values = [
+                    value for _, value in local_material_modes
+                ]
+
+                local_material_mode = stable_selectbox(
+                    "Modo de material local",
+                    options=local_material_mode_values,
+                    default_value=_saved_ui_choice(
+                        "local_material_input_mode",
+                        local_material_mode_values,
+                        "upload",
+                    ),
+                    key="local_material_input_mode_select",
+                    format_func=lambda value: dict(
+                        (v, label)
+                        for label, v in local_material_modes
+                    )[value],
                 )
-                uploaded_files = st.file_uploader(
-                    tr("Upload Local Files"),
-                    type=local_file_types
-                    + [file_type.upper() for file_type in local_file_types],
-                    accept_multiple_files=True,
-                    key="local_video_materials_uploader",
+
+                _set_runtime_config(
+                    "ui",
+                    "local_material_input_mode",
+                    local_material_mode,
                 )
+
+                if local_material_mode == "upload":
+                    local_file_types = sorted(
+                        extension.removeprefix(".")
+                        for extension in LOCAL_MATERIAL_EXTENSIONS
+                    )
+
+                    uploaded_files = st.file_uploader(
+                        tr("Upload Local Files"),
+                        type=local_file_types
+                        + [
+                            file_type.upper()
+                            for file_type in local_file_types
+                        ],
+                        accept_multiple_files=True,
+                        key="local_video_materials_uploader",
+                    )
+
+                else:
+                    local_paths_key = (
+                        "local_video_material_paths_textarea"
+                    )
+
+                    st.session_state.setdefault(
+                        local_paths_key,
+                        _saved_ui_text(
+                            "local_material_paths",
+                            "",
+                        ),
+                    )
+
+                    local_material_paths = st.text_area(
+                        "Rutas locales existentes (una por línea)",
+                        key=local_paths_key,
+                        height=120,
+                        help=(
+                            "Se leen directamente desde el disco. "
+                            "No se suben ni se copian."
+                        ),
+                    )
+
+                    _set_runtime_config(
+                        "ui",
+                        "local_material_paths",
+                        local_material_paths,
+                    )
+
+                    direct_paths, direct_errors = (
+                        _resolve_direct_local_material_paths(
+                            local_material_paths
+                        )
+                    )
+
+                    if direct_errors:
+                        st.session_state[
+                            "local_video_materials"
+                        ] = []
+
+                        for error in direct_errors:
+                            st.error(error)
+
+                    elif direct_paths:
+                        st.session_state[
+                            "local_video_materials"
+                        ] = [
+                            {
+                                "provider": "local",
+                                "url": material_path,
+                                "duration": 0,
+                            }
+                            for material_path in direct_paths
+                        ]
+
+                        st.success(
+                            f"{len(direct_paths)} material(es) "
+                            "local(es) válido(s). "
+                            "Se usarán directamente, sin copia."
+                        )
+
+                    else:
+                        st.session_state[
+                            "local_video_materials"
+                        ] = []
+
+                    st.caption(
+                        "Raíces autorizadas: "
+                        r"D:\ASTRONOMÍA  |  "
+                        r"E:\Github\MoneyPrinterTurbo\storage\local_videos"
+                    )
 
             # 文案顺序匹配会从关键词生成到最终合成全程保持叙事顺序，因此开启时
             # 顺序拼接是唯一符合实际执行逻辑的选项。同步控件值可避免界面仍显示
@@ -4098,13 +4309,18 @@ def _render_background_music_settings(params, elevenlabs_api_key_rendered=False)
         else:
             _render_elevenlabs_api_key_input("ElevenLabs Music API Key")
 
-    bgm_volume_options = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-    params.bgm_volume = stable_selectbox(
+    bgm_volume_widget_key = localized_widget_key("bgm_volume_select")
+    st.session_state.setdefault(
+        bgm_volume_widget_key,
+        _saved_ui_number("bgm_volume", 0.2, 0.0, 1.0),
+    )
+    params.bgm_volume = st.slider(
         tr("Background Music Volume"),
-        options=bgm_volume_options,
-        default_value=_saved_ui_choice("bgm_volume", bgm_volume_options, 0.2),
-        key="bgm_volume_select",
-        format_func=lambda value: f"{int(value * 100)}%",
+        min_value=0.0,
+        max_value=1.0,
+        step=0.01,
+        key=bgm_volume_widget_key,
+        format="%.2f",
         disabled=not params.bgm_type,
     )
     _set_runtime_config("ui", "bgm_volume", params.bgm_volume)
@@ -4338,6 +4554,7 @@ def _render_audio_settings(panel, params):
             # Provider 下拉只负责选择自动配音服务；无配音已经由上方模式控制，
             # 不再作为 TTS Provider 混入列表，避免两个入口表达同一状态。
             tts_servers = [
+                (QWEN3_TTS_SERVER, "Qwen3-TTS · CENTINELA (Local)"),
                 ("azure-tts-v1", "Azure TTS V1"),
                 ("azure-tts-v2", "Azure TTS V2"),
                 ("siliconflow", "SiliconFlow TTS"),
@@ -4390,6 +4607,9 @@ def _render_audio_settings(panel, params):
             if not tts_mode_enabled:
                 # 上传音频和无配音模式不加载远程音色，减少无意义的网络请求和界面噪音。
                 filtered_voices = []
+            elif selected_tts_server == QWEN3_TTS_SERVER:
+                # Perfil local canónico de EL CENTINELA DEL UNIVERSO.
+                filtered_voices = [QWEN3_TTS_VOICE_NAME]
             elif selected_tts_server == "siliconflow":
                 # 获取硅基流动的声音列表
                 filtered_voices = voice.get_siliconflow_voices()
@@ -4433,6 +4653,8 @@ def _render_audio_settings(panel, params):
             def _friendly(v):
                 if voice.is_no_voice(v):
                     return tr("No Voice Selected")
+                if tm._is_qwen3_tts_voice(v):
+                    return "CENTINELA Cinemático · Español (España)"
                 if voice.is_elevenlabs_voice(v):
                     parts = v.split(":", 2)
                     return parts[2] if len(parts) >= 3 else v
@@ -4703,13 +4925,26 @@ def _render_audio_settings(panel, params):
                     )
 
                 with voice_control_cols[1]:
+                    if selected_tts_server == QWEN3_TTS_SERVER:
+                        _set_stable_widget_value(
+                            "voice_rate_select",
+                            1.0,
+                        )
+
                     params.voice_rate = stable_selectbox(
                         tr("Voiceover Speed"),
                         options=voice_rate_options,
-                        default_value=_saved_ui_choice(
-                            "voice_rate", voice_rate_options, 1.0
+                        default_value=(
+                            1.0
+                            if selected_tts_server == QWEN3_TTS_SERVER
+                            else _saved_ui_choice(
+                                "voice_rate",
+                                voice_rate_options,
+                                1.0,
+                            )
                         ),
                         key="voice_rate_select",
+                        disabled=selected_tts_server == QWEN3_TTS_SERVER,
                         format_func=lambda value: f"{value:.1f}×",
                         help=tr("Voiceover Speed Help"),
                     )
@@ -4717,12 +4952,19 @@ def _render_audio_settings(panel, params):
                 _set_runtime_config("ui", "voice_rate", params.voice_rate)
 
                 # 试听必须位于音量和语速控件之后，确保调用使用当前控件值。
-                _render_voice_preview(
-                    params,
-                    friendly_names,
-                    selected_tts_server,
-                    voice_name,
-                )
+                if selected_tts_server == QWEN3_TTS_SERVER:
+                    st.caption(
+                        "Perfil CENTINELA validado. "
+                        "La previsualización se omite para evitar una segunda "
+                        "inferencia local completa de Qwen3-TTS."
+                    )
+                else:
+                    _render_voice_preview(
+                        params,
+                        friendly_names,
+                        selected_tts_server,
+                        voice_name,
+                    )
             elif voice_mode == VOICE_MODE_UPLOAD:
                 custom_audio_file_types = sorted(
                     extension.removeprefix(".") for extension in CUSTOM_AUDIO_EXTENSIONS

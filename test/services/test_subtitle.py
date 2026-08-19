@@ -200,5 +200,106 @@ class TestSubtitleService(unittest.TestCase):
         self.assertEqual([item[2] for item in items], ["Hello", "World"])
 
 
+    def test_social_subtitle_exact_alignment_uses_approved_text_and_word_times(self):
+        """La ruta social debe conservar texto aprobado y tiempos Whisper."""
+        script = (
+            "Cuando la Luna aparece, "
+            "brilla sobre el cielo."
+        )
+
+        words = [
+            {"start": 0.00, "end": 0.30, "word": "Cuando"},
+            {"start": 0.30, "end": 0.45, "word": "la"},
+            {"start": 0.45, "end": 0.70, "word": "luna"},
+            {"start": 0.70, "end": 1.10, "word": "aparece,"},
+            {"start": 1.20, "end": 1.55, "word": "brilla"},
+            {"start": 1.55, "end": 1.80, "word": "sobre"},
+            {"start": 1.80, "end": 1.95, "word": "el"},
+            {"start": 1.95, "end": 2.30, "word": "cielo."},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            subtitle_file = Path(tmp_dir) / "social.srt"
+
+            result = subtitle.create_social_subtitle_from_words(
+                video_script=script,
+                word_items=words,
+                subtitle_file=str(subtitle_file),
+                max_words=8,
+                min_words=2,
+            )
+
+            items = subtitle.file_to_subtitles(
+                str(subtitle_file)
+            )
+
+        self.assertTrue(result)
+        self.assertTrue(items)
+
+        combined_text = " ".join(
+            item[2] for item in items
+        )
+
+        self.assertIn(
+            "Cuando la Luna aparece",
+            combined_text,
+        )
+
+        self.assertIn(
+            "brilla sobre el cielo",
+            combined_text,
+        )
+
+        self.assertTrue(
+            items[0][1].startswith(
+                "00:00:00,000 -->"
+            )
+        )
+
+        self.assertTrue(
+            items[-1][1].endswith(
+                "00:00:02,300"
+            )
+        )
+
+
+    def test_social_subtitle_mismatch_returns_false_without_overwriting(self):
+        """Una desalineación debe preservar el SRT normal para el fallback."""
+        script = "La Luna brilla."
+
+        words = [
+            {"start": 0.0, "end": 0.2, "word": "La"},
+            {"start": 0.2, "end": 0.5, "word": "luna"},
+            {"start": 0.5, "end": 0.9, "word": "crece."},
+        ]
+
+        original = (
+            "1\n"
+            "00:00:00,000 --> 00:00:00,900\n"
+            "La luna crece\n\n"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            subtitle_file = Path(tmp_dir) / "fallback.srt"
+
+            subtitle_file.write_text(
+                original,
+                encoding="utf-8",
+            )
+
+            result = subtitle.create_social_subtitle_from_words(
+                video_script=script,
+                word_items=words,
+                subtitle_file=str(subtitle_file),
+            )
+
+            after = subtitle_file.read_text(
+                encoding="utf-8"
+            )
+
+        self.assertFalse(result)
+        self.assertEqual(after, original)
+
+
 if __name__ == "__main__":
     unittest.main()

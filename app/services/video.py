@@ -1172,7 +1172,7 @@ def generate_video(
         source_video_clip = clip_stack.enter_context(
             _open_video_clip_quietly(video_path)
         )
-        voice_source_clip = clip_stack.enter_context(AudioFileClip(audio_path))
+        voice_source_clip = clip_stack.enter_context(AudioFileClip(audio_path, fps=48000))
         video_clip = source_video_clip
         audio_clip = voice_source_clip.with_effects(
             [afx.MultiplyVolume(params.voice_volume)]
@@ -1235,7 +1235,7 @@ def generate_video(
                 # 文件来源决定是否循环，避免今后每增加一个提供商都修改名称白名单。
                 if bgm_file_override is None:
                     bgm_effects.append(afx.AudioLoop(duration=video_clip.duration))
-                bgm_source_clip = clip_stack.enter_context(AudioFileClip(bgm_file))
+                bgm_source_clip = clip_stack.enter_context(AudioFileClip(bgm_file, fps=48000))
                 bgm_clip = bgm_source_clip.with_effects(bgm_effects)
                 audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
             except Exception:
@@ -1280,17 +1280,36 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
         if not material.url:
             continue
 
-        try:
-            material_source_path = file_security.resolve_path_within_directory(
-                local_videos_dir, material.url
-            )
-        except ValueError as exc:
-            # local video_source 的素材路径来自 API 参数，必须限制在专用素材目录。
-            # 允许用户传文件名，也兼容历史返回的绝对路径，但不允许逃逸到系统
-            # 其他目录，避免任意文件读取或通过 MoviePy 探测本地敏感文件。
+        # Las rutas relativas continúan resolviéndose únicamente dentro de
+        # storage/local_videos. Las rutas absolutas también pueden pertenecer
+        # a raíces locales explícitamente autorizadas para material del proyecto.
+        allowed_material_dirs = [local_videos_dir]
+
+        if os.path.isabs(material.url):
+            allowed_material_dirs.append(r"D:\ASTRONOMÍA")
+
+        material_source_path = None
+        resolve_errors = []
+
+        for allowed_dir in allowed_material_dirs:
+            try:
+                material_source_path = (
+                    file_security.resolve_path_within_directory(
+                        allowed_dir,
+                        material.url,
+                    )
+                )
+                break
+            except ValueError as exc:
+                resolve_errors.append(
+                    f"{allowed_dir}: {str(exc)}"
+                )
+
+        if material_source_path is None:
             logger.warning(
                 f"skip unsafe local material: {material.url}, "
-                f"local_videos_dir: {local_videos_dir}, error: {str(exc)}"
+                f"allowed_dirs: {allowed_material_dirs}, "
+                f"errors: {resolve_errors}"
             )
             continue
 

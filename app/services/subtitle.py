@@ -1,3 +1,4 @@
+import gc
 import json
 import os.path
 import re
@@ -16,10 +17,86 @@ model_size = config.whisper.get("model_size", "large-v3")
 device = config.whisper.get("device", "cpu")
 compute_type = config.whisper.get("compute_type", "int8")
 initial_prompt = config.whisper.get("initial_prompt", "") or None
+cuda_dll_dir = config.whisper.get("cuda_dll_dir", "") or ""
 model = None
+_cuda_dll_handle = None
 
 
-def create(audio_file, subtitle_file: str = ""):
+def _prepare_cuda_runtime():
+    """Expose an optional Windows CUDA/cuDNN runtime only to this process."""
+    global _cuda_dll_handle
+
+    if device != "cuda" or os.name != "nt" or not cuda_dll_dir:
+        return
+
+    dll_dir = os.path.abspath(
+        os.path.expandvars(
+            os.path.expanduser(str(cuda_dll_dir))
+        )
+    )
+
+    if not os.path.isdir(dll_dir):
+        raise RuntimeError(
+            f"Whisper CUDA DLL directory does not exist: {dll_dir}"
+        )
+
+    current_path = os.environ.get("PATH", "")
+    path_items = [
+        item.strip().lower()
+        for item in current_path.split(os.pathsep)
+        if item.strip()
+    ]
+
+    if dll_dir.lower() not in path_items:
+        os.environ["PATH"] = (
+            dll_dir
+            + os.pathsep
+            + current_path
+        )
+
+    if hasattr(os, "add_dll_directory") and _cuda_dll_handle is None:
+        _cuda_dll_handle = os.add_dll_directory(dll_dir)
+
+    logger.info(
+        f"Whisper CUDA runtime directory enabled: {dll_dir}"
+    )
+
+
+
+def release_model():
+    """
+    Release the global faster-whisper / CTranslate2 model.
+
+    This project runs Qwen3-TTS and Whisper sequentially on a
+    6 GB RTX 2060, so Whisper must not remain resident between tasks.
+    """
+    global model
+
+    if model is None:
+        return
+
+    try:
+        ct2_model = getattr(model, "model", None)
+
+        if (
+            ct2_model is not None
+            and hasattr(ct2_model, "unload_model")
+        ):
+            ct2_model.unload_model(to_cpu=False)
+
+    except Exception as exc:
+        logger.warning(
+            f"failed to explicitly unload Whisper model: {exc}"
+        )
+
+    finally:
+        model = None
+        gc.collect()
+        logger.info("Whisper model released")
+
+
+
+def create(audio_file, subtitle_file: str = "", video_script: str = ""):
     global model
     if WhisperModel is None:
         logger.warning("faster_whisper not available, skipping whisper subtitle generation")
@@ -34,6 +111,7 @@ def create(audio_file, subtitle_file: str = ""):
             f"loading model: {model_path}, device: {device}, compute_type: {compute_type}"
         )
         try:
+            _prepare_cuda_runtime()
             model = WhisperModel(
                 model_size_or_path=model_path, device=device, compute_type=compute_type
             )
@@ -67,6 +145,7 @@ def create(audio_file, subtitle_file: str = ""):
 
     start = timer()
     subtitles = []
+    word_items = []
 
     def recognized(seg_text, seg_start, seg_end):
         seg_text = seg_text.strip()
@@ -91,6 +170,14 @@ def create(audio_file, subtitle_file: str = ""):
         if segment.words:
             is_segmented = False
             for word in segment.words:
+                word_items.append(
+                    {
+                        "start": float(word.start),
+                        "end": float(word.end),
+                        "word": str(word.word),
+                    }
+                )
+
                 if not is_segmented:
                     seg_start = word.start
                     is_segmented = True
@@ -143,6 +230,59 @@ def create(audio_file, subtitle_file: str = ""):
         f.write(sub)
     logger.info(f"subtitle file created: {subtitle_file}")
 
+    social_enabled = bool(
+        config.whisper.get("social_subtitles", False)
+    )
+
+    if social_enabled and video_script:
+        try:
+            max_words = int(
+                config.whisper.get(
+                    "social_max_words",
+                    8,
+                )
+            )
+
+            min_words = int(
+                config.whisper.get(
+                    "social_min_words",
+                    2,
+                )
+            )
+        except (TypeError, ValueError):
+            max_words = 8
+            min_words = 2
+
+        max_words = max(3, max_words)
+        min_words = max(
+            1,
+            min(
+                min_words,
+                max_words - 1,
+            ),
+        )
+
+        social_created = create_social_subtitle_from_words(
+            video_script=video_script,
+            word_items=word_items,
+            subtitle_file=subtitle_file,
+            max_words=max_words,
+            min_words=min_words,
+        )
+
+        if social_created:
+            logger.info(
+                "social subtitle segmentation accepted"
+            )
+            return True
+
+        logger.warning(
+            "social subtitle segmentation rejected; "
+            "keeping standard Whisper SRT for legacy correction"
+        )
+
+    return False
+
 
 def file_to_subtitles(filename):
     if not filename or not os.path.isfile(filename):
@@ -171,6 +311,370 @@ def file_to_subtitles(filename):
         index += 1
         times_texts.append((index, current_times.strip(), current_text.strip()))
     return times_texts
+
+
+
+def _social_normalize_tokens(text):
+    """Return normalized Unicode word tokens for strict subtitle alignment."""
+    return re.findall(
+        r"\w+",
+        str(text or "").casefold(),
+        flags=re.UNICODE,
+    )
+
+
+def create_social_subtitle_from_words(
+    video_script,
+    word_items,
+    subtitle_file,
+    max_words=8,
+    min_words=2,
+):
+    """
+    Build short social-video subtitles from an approved script and
+    Whisper word timestamps.
+
+    Safety rule:
+    if Whisper words do not align exactly with the approved script
+    after case/punctuation normalization, return False and leave the
+    normal MPT subtitle workflow available as fallback.
+    """
+    script = str(video_script or "").strip()
+
+    if not script or not word_items:
+        logger.warning(
+            "social subtitle segmentation skipped: "
+            "missing script or Whisper words"
+        )
+        return False
+
+    script_matches = list(
+        re.finditer(
+            r"\w+",
+            script,
+            flags=re.UNICODE,
+        )
+    )
+
+    script_tokens = [
+        match.group(0).casefold()
+        for match in script_matches
+    ]
+
+    whisper_tokens = []
+    normalized_words = []
+
+    for item in word_items:
+        try:
+            start = float(item["start"])
+            end = float(item["end"])
+            raw_word = str(item["word"])
+        except (KeyError, TypeError, ValueError):
+            logger.warning(
+                "social subtitle segmentation skipped: "
+                f"invalid Whisper word item: {item!r}"
+            )
+            return False
+
+        tokens = _social_normalize_tokens(raw_word)
+
+        if len(tokens) != 1:
+            logger.warning(
+                "social subtitle segmentation skipped: "
+                f"cannot normalize Whisper word: {raw_word!r}"
+            )
+            return False
+
+        whisper_tokens.append(tokens[0])
+
+        normalized_words.append(
+            {
+                "start": start,
+                "end": end,
+                "word": raw_word,
+            }
+        )
+
+    if script_tokens != whisper_tokens:
+        logger.warning(
+            "social subtitle segmentation skipped: "
+            "approved script and Whisper words do not align exactly "
+            f"(script={len(script_tokens)} words, "
+            f"whisper={len(whisper_tokens)} words)"
+        )
+        return False
+
+    def text_after_word(index):
+        start = script_matches[index].end()
+
+        if index + 1 < len(script_matches):
+            end = script_matches[index + 1].start()
+        else:
+            end = len(script)
+
+        return script[start:end]
+
+    def piece_text(start_index, end_index):
+        start = script_matches[start_index].start()
+
+        if end_index + 1 < len(script_matches):
+            end = script_matches[end_index + 1].start()
+        else:
+            end = len(script)
+
+        return script[start:end].strip()
+
+    # Hard linguistic boundaries: sentence/major-clause punctuation.
+    sentence_ranges = []
+    sentence_start = 0
+
+    for index in range(len(script_matches)):
+        trailing = text_after_word(index)
+
+        if (
+            re.search(r"[.!?;:…]", trailing)
+            or index == len(script_matches) - 1
+        ):
+            sentence_ranges.append(
+                (sentence_start, index)
+            )
+            sentence_start = index + 1
+
+    preferred_single = {
+        "y": 8,
+        "pero": 8,
+        "aunque": 8,
+        "porque": 8,
+        "cuando": 6,
+        "como": 7,
+        "durante": 7,
+        "mediante": 8,
+    }
+
+    preferred_phrases = {
+        ("que", "cuando"): 10,
+        ("de", "cómo"): 10,
+        ("en", "la", "forma"): 10,
+        ("para", "que"): 9,
+    }
+
+    # Words that should normally not be stranded at the end of a card.
+    hanging_endings = {
+        "el", "la", "los", "las",
+        "un", "una", "unos", "unas",
+        "de", "del",
+        "a", "al",
+        "en", "con", "sin",
+        "por", "para",
+        "y", "o",
+        "que", "como",
+        "mediante", "durante",
+    }
+
+    def cut_score(start_index, end_index, sentence_end):
+        word_count = end_index - start_index + 1
+
+        duration = (
+            normalized_words[end_index]["end"]
+            - normalized_words[start_index]["start"]
+        )
+
+        chars = len(
+            piece_text(
+                start_index,
+                end_index,
+            )
+        )
+
+        score = 0.0
+
+        # Prefer compact cards around 5-6 words and ~1.7 seconds.
+        score -= abs(word_count - 5.5) * 1.2
+        score -= abs(duration - 1.7) * 1.4
+
+        # Penalize visually/temporally dense cards.
+        if duration > 2.4:
+            score -= (duration - 2.4) * 10
+
+        if chars > 44:
+            score -= (chars - 44) * 0.6
+
+        if end_index == sentence_end:
+            score += 4
+
+        trailing = text_after_word(end_index)
+
+        # Strong preference for punctuation boundaries.
+        if "," in trailing:
+            score += 12
+
+        if re.search(r"[;:]", trailing):
+            score += 14
+
+        if end_index + 1 <= sentence_end:
+            next_token = script_tokens[end_index + 1]
+
+            score += preferred_single.get(
+                next_token,
+                0,
+            )
+
+            for phrase, value in preferred_phrases.items():
+                candidate = tuple(
+                    script_tokens[
+                        end_index + 1:
+                        end_index + 1 + len(phrase)
+                    ]
+                )
+
+                if candidate == phrase:
+                    score += value
+
+            gap = (
+                normalized_words[end_index + 1]["start"]
+                - normalized_words[end_index]["end"]
+            )
+
+            if gap >= 0.12:
+                score += min(
+                    6,
+                    gap * 20,
+                )
+
+        if script_tokens[end_index] in hanging_endings:
+            score -= 15
+
+        return score
+
+    chunks = []
+
+    for sentence_start, sentence_end in sentence_ranges:
+        current = sentence_start
+
+        while current <= sentence_end:
+            remaining = sentence_end - current + 1
+
+            duration = (
+                normalized_words[sentence_end]["end"]
+                - normalized_words[current]["start"]
+            )
+
+            chars = len(
+                piece_text(
+                    current,
+                    sentence_end,
+                )
+            )
+
+            # Short, compact remainder: leave it intact.
+            if (
+                remaining <= max_words
+                and duration <= 2.4
+                and chars <= 36
+            ):
+                chunks.append(
+                    (current, sentence_end)
+                )
+                break
+
+            maximum_end = min(
+                sentence_end,
+                current + max_words - 1,
+            )
+
+            candidates = []
+
+            first_candidate = (
+                current + min_words - 1
+            )
+
+            for candidate_end in range(
+                first_candidate,
+                maximum_end + 1,
+            ):
+                words_left = (
+                    sentence_end - candidate_end
+                )
+
+                # Avoid leaving a useless 1-word tail.
+                if (
+                    words_left
+                    and words_left < min_words
+                ):
+                    continue
+
+                candidates.append(
+                    (
+                        cut_score(
+                            current,
+                            candidate_end,
+                            sentence_end,
+                        ),
+                        candidate_end,
+                    )
+                )
+
+            if candidates:
+                _, chosen_end = max(
+                    candidates,
+                    key=lambda item: (
+                        item[0],
+                        item[1],
+                    ),
+                )
+            else:
+                chosen_end = maximum_end
+
+            chunks.append(
+                (current, chosen_end)
+            )
+
+            current = chosen_end + 1
+
+    lines = []
+
+    for index, (start_index, end_index) in enumerate(
+        chunks,
+        start=1,
+    ):
+        text_piece = piece_text(
+            start_index,
+            end_index,
+        )
+
+        start_time = normalized_words[
+            start_index
+        ]["start"]
+
+        end_time = normalized_words[
+            end_index
+        ]["end"]
+
+        lines.append(
+            utils.text_to_srt(
+                index,
+                text_piece,
+                start_time,
+                end_time,
+            )
+        )
+
+    subtitle_text = "\n".join(lines) + "\n"
+
+    with open(
+        subtitle_file,
+        "w",
+        encoding="utf-8",
+    ) as file:
+        file.write(subtitle_text)
+
+    logger.info(
+        "social subtitle segmentation created "
+        f"{len(chunks)} cards from "
+        f"{len(normalized_words)} aligned words"
+    )
+
+    return True
 
 
 def levenshtein_distance(s1, s2):

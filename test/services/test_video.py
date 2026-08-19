@@ -246,7 +246,7 @@ class TestVideoService(unittest.TestCase):
                     )
 
                 self.assertTrue(result)
-                audio_file_clip.assert_called_once_with("voice.mp3")
+                audio_file_clip.assert_called_once_with("voice.mp3", fps=48000)
                 get_bgm_file.assert_not_called()
                 composite_audio.assert_not_called()
                 writer.assert_called_once()
@@ -779,6 +779,75 @@ class TestVideoService(unittest.TestCase):
 
         return source_ranges, written_durations
 
+    def test_combine_videos_continuous_reads_consecutive_source_ranges(self):
+        """Continuous mode must consume consecutive ranges from one long source."""
+
+        source_ranges = []
+
+        class _FakeAudioClip:
+            duration = 24.08
+
+            def close(self):
+                pass
+
+        class _FakeVideoClip:
+            def __init__(self, duration, records_source_range=False):
+                self.duration = duration
+                self.size = (1080, 1920)
+                self.w = 1080
+                self.h = 1920
+                self.records_source_range = records_source_range
+
+            def subclipped(self, start_time, end_time):
+                if self.records_source_range:
+                    source_ranges.append((start_time, end_time))
+                return _FakeVideoClip(end_time - start_time)
+
+            def close(self):
+                pass
+
+        def _open_fake_video_clip(_video_path):
+            return _FakeVideoClip(
+                duration=30.0,
+                records_source_range=True,
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            combined_video_path = os.path.join(temp_dir, "combined.mp4")
+
+            with (
+                patch.object(vd, "AudioFileClip", return_value=_FakeAudioClip()),
+                patch.object(
+                    vd,
+                    "_open_video_clip_quietly",
+                    side_effect=_open_fake_video_clip,
+                ),
+                patch.object(vd, "_write_videofile_with_codec_fallback"),
+                patch.object(vd, "concat_video_clips_with_ffmpeg"),
+                patch.object(vd, "delete_files"),
+            ):
+                result = vd.combine_videos(
+                    combined_video_path=combined_video_path,
+                    video_paths=["long-source.mp4"],
+                    audio_file="audio.wav",
+                    video_aspect=vd.VideoAspect.portrait,
+                    video_concat_mode=vd.VideoConcatMode.continuous,
+                    video_transition_mode=None,
+                    max_clip_duration=5,
+                )
+
+        self.assertEqual(result, combined_video_path)
+        self.assertEqual(
+            source_ranges,
+            [
+                (0, 5),
+                (5, 10),
+                (10, 15),
+                (15, 20),
+                (20, 25),
+            ],
+        )
+
     def test_combine_videos_slow_speed_keeps_source_timeline_continuous(self):
         """0.5 倍慢放应连续读取 1.5 秒源片段，不能跳过中间画面。"""
 
@@ -867,7 +936,7 @@ class TestVideoService(unittest.TestCase):
     def test_concat_video_clips_limits_output_to_audio_duration(self):
         """最终拼接时应裁到音频时长，避免安全余量带来明显静音尾巴。"""
 
-        def fake_run(command, capture_output, text, check):
+        def fake_run(command, capture_output, text, check, timeout=None):
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with tempfile.TemporaryDirectory() as temp_dir:

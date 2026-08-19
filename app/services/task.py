@@ -2,6 +2,7 @@ import math
 import os
 import re
 import socket
+import subprocess
 import threading
 import time
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
@@ -30,6 +31,17 @@ from app.services import (
 from app.services import upload_post
 from app.services import state as sm
 from app.utils import file_security, utils
+
+
+_QWEN3_TTS_VOICE_NAME = "qwen3tts:centinela-cinematico"
+
+_QWEN3_TTS_PYTHON = (
+    r"E:\IA\Qwen3-TTS\runtime\.venv\Scripts\python.exe"
+)
+
+_QWEN3_TTS_ADAPTER = (
+    r"E:\IA\Qwen3-TTS\runtime\centinela_qwen_adapter.py"
+)
 
 
 # 发布请求最长可等待数分钟，不能继续占用视频生成任务的并发名额。
@@ -449,6 +461,142 @@ def _resolve_reusable_voice_preview(
     return preview_file, math.ceil(duration), sub_maker
 
 
+
+def _is_qwen3_tts_voice(voice_name) -> bool:
+    return (
+        str(voice_name or "").strip().lower()
+        == _QWEN3_TTS_VOICE_NAME
+    )
+
+
+def _generate_qwen3_tts_audio(task_id, video_script):
+    """
+    Generate the CENTINELA voice with the isolated Qwen3-TTS
+    Python 3.12 runtime.
+
+    Qwen returns a finished WAV and no SubMaker. Whisper will
+    generate the real word timestamps later in the pipeline.
+    """
+    python_exe = path.realpath(_QWEN3_TTS_PYTHON)
+    adapter = path.realpath(_QWEN3_TTS_ADAPTER)
+
+    if not path.isfile(python_exe):
+        raise RuntimeError(
+            f"Qwen3-TTS Python runtime not found: {python_exe}"
+        )
+
+    if not path.isfile(adapter):
+        raise RuntimeError(
+            f"Qwen3-TTS adapter not found: {adapter}"
+        )
+
+    script = str(video_script or "").strip()
+
+    if not script:
+        raise ValueError(
+            "Qwen3-TTS cannot generate audio from an empty script"
+        )
+
+    task_root = path.realpath(utils.task_dir(task_id))
+    os.makedirs(task_root, exist_ok=True)
+
+    text_file = path.join(
+        task_root,
+        "qwen3tts-input.txt",
+    )
+
+    audio_file = path.join(
+        task_root,
+        "audio.wav",
+    )
+
+    with open(
+        text_file,
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as handle:
+        handle.write(script)
+
+    command = [
+        python_exe,
+        adapter,
+        "--text-file",
+        text_file,
+        "--output",
+        audio_file,
+    ]
+
+    logger.info(
+        "starting Qwen3-TTS CENTINELA subprocess"
+    )
+
+    completed = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        shell=False,
+    )
+
+    stdout = str(completed.stdout or "").strip()
+    stderr = str(completed.stderr or "").strip()
+
+    if stdout:
+        logger.info(
+            f"Qwen3-TTS output:\n{stdout}"
+        )
+
+    if completed.returncode != 0:
+        if stderr:
+            logger.error(
+                f"Qwen3-TTS error output:\n{stderr}"
+            )
+
+        raise RuntimeError(
+            "Qwen3-TTS subprocess failed with "
+            f"exit code {completed.returncode}"
+        )
+
+    # Qwen currently writes the flash-attn informational
+    # warning to stderr even when synthesis succeeds.
+    if stderr:
+        logger.info(
+            f"Qwen3-TTS diagnostic output:\n{stderr}"
+        )
+
+    if (
+        not path.isfile(audio_file)
+        or path.getsize(audio_file) <= 44
+    ):
+        raise RuntimeError(
+            "Qwen3-TTS did not produce a valid WAV file"
+        )
+
+    audio_duration = float(
+        voice.get_audio_duration(audio_file)
+    )
+
+    if (
+        not math.isfinite(audio_duration)
+        or audio_duration <= 0
+    ):
+        raise RuntimeError(
+            "Qwen3-TTS generated audio has invalid duration"
+        )
+
+    logger.info(
+        "Qwen3-TTS CENTINELA completed: "
+        f"file={audio_file}, "
+        f"duration={audio_duration:.2f}s"
+    )
+
+    return audio_file, audio_duration, None
+
+
+
 def generate_audio(task_id, params, video_script, voice_preview=None):
     """
     Generate audio for the video script.
@@ -477,6 +625,32 @@ def generate_audio(task_id, params, video_script, voice_preview=None):
         return None, None, None
 
     if not custom_audio_file:
+        if _is_qwen3_tts_voice(
+            getattr(params, "voice_name", "")
+        ):
+            logger.info(
+                "Qwen3-TTS CENTINELA voice selected"
+            )
+
+            try:
+                return _generate_qwen3_tts_audio(
+                    task_id=task_id,
+                    video_script=video_script,
+                )
+
+            except Exception as exc:
+                logger.exception(
+                    f"Qwen3-TTS generation failed: {exc}"
+                )
+
+                _mark_task_failed(
+                    task_id,
+                    "audio",
+                    f"Qwen3-TTS generation failed: {exc}",
+                )
+
+                return None, None, None
+
         reusable_preview = _resolve_reusable_voice_preview(
             task_id,
             params,
@@ -565,9 +739,26 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
             return ""
 
     if subtitle_provider == "whisper":
-        subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
-        logger.info("\n\n## correcting subtitle")
-        subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
+        try:
+            social_subtitle_created = subtitle.create(
+                audio_file=audio_file,
+                subtitle_file=subtitle_path,
+                video_script=video_script,
+            )
+        finally:
+            subtitle.release_model()
+
+        if social_subtitle_created is True:
+            logger.info(
+                "\n\n## social subtitle segmentation accepted; "
+                "skip legacy sentence correction"
+            )
+        else:
+            logger.info("\n\n## correcting subtitle")
+            subtitle.correct(
+                subtitle_file=subtitle_path,
+                video_script=video_script,
+            )
 
     subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
     if not subtitle_lines:
