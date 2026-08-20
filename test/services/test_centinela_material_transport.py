@@ -260,5 +260,167 @@ class MultiformatVideoCacheManagerTests(unittest.TestCase):
                 )
 
 
+class MaterialArtifactProvenanceTests(unittest.TestCase):
+    def test_material_source_record_preserves_legal_provenance(self):
+        item = MaterialInfo(
+            provider="wikimedia",
+            url=(
+                "https://upload.wikimedia.org/"
+                "example/Saturn.webm?tracking=remote"
+            ),
+            duration=42,
+            source_info={
+                "provider": "wikimedia",
+                "search_term": "Saturn lightning",
+                "asset_id": "File:Saturn.webm",
+                "source_page": (
+                    "https://commons.wikimedia.org/wiki/"
+                    "File:Saturn.webm?tracking=drop"
+                ),
+                "creator": {
+                    "name": "Example Author",
+                    "profile_page": (
+                        "https://commons.wikimedia.org/wiki/"
+                        "User:Example?token=drop"
+                    ),
+                    "private_email": "secret@example.org",
+                },
+                "rendition": {
+                    "id": "original",
+                    "width": 1920,
+                    "height": 1080,
+                    "private_field": "drop-me",
+                },
+                "license": "CC BY 4.0",
+                "license_url": (
+                    "https://creativecommons.org/"
+                    "licenses/by/4.0/?tracking=drop"
+                ),
+                "credit": "Example Observatory",
+                "attribution": "Example Author",
+                "attribution_required": True,
+                "non_free": False,
+                "restrictions": ["trademark"],
+                "copyright_status": "copyrighted",
+                "deletion_reason": "manual-review-note",
+                "mime": "video/webm",
+                "sha256": (
+                    "0123456789abcdef"
+                    "0123456789abcdef"
+                    "0123456789abcdef"
+                    "0123456789abcdef"
+                ),
+                "api_key": "DO-NOT-PERSIST",
+                "signed_url": (
+                    "https://example.invalid/"
+                    "?token=DO-NOT-PERSIST"
+                ),
+            },
+        )
+
+        record = material._material_source_record(
+            item,
+            r"D:\private\task\vid-example.webm",
+        )
+
+        self.assertEqual(record["provider"], "wikimedia")
+        self.assertEqual(
+            record["local_file"],
+            "vid-example.webm",
+        )
+        self.assertEqual(record["duration"], 42)
+        self.assertEqual(
+            record["search_term"],
+            "Saturn lightning",
+        )
+        self.assertEqual(
+            record["asset_id"],
+            "File:Saturn.webm",
+        )
+        self.assertEqual(
+            record["source_page"],
+            (
+                "https://commons.wikimedia.org/wiki/"
+                "File:Saturn.webm"
+            ),
+        )
+
+        self.assertEqual(
+            record["creator"]["name"],
+            "Example Author",
+        )
+        self.assertEqual(
+            record["rendition"],
+            {
+                "id": "original",
+                "width": 1920,
+                "height": 1080,
+            },
+        )
+
+        self.assertEqual(
+            record["license"],
+            "CC BY 4.0",
+        )
+        self.assertEqual(
+            record["license_url"],
+            (
+                "https://creativecommons.org/"
+                "licenses/by/4.0/"
+            ),
+        )
+        self.assertEqual(
+            record["credit"],
+            "Example Observatory",
+        )
+        self.assertEqual(
+            record["attribution"],
+            "Example Author",
+        )
+        self.assertTrue(
+            record["attribution_required"]
+        )
+        self.assertFalse(record["non_free"])
+        self.assertEqual(
+            record["restrictions"],
+            ["trademark"],
+        )
+        self.assertEqual(
+            record["copyright_status"],
+            "copyrighted",
+        )
+        self.assertEqual(
+            record["deletion_reason"],
+            "manual-review-note",
+        )
+        self.assertEqual(
+            record["mime"],
+            "video/webm",
+        )
+        self.assertEqual(
+            len(record["sha256"]),
+            64,
+        )
+
+        serialized = repr(record)
+
+        self.assertNotIn(
+            "DO-NOT-PERSIST",
+            serialized,
+        )
+        self.assertNotIn(
+            "secret@example.org",
+            serialized,
+        )
+        self.assertNotIn(
+            "private_field",
+            serialized,
+        )
+        self.assertNotIn(
+            r"D:\private\task",
+            serialized,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

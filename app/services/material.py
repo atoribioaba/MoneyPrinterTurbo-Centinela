@@ -13,6 +13,7 @@ from app.config import config
 from app.models.schema import MaterialInfo, VideoAspect, VideoConcatMode
 from app.services import material_cache, task_artifacts
 from app.services.centinela.capabilities import ProviderCapability
+from app.services.centinela.provenance import sanitize_provenance
 from app.services.centinela.provider_registry import build_default_provider_registry
 from app.utils import utils
 
@@ -68,45 +69,30 @@ def _creator_info(value: Any) -> dict[str, str] | None:
     return creator or None
 
 
-def _material_source_record(item: MaterialInfo, local_path: str) -> dict[str, Any]:
+def _material_source_record(
+    item: MaterialInfo,
+    local_path: str,
+) -> dict[str, Any]:
     """
-    为成功下载的素材生成轻量来源记录。
+    Build the persisted material-source record through Centinela's canonical
+    provenance sanitizer.
 
-    ``source_info`` 可能来自缓存，甚至来自外部构造的 ``MaterialInfo``，因此
-    不能原样写入。这里按白名单重新构造，只保留公开页面、业务标识和尺寸，
-    并只记录本地文件名，避免用户目录或 Docker 挂载路径进入任务文件。
+    Search adapters, search cache and task artifacts use the same whitelist so
+    legal metadata cannot disappear between discovery, cache reuse and final
+    task persistence. Only the local filename is retained.
     """
-    source = item.source_info if isinstance(item.source_info, dict) else {}
-    record: dict[str, Any] = {
-        "provider": str(item.provider or source.get("provider") or ""),
-        "local_file": Path(local_path).name,
-        "duration": int(item.duration),
-    }
+    source = (
+        item.source_info
+        if isinstance(item.source_info, dict)
+        else {}
+    )
 
-    search_term = source.get("search_term")
-    asset_id = source.get("asset_id")
-    source_page = _safe_public_url(source.get("source_page"))
-    if isinstance(search_term, str) and search_term.strip():
-        record["search_term"] = search_term.strip()
-    if asset_id not in (None, ""):
-        record["asset_id"] = str(asset_id)
-    if source_page:
-        record["source_page"] = source_page
-
-    creator = _creator_info(source.get("creator"))
-    if creator:
-        record["creator"] = creator
-
-    raw_rendition = source.get("rendition")
-    if isinstance(raw_rendition, dict):
-        rendition = {}
-        for field in ("id", "width", "height"):
-            value = raw_rendition.get(field)
-            if value not in (None, ""):
-                rendition[field] = str(value) if field == "id" else value
-        if rendition:
-            record["rendition"] = rendition
-    return record
+    return sanitize_provenance(
+        source,
+        provider=item.provider,
+        local_path=local_path,
+        duration=item.duration,
+    )
 
 
 def _persist_material_sources(
