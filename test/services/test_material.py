@@ -582,6 +582,40 @@ class TestMaterialTlsVerification(unittest.TestCase):
             self.assertTrue(os.path.exists(video_path))
             self.assertTrue(get.call_args.kwargs["verify"])
 
+    def test_download_videos_rejects_unknown_provider_without_pexels_fallback(self):
+        """
+        Unknown providers must fail closed instead of silently using Pexels.
+        """
+        with patch.object(material, "search_videos_pexels") as pexels_search:
+            with self.assertRaisesRegex(
+                ValueError,
+                "unknown video material provider: typo-provider",
+            ):
+                material.download_videos(
+                    task_id="unknown-provider",
+                    search_terms=[],
+                    source="typo-provider",
+                )
+
+        pexels_search.assert_not_called()
+
+    def test_download_videos_rejects_registered_non_search_providers(self):
+        """
+        Local and generative providers are valid registry entries, but they
+        must not enter the remote searchable-material download path.
+        """
+        for source in ("local", "loomloom"):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "cannot be used for remote video search",
+                ):
+                    material.download_videos(
+                        task_id=f"invalid-remote-{source}",
+                        search_terms=[],
+                        source=source,
+                    )
+
     def test_download_videos_accepts_plain_string_concat_mode(self):
         """
         download_videos 可能被服务层或测试直接传入字符串模式，而不是

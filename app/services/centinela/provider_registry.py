@@ -1,8 +1,9 @@
-"""Small provider registry used by Centinela Edition.
+"""Provider registry used by Centinela Edition.
 
-The registry deliberately describes provider capabilities without changing the
-current MoneyPrinterTurbo dispatch logic. Existing providers continue to run
-through their current implementation until they are migrated explicitly.
+The registry is the canonical declaration of provider identity and capabilities.
+Execution adapters remain in their service modules and are migrated explicitly,
+but callers must validate providers against this contract instead of silently
+falling back to another source.
 """
 
 from dataclasses import dataclass

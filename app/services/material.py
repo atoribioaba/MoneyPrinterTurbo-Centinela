@@ -12,6 +12,8 @@ from moviepy.video.io.VideoFileClip import VideoFileClip
 from app.config import config
 from app.models.schema import MaterialInfo, VideoAspect, VideoConcatMode
 from app.services import material_cache, task_artifacts
+from app.services.centinela.capabilities import ProviderCapability
+from app.services.centinela.provider_registry import build_default_provider_registry
 from app.utils import utils
 
 # Thread-safe counter for API key rotation
@@ -756,6 +758,65 @@ def _search_videos_with_cache(
         return items
 
 
+def _resolve_remote_video_search_provider(
+    source: str,
+) -> tuple[str, Callable[..., List[MaterialInfo]]]:
+    """
+    Resolve a remote searchable video provider without implicit fallback.
+
+    Provider identity and capabilities come from the Centinela registry.
+    The actual search adapter remains explicit until each provider has been
+    migrated to a richer execution interface.
+    """
+    registry = build_default_provider_registry()
+
+    try:
+        provider_definition = registry.get(source)
+    except KeyError as exc:
+        normalized_source = str(source or "").strip() or "<empty>"
+        raise ValueError(
+            f"unknown video material provider: {normalized_source}"
+        ) from exc
+
+    required_capabilities = (
+        ProviderCapability.SEARCH,
+        ProviderCapability.DOWNLOAD,
+        ProviderCapability.REMOTE,
+        ProviderCapability.VIDEO,
+    )
+
+    missing_capabilities = [
+        capability.value
+        for capability in required_capabilities
+        if not provider_definition.supports(capability)
+    ]
+
+    if missing_capabilities:
+        raise ValueError(
+            f"provider {provider_definition.provider_id!r} cannot be used "
+            "for remote video search; missing capabilities: "
+            + ", ".join(missing_capabilities)
+        )
+
+    search_adapters = {
+        "pexels": search_videos_pexels,
+        "pixabay": search_videos_pixabay,
+        "coverr": search_videos_coverr,
+    }
+
+    remote_search_videos = search_adapters.get(
+        provider_definition.provider_id
+    )
+
+    if remote_search_videos is None:
+        raise RuntimeError(
+            f"provider {provider_definition.provider_id!r} is registered "
+            "for remote video search but has no material search adapter"
+        )
+
+    return provider_definition.provider_id, remote_search_videos
+
+
 def download_videos(
     task_id: str,
     search_terms: List[str],
@@ -766,14 +827,9 @@ def download_videos(
     max_clip_duration: int = 5,
     match_script_order: bool = False,
 ) -> List[str]:
-    provider = "pexels"
-    remote_search_videos = search_videos_pexels
-    if source == "pixabay":
-        provider = "pixabay"
-        remote_search_videos = search_videos_pixabay
-    elif source == "coverr":
-        provider = "coverr"
-        remote_search_videos = search_videos_coverr
+    provider, remote_search_videos = _resolve_remote_video_search_provider(
+        source
+    )
 
     def search_videos(
         search_term: str,
