@@ -30,6 +30,12 @@ from app.services import (
 )
 from app.services import upload_post
 from app.services import state as sm
+from app.services.centinela import (
+    ProviderCapability,
+    ProviderDefinition,
+    ProviderKind,
+    build_default_provider_registry,
+)
 from app.utils import file_security, utils
 
 
@@ -768,6 +774,127 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     return subtitle_path
 
 
+def _resolve_task_video_provider(source: str) -> ProviderDefinition:
+    """Resolve and validate a video provider for task orchestration."""
+    registry = build_default_provider_registry()
+
+    try:
+        provider = registry.get(source)
+    except KeyError as exc:
+        normalized_source = str(source or "").strip() or "<empty>"
+        raise ValueError(
+            f"unknown video material provider: {normalized_source}"
+        ) from exc
+
+    if not provider.supports(ProviderCapability.VIDEO):
+        raise ValueError(
+            f"provider {provider.provider_id!r} does not support video materials"
+        )
+
+    return provider
+
+
+def _task_provider_requires_terms(provider: ProviderDefinition) -> bool:
+    """
+    Return whether the current task contract requires generated visual terms.
+
+    Local material selection uses explicit files. Searchable and generative
+    providers currently consume generated search terms or scene prompts.
+    """
+    if provider.kind is ProviderKind.LOCAL:
+        return False
+
+    if provider.kind in (
+        ProviderKind.SEARCHABLE,
+        ProviderKind.GENERATIVE,
+    ):
+        return True
+
+    raise ValueError(
+        f"unsupported video provider kind: {provider.kind!r}"
+    )
+
+
+def _get_loomloom_video_materials(
+    task_id,
+    loomloom_video_request: loomloom.LoomLoomConfirmedVideoRequest | None,
+):
+    if not isinstance(
+        loomloom_video_request, loomloom.LoomLoomConfirmedVideoRequest
+    ):
+        _mark_task_failed(
+            task_id,
+            "materials",
+            "LoomLoom video generation requires a confirmed quote",
+        )
+        return None
+
+    request = loomloom_video_request
+    logger.info(
+        "\n\n## generating "
+        f"{len(request.batch.input_rows)} video materials with LoomLoom"
+    )
+    run_id = ""
+
+    try:
+        request.validate()
+        backend = loomloom.LoomLoomVideoBackend(request.settings)
+        execution = backend.execute(
+            request.batch,
+            client_request_id=request.client_request_id,
+            listing_version_id=request.listing_version_id,
+            confirm=True,
+        )
+        run_id = execution.run_id
+
+        # execute 返回即表示付费任务已经由远端接受。必须先把 run ID 写入
+        # 进程日志，即使 Redis 等状态后端随后不可用，运维人员仍能凭日志
+        # 在胜算云侧定位任务，不能让唯一标识只存在于局部变量中。
+        logger.info(
+            "LoomLoom paid video run created: "
+            f"task_id={task_id}, run_id={run_id}, "
+            f"listing_version_id={request.listing_version_id}"
+        )
+
+        # 付费任务一旦创建就立即记录远端 ID。即使后续轮询超时，日志和任务
+        # 状态仍能帮助用户或平台支持人员定位并找回已经生成的产物。状态后端
+        # 故障只能降低可观测性，不能中断已经开始计费的远端任务和产物下载。
+        _record_loomloom_run_reference(
+            task_id=task_id,
+            run_id=run_id,
+            listing_version_id=request.listing_version_id,
+        )
+
+        backend.wait_for_run(run_id)
+
+        return list(
+            backend.download_video_results(
+                run_id,
+                utils.task_dir(task_id),
+            )
+        )
+    except (loomloom.LoomLoomError, ValueError) as exc:
+        _mark_task_failed(
+            task_id,
+            "materials",
+            str(exc),
+            details={
+                "loomloom_run_id": run_id,
+                "loomloom_listing_version_id": request.listing_version_id,
+            },
+        )
+        return None
+
+
+# Execution adapters are deliberately explicit. ProviderRegistry decides
+# identity/kind/capabilities; this map binds implemented generative providers
+# to task-specific execution code. Unknown future generative providers fail
+# closed instead of accidentally entering the LoomLoom paid execution path.
+_GENERATIVE_VIDEO_MATERIAL_HANDLERS = {
+    "loomloom": _get_loomloom_video_materials,
+}
+
+
 def get_video_materials(
     task_id,
     params,
@@ -775,11 +902,24 @@ def get_video_materials(
     audio_duration,
     loomloom_video_request: loomloom.LoomLoomConfirmedVideoRequest | None = None,
 ):
-    if params.video_source == "local":
-        logger.info("\n\n## preprocess local materials")
-        materials = video.preprocess_video(
-            materials=params.video_materials, clip_duration=params.video_clip_duration
+    try:
+        provider = _resolve_task_video_provider(params.video_source)
+    except ValueError as exc:
+        _mark_task_failed(
+            task_id,
+            "materials",
+            str(exc),
         )
+        return None
+
+    if provider.kind is ProviderKind.LOCAL:
+        logger.info("\n\n## preprocess local materials")
+
+        materials = video.preprocess_video(
+            materials=params.video_materials,
+            clip_duration=params.video_clip_duration,
+        )
+
         if not materials:
             _mark_task_failed(
                 task_id,
@@ -787,94 +927,66 @@ def get_video_materials(
                 "no valid local video materials were found",
             )
             return None
+
         return [material_info.url for material_info in materials]
-    elif params.video_source == "loomloom":
-        if not isinstance(
-            loomloom_video_request, loomloom.LoomLoomConfirmedVideoRequest
-        ):
+
+    if provider.kind is ProviderKind.GENERATIVE:
+        handler = _GENERATIVE_VIDEO_MATERIAL_HANDLERS.get(
+            provider.provider_id
+        )
+
+        if handler is None:
             _mark_task_failed(
                 task_id,
                 "materials",
-                "LoomLoom video generation requires a confirmed quote",
+                "no task video execution adapter registered for "
+                f"generative provider: {provider.provider_id}",
             )
             return None
 
-        request = loomloom_video_request
-        logger.info(
-            "\n\n## generating "
-            f"{len(request.batch.input_rows)} video materials with LoomLoom"
+        return handler(
+            task_id,
+            loomloom_video_request,
         )
-        run_id = ""
-        try:
-            request.validate()
-            backend = loomloom.LoomLoomVideoBackend(request.settings)
-            execution = backend.execute(
-                request.batch,
-                client_request_id=request.client_request_id,
-                listing_version_id=request.listing_version_id,
-                confirm=True,
-            )
-            run_id = execution.run_id
-            # execute 返回即表示付费任务已经由远端接受。必须先把 run ID 写入
-            # 进程日志，即使 Redis 等状态后端随后不可用，运维人员仍能凭日志
-            # 在胜算云侧定位任务，不能让唯一标识只存在于局部变量中。
-            logger.info(
-                "LoomLoom paid video run created: "
-                f"task_id={task_id}, run_id={run_id}, "
-                f"listing_version_id={request.listing_version_id}"
-            )
-            # 付费任务一旦创建就立即记录远端 ID。即使后续轮询超时，日志和任务
-            # 状态仍能帮助用户或平台支持人员定位并找回已经生成的产物。状态后端
-            # 故障只能降低可观测性，不能中断已经开始计费的远端任务和产物下载。
-            _record_loomloom_run_reference(
-                task_id=task_id,
-                run_id=run_id,
-                listing_version_id=request.listing_version_id,
-            )
-            backend.wait_for_run(run_id)
-            return list(
-                backend.download_video_results(
-                    run_id,
-                    utils.task_dir(task_id),
-                )
-            )
-        except (loomloom.LoomLoomError, ValueError) as exc:
-            _mark_task_failed(
-                task_id,
-                "materials",
-                str(exc),
-                details={
-                    "loomloom_run_id": run_id,
-                    "loomloom_listing_version_id": request.listing_version_id,
-                },
-            )
-            return None
-    else:
-        logger.info(f"\n\n## downloading videos from {params.video_source}")
-        # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
-        # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
-        downloaded_videos = material.download_videos(
-            task_id=task_id,
-            search_terms=video_terms,
-            source=params.video_source,
-            video_aspect=params.video_aspect,
-            video_concat_mode=(
-                VideoConcatMode.sequential
-                if params.match_materials_to_script
-                else params.video_concat_mode
-            ),
-            audio_duration=audio_duration * params.video_count,
-            max_clip_duration=params.video_clip_duration,
-            match_script_order=params.match_materials_to_script,
+
+    if provider.kind is not ProviderKind.SEARCHABLE:
+        _mark_task_failed(
+            task_id,
+            "materials",
+            f"unsupported video provider kind: {provider.kind!r}",
         )
-        if not downloaded_videos:
-            _mark_task_failed(
-                task_id,
-                "materials",
-                f"failed to download video materials from {params.video_source}",
-            )
-            return None
-        return downloaded_videos
+        return None
+
+    logger.info(
+        f"\n\n## downloading videos from {provider.provider_id}"
+    )
+
+    # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
+    # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
+    downloaded_videos = material.download_videos(
+        task_id=task_id,
+        search_terms=video_terms,
+        source=provider.provider_id,
+        video_aspect=params.video_aspect,
+        video_concat_mode=(
+            VideoConcatMode.sequential
+            if params.match_materials_to_script
+            else params.video_concat_mode
+        ),
+        audio_duration=audio_duration * params.video_count,
+        max_clip_duration=params.video_clip_duration,
+        match_script_order=params.match_materials_to_script,
+    )
+
+    if not downloaded_videos:
+        _mark_task_failed(
+            task_id,
+            "materials",
+            f"failed to download video materials from {provider.provider_id}",
+        )
+        return None
+
+    return downloaded_videos
 
 
 def _record_loomloom_run_reference(
@@ -1402,6 +1514,17 @@ def _run_pipeline(
             except video_music_provider["error_type"] as exc:
                 return _mark_task_failed(task_id, "preflight", str(exc))
 
+    try:
+        video_provider = _resolve_task_video_provider(
+            params.video_source
+        )
+    except ValueError as exc:
+        return _mark_task_failed(
+            task_id,
+            "preflight",
+            str(exc),
+        )
+
     # 1. Generate script
     video_script = generate_script(task_id, params)
     if not video_script or "Error: " in video_script:
@@ -1422,7 +1545,7 @@ def _run_pipeline(
 
     # 2. Generate terms
     video_terms = ""
-    if params.video_source != "local":
+    if _task_provider_requires_terms(video_provider):
         video_terms = generate_terms(task_id, params, video_script)
         if not video_terms:
             return _mark_task_failed(

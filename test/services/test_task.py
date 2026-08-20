@@ -343,6 +343,178 @@ class TestTaskService(unittest.TestCase):
         generate_script.assert_called_once_with("zero-volume-without-key", params)
         self.assertEqual(result["failed_stage"], "script")
 
+    def test_task_provider_terms_contract_uses_provider_kind(self):
+        registry = tm.build_default_provider_registry()
+
+        self.assertTrue(
+            tm._task_provider_requires_terms(
+                registry.get("pexels")
+            )
+        )
+        self.assertTrue(
+            tm._task_provider_requires_terms(
+                registry.get("loomloom")
+            )
+        )
+        self.assertFalse(
+            tm._task_provider_requires_terms(
+                registry.get("local")
+            )
+        )
+
+    def test_searchable_task_provider_routes_by_registry_definition(self):
+        from app.services.centinela import (
+            ProviderCapability,
+            ProviderDefinition,
+            ProviderKind,
+            ProviderRegistry,
+        )
+
+        registry = ProviderRegistry()
+        registry.register(
+            ProviderDefinition(
+                provider_id="example-search",
+                display_name="Example Search",
+                kind=ProviderKind.SEARCHABLE,
+                capabilities=frozenset(
+                    {
+                        ProviderCapability.SEARCH,
+                        ProviderCapability.DOWNLOAD,
+                        ProviderCapability.REMOTE,
+                        ProviderCapability.VIDEO,
+                    }
+                ),
+            )
+        )
+
+        params = VideoParams(
+            video_subject="test",
+            video_source="example-search",
+        )
+
+        with (
+            patch.object(
+                tm,
+                "build_default_provider_registry",
+                return_value=registry,
+            ),
+            patch.object(
+                tm.material,
+                "download_videos",
+                return_value=["clip.mp4"],
+            ) as download_videos,
+        ):
+            result = tm.get_video_materials(
+                "registry-search-route",
+                params,
+                ["Saturn"],
+                5,
+            )
+
+        self.assertEqual(result, ["clip.mp4"])
+        self.assertEqual(
+            download_videos.call_args.kwargs["source"],
+            "example-search",
+        )
+
+    def test_unmapped_generative_provider_fails_closed_before_loomloom(self):
+        from app.services.centinela import (
+            ProviderCapability,
+            ProviderDefinition,
+            ProviderKind,
+            ProviderRegistry,
+        )
+
+        registry = ProviderRegistry()
+        registry.register(
+            ProviderDefinition(
+                provider_id="example-generative",
+                display_name="Example Generative",
+                kind=ProviderKind.GENERATIVE,
+                capabilities=frozenset(
+                    {
+                        ProviderCapability.GENERATE,
+                        ProviderCapability.VIDEO,
+                    }
+                ),
+            )
+        )
+
+        params = VideoParams(
+            video_subject="test",
+            video_source="example-generative",
+        )
+
+        state = MemoryState()
+        state.update_task(
+            "unmapped-generative",
+            state=tm.const.TASK_STATE_PROCESSING,
+            progress=40,
+        )
+
+        with (
+            patch.object(
+                tm,
+                "build_default_provider_registry",
+                return_value=registry,
+            ),
+            patch.object(tm.sm, "state", state),
+            patch.object(
+                tm.loomloom,
+                "LoomLoomVideoBackend",
+            ) as loomloom_backend,
+        ):
+            result = tm.get_video_materials(
+                "unmapped-generative",
+                params,
+                ["scene"],
+                5,
+            )
+
+        self.assertIsNone(result)
+        loomloom_backend.assert_not_called()
+
+        failed_task = state.get_task(
+            "unmapped-generative"
+        )
+
+        self.assertEqual(
+            failed_task["failed_stage"],
+            "materials",
+        )
+        self.assertIn(
+            "no task video execution adapter registered",
+            failed_task["error"],
+        )
+
+    def test_unknown_video_provider_fails_preflight_before_script(self):
+        params = VideoParams(
+            video_subject="test",
+            video_source="does-not-exist",
+        )
+
+        state = MemoryState()
+
+        with (
+            patch.object(tm.sm, "state", state),
+            patch.object(tm, "generate_script") as generate_script,
+        ):
+            result = tm.start(
+                "unknown-video-provider",
+                params,
+            )
+
+        generate_script.assert_not_called()
+
+        self.assertEqual(
+            result["failed_stage"],
+            "preflight",
+        )
+        self.assertIn(
+            "unknown video material provider",
+            result["error"],
+        )
+
     def test_loomloom_material_failure_keeps_remote_run_id(self):
         """远端运行已创建后失败，任务状态必须保留 LoomLoom run ID。"""
         params = VideoParams(video_subject="AI 办公", video_source="loomloom")
