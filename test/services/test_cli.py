@@ -702,5 +702,60 @@ def test_nasa_video_source_accepted():
 
     assert params.video_source == "nasa"
 
+
+def test_video_fit_mode_cli_default_and_cover():
+    import cli as cli_module
+
+    default_args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "fit default",
+        ]
+    )
+
+    assert (
+        default_args.video_fit_mode
+        == "fit"
+    )
+
+    default_params = (
+        cli_module.build_video_params(
+            default_args
+        )
+    )
+
+    assert (
+        getattr(
+            default_params.video_fit_mode,
+            "value",
+            default_params.video_fit_mode,
+        )
+        == "fit"
+    )
+
+    cover_args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "cover framing",
+            "--video-fit-mode",
+            "cover",
+        ]
+    )
+
+    cover_params = (
+        cli_module.build_video_params(
+            cover_args
+        )
+    )
+
+    assert (
+        getattr(
+            cover_params.video_fit_mode,
+            "value",
+            cover_params.video_fit_mode,
+        )
+        == "cover"
+    )
+
 if __name__ == "__main__":
     unittest.main()

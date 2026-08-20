@@ -516,3 +516,23 @@ class TestConfigPersistence:
                     config.app.pop(key, None)
                 else:
                     config.app[key] = original_value
+
+
+def test_config_example_documents_video_fit_mode():
+    from pathlib import Path
+
+    text = Path(
+        "config.example.toml"
+    ).read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert (
+        '# video_fit_mode = "fit"'
+        in text
+    )
+
+    assert (
+        '"cover"'
+        in text
+    )

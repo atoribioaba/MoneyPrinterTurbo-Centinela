@@ -30,6 +30,7 @@ from app.models import const
 from app.models.schema import (
     MaterialInfo,
     VideoAspect,
+    VideoFitMode,
     VideoConcatMode,
     VideoParams,
     VideoTransitionMode,
@@ -535,6 +536,184 @@ def get_bgm_file(bgm_type: str = "random", bgm_file: str = ""):
     return ""
 
 
+
+def _fit_video_clip_to_canvas(
+    clip,
+    target_width: int,
+    target_height: int,
+    fit_mode: VideoFitMode = VideoFitMode.fit,
+):
+    """
+    Map a source clip onto the output canvas.
+
+    fit:
+        Preserve the complete frame and reproduce the historical
+        MoneyPrinterTurbo black-background behavior.
+
+    cover:
+        Fill the complete canvas without distortion and remove only
+        overflowing pixels with a centered crop.
+
+    Subject-aware or focal-point cropping is intentionally outside V0.1.
+    """
+    mode = VideoFitMode(
+        fit_mode
+    )
+
+    clip_w, clip_h = clip.size
+
+    if (
+        clip_w <= 0
+        or clip_h <= 0
+        or target_width <= 0
+        or target_height <= 0
+    ):
+        raise ValueError(
+            "video fit dimensions must be positive"
+        )
+
+    if (
+        clip_w == target_width
+        and clip_h == target_height
+    ):
+        return clip
+
+    clip_ratio = (
+        clip_w
+        / clip_h
+    )
+
+    target_ratio = (
+        target_width
+        / target_height
+    )
+
+    logger.debug(
+        "fitting clip, "
+        f"source: {clip_w}x{clip_h}, "
+        f"ratio: {clip_ratio:.2f}, "
+        f"target: {target_width}x{target_height}, "
+        f"ratio: {target_ratio:.2f}, "
+        f"mode: {mode.value}"
+    )
+
+    if clip_ratio == target_ratio:
+        return clip.resized(
+            new_size=(
+                target_width,
+                target_height,
+            )
+        )
+
+    if mode is VideoFitMode.fit:
+        if clip_ratio > target_ratio:
+            scale_factor = (
+                target_width
+                / clip_w
+            )
+        else:
+            scale_factor = (
+                target_height
+                / clip_h
+            )
+
+        # Deliberately retain historical integer truncation.
+        new_width = int(
+            clip_w
+            * scale_factor
+        )
+
+        new_height = int(
+            clip_h
+            * scale_factor
+        )
+
+        background = ColorClip(
+            size=(
+                target_width,
+                target_height,
+            ),
+            color=(0, 0, 0),
+        ).with_duration(
+            clip.duration
+        )
+
+        foreground = (
+            clip.resized(
+                new_size=(
+                    new_width,
+                    new_height,
+                )
+            )
+            .with_position(
+                "center"
+            )
+        )
+
+        return CompositeVideoClip(
+            [
+                background,
+                foreground,
+            ]
+        )
+
+    # COVER must completely fill both canvas dimensions.
+    import math
+
+    scale_factor = max(
+        target_width / clip_w,
+        target_height / clip_h,
+    )
+
+    new_width = max(
+        target_width,
+        math.ceil(
+            clip_w
+            * scale_factor
+        ),
+    )
+
+    new_height = max(
+        target_height,
+        math.ceil(
+            clip_h
+            * scale_factor
+        ),
+    )
+
+    resized = clip.resized(
+        new_size=(
+            new_width,
+            new_height,
+        )
+    )
+
+    crop_x = max(
+        0,
+        (
+            new_width
+            - target_width
+        )
+        // 2,
+    )
+
+    crop_y = max(
+        0,
+        (
+            new_height
+            - target_height
+        )
+        // 2,
+    )
+
+    return resized.cropped(
+        x1=crop_x,
+        y1=crop_y,
+        width=target_width,
+        height=target_height,
+    )
+
+
 def combine_videos(
     combined_video_path: str,
     video_paths: List[str],
@@ -545,6 +724,7 @@ def combine_videos(
     max_clip_duration: int = 5,
     threads: int = 2,
     clip_speed: float = 1.0,
+    video_fit_mode: VideoFitMode = VideoFitMode.fit,
 ) -> str:
     audio_clip = AudioFileClip(audio_file)
     try:
@@ -578,6 +758,7 @@ def combine_videos(
 
     aspect = VideoAspect(video_aspect)
     video_width, video_height = aspect.to_resolution()
+    fit_mode = VideoFitMode(video_fit_mode)
 
     processed_clips = []
     subclipped_items = []
@@ -641,28 +822,13 @@ def combine_videos(
             if normalized_clip_speed != 1.0:
                 clip = clip.with_speed_scaled(normalized_clip_speed)
             clip_duration = clip.duration
-            # Not all videos are same size, so we need to resize them
-            clip_w, clip_h = clip.size
-            if clip_w != video_width or clip_h != video_height:
-                clip_ratio = clip.w / clip.h
-                video_ratio = video_width / video_height
-                logger.debug(f"resizing clip, source: {clip_w}x{clip_h}, ratio: {clip_ratio:.2f}, target: {video_width}x{video_height}, ratio: {video_ratio:.2f}")
-                
-                if clip_ratio == video_ratio:
-                    clip = clip.resized(new_size=(video_width, video_height))
-                else:
-                    if clip_ratio > video_ratio:
-                        scale_factor = video_width / clip_w
-                    else:
-                        scale_factor = video_height / clip_h
+            clip = _fit_video_clip_to_canvas(
+                clip=clip,
+                target_width=video_width,
+                target_height=video_height,
+                fit_mode=fit_mode,
+            )
 
-                    new_width = int(clip_w * scale_factor)
-                    new_height = int(clip_h * scale_factor)
-
-                    background = ColorClip(size=(video_width, video_height), color=(0, 0, 0)).with_duration(clip_duration)
-                    clip_resized = clip.resized(new_size=(new_width, new_height)).with_position("center")
-                    clip = CompositeVideoClip([background, clip_resized])
-                    
             shuffle_side = random.choice(["left", "right", "top", "bottom"])
             if transition_value in (None, VideoTransitionMode.none.value):
                 clip = clip

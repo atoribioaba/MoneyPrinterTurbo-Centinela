@@ -38,6 +38,7 @@ from app.models.llm_provider import (
 from app.models.schema import (
     MaterialInfo,
     VideoAspect,
+    VideoFitMode,
     VideoConcatMode,
     VideoParams,
     VideoTransitionMode,
@@ -1168,6 +1169,10 @@ def _apply_pending_task_restore():
     _set_stable_widget_value(
         f"video_aspect_for_{video_source}",
         params.get("video_aspect") or VideoAspect.portrait.value,
+    )
+    _set_stable_widget_value(
+        "video_fit_mode_select",
+        params.get("video_fit_mode") or VideoFitMode.fit.value,
     )
     _set_stable_widget_value(
         "video_clip_duration_select", params.get("video_clip_duration", 3)
@@ -3636,6 +3641,40 @@ def _render_video_settings(panel, params):
             params.video_aspect = VideoAspect(selected_aspect_ratio)
             _set_runtime_config(
                 "ui", video_aspect_config_key, params.video_aspect.value
+            )
+
+            video_fit_modes = [
+                (tr("Fit - Keep Full Frame"), VideoFitMode.fit.value),
+                (tr("Cover - Fill & Center Crop"), VideoFitMode.cover.value),
+            ]
+            video_fit_mode_values = [
+                value for _, value in video_fit_modes
+            ]
+            selected_video_fit_mode = stable_selectbox(
+                tr("Video Framing"),
+                options=video_fit_mode_values,
+                default_value=_saved_ui_choice(
+                    "video_fit_mode",
+                    video_fit_mode_values,
+                    VideoFitMode.fit.value,
+                ),
+                key="video_fit_mode_select",
+                format_func=lambda value: dict(
+                    (v, label) for label, v in video_fit_modes
+                )[value],
+                help=tr(
+                    "Fit keeps the complete source frame and may add black "
+                    "bars. Cover fills the output canvas and center-crops "
+                    "overflowing content."
+                ),
+            )
+            params.video_fit_mode = VideoFitMode(
+                selected_video_fit_mode
+            )
+            _set_runtime_config(
+                "ui",
+                "video_fit_mode",
+                params.video_fit_mode.value,
             )
 
             video_clip_durations = [2, 3, 4, 5, 6, 7, 8, 9, 10]

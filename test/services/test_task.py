@@ -1933,5 +1933,55 @@ def test_nasa_provider_resolves_as_searchable_and_requires_terms():
         is True
     )
 
+
+def test_generate_final_videos_forwards_video_fit_mode():
+    params = VideoParams(
+        video_subject="fit-mode-task",
+        video_count=1,
+        video_fit_mode="cover",
+    )
+
+    with (
+        patch.object(
+            tm.video,
+            "combine_videos",
+        ) as combine_videos,
+        patch.object(
+            tm.video,
+            "generate_video",
+        ),
+        patch.object(
+            tm.sm.state,
+            "update_task",
+        ),
+    ):
+        tm.generate_final_videos(
+            task_id="fit-mode-task",
+            params=params,
+            downloaded_videos=[
+                "material.mp4"
+            ],
+            audio_file="audio.mp3",
+            subtitle_path="",
+            audio_duration=5,
+        )
+
+    forwarded = (
+        combine_videos
+        .call_args
+        .kwargs[
+            "video_fit_mode"
+        ]
+    )
+
+    assert (
+        getattr(
+            forwarded,
+            "value",
+            forwarded,
+        )
+        == "cover"
+    )
+
 if __name__ == "__main__":
     unittest.main()

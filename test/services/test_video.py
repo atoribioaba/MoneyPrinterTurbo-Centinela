@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+import pytest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -1113,6 +1114,277 @@ class TestMaterialResolutionTolerance(unittest.TestCase):
     def test_rejects_genuinely_low_resolution_material(self):
         self.assertFalse(vd.is_material_resolution_acceptable(320, 240))
 
+
+
+def test_video_fit_mode_schema_contract():
+    assert [
+        item.value
+        for item in vd.VideoFitMode
+    ] == [
+        "fit",
+        "cover",
+    ]
+
+    params = vd.VideoParams(
+        video_subject="fit default"
+    )
+
+    assert (
+        getattr(
+            params.video_fit_mode,
+            "value",
+            params.video_fit_mode,
+        )
+        == "fit"
+    )
+
+
+def test_fit_video_clip_to_canvas_preserves_legacy_letterbox():
+    class FakeClip:
+        def __init__(
+            self,
+            width,
+            height,
+            duration=2.0,
+        ):
+            self.size = (
+                width,
+                height,
+            )
+            self.w = width
+            self.h = height
+            self.duration = duration
+            self.resized_result = None
+            self.position = None
+
+        def resized(
+            self,
+            new_size=None,
+            **kwargs,
+        ):
+            child = FakeClip(
+                new_size[0],
+                new_size[1],
+                self.duration,
+            )
+
+            self.resized_result = child
+            return child
+
+        def with_position(
+            self,
+            position,
+        ):
+            self.position = position
+            return self
+
+    class FakeColorClip:
+        def __init__(
+            self,
+            size,
+            color,
+        ):
+            self.size = size
+            self.color = color
+            self.duration = None
+
+        def with_duration(
+            self,
+            duration,
+        ):
+            self.duration = duration
+            return self
+
+    class FakeCompositeVideoClip:
+        def __init__(
+            self,
+            clips,
+        ):
+            self.clips = clips
+            self.size = clips[0].size
+
+    source = FakeClip(
+        1920,
+        1080,
+    )
+
+    with (
+        patch.object(
+            vd,
+            "ColorClip",
+            FakeColorClip,
+        ),
+        patch.object(
+            vd,
+            "CompositeVideoClip",
+            FakeCompositeVideoClip,
+        ),
+    ):
+        result = (
+            vd._fit_video_clip_to_canvas(
+                source,
+                1080,
+                1920,
+                vd.VideoFitMode.fit,
+            )
+        )
+
+    assert result.size == (
+        1080,
+        1920,
+    )
+
+    background = result.clips[0]
+    foreground = result.clips[1]
+
+    assert background.color == (
+        0,
+        0,
+        0,
+    )
+
+    assert foreground.size == (
+        1080,
+        607,
+    )
+
+    assert (
+        foreground.position
+        == "center"
+    )
+
+
+def test_fit_video_clip_to_canvas_cover_fills_and_center_crops():
+    class FakeClip:
+        def __init__(
+            self,
+            width,
+            height,
+            duration=2.0,
+        ):
+            self.size = (
+                width,
+                height,
+            )
+            self.w = width
+            self.h = height
+            self.duration = duration
+            self.resized_result = None
+            self.crop_call = None
+
+        def resized(
+            self,
+            new_size=None,
+            **kwargs,
+        ):
+            child = FakeClip(
+                new_size[0],
+                new_size[1],
+                self.duration,
+            )
+
+            self.resized_result = child
+            return child
+
+        def cropped(
+            self,
+            **kwargs,
+        ):
+            self.crop_call = kwargs
+
+            return FakeClip(
+                kwargs["width"],
+                kwargs["height"],
+                self.duration,
+            )
+
+    source = FakeClip(
+        1920,
+        1080,
+    )
+
+    with patch.object(
+        vd,
+        "ColorClip",
+        side_effect=AssertionError(
+            "cover must not create a letterbox background"
+        ),
+    ):
+        result = (
+            vd._fit_video_clip_to_canvas(
+                source,
+                1080,
+                1920,
+                vd.VideoFitMode.cover,
+            )
+        )
+
+    resized = (
+        source.resized_result
+    )
+
+    assert resized is not None
+
+    assert resized.size == (
+        3414,
+        1920,
+    )
+
+    assert resized.crop_call == {
+        "x1": 1167,
+        "y1": 0,
+        "width": 1080,
+        "height": 1920,
+    }
+
+    assert result.size == (
+        1080,
+        1920,
+    )
+
+
+def test_fit_video_clip_to_canvas_rejects_unknown_mode():
+    class FakeClip:
+        size = (1920, 1080)
+        w = 1920
+        h = 1080
+        duration = 1.0
+
+    with pytest.raises(
+        ValueError
+    ):
+        vd._fit_video_clip_to_canvas(
+            FakeClip(),
+            1080,
+            1920,
+            "smart",
+        )
+
+
+def test_combine_videos_fit_mode_default_is_backward_compatible():
+    import inspect
+
+    signature = inspect.signature(
+        vd.combine_videos
+    )
+
+    parameter = (
+        signature.parameters[
+            "video_fit_mode"
+        ]
+    )
+
+    assert (
+        parameter.default
+        is vd.VideoFitMode.fit
+    )
+
+    assert (
+        list(
+            signature.parameters
+        )[-1]
+        == "video_fit_mode"
+    )
 
 if __name__ == "__main__":
     unittest.main()

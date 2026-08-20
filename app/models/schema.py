@@ -47,6 +47,11 @@ class VideoAspect(str, Enum):
         raise ValueError(f"unsupported video aspect: {self}")
 
 
+class VideoFitMode(str, Enum):
+    fit = "fit"
+    cover = "cover"
+
+
 class _Config:
     arbitrary_types_allowed = True
 
@@ -81,6 +86,7 @@ class VideoParams(BaseModel):
     video_script: str = ""  # Script used to generate the video
     video_terms: Optional[str | list] = None  # Keywords used to generate the video
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
+    video_fit_mode: Optional[VideoFitMode] = VideoFitMode.fit.value
     video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
     video_transition_mode: Optional[VideoTransitionMode] = None
     video_clip_duration: int = Field(default=5, ge=1)

@@ -274,6 +274,16 @@ Output and exit status:
         help="output aspect ratio: portrait, landscape, or square",
     )
     video_group.add_argument(
+        "--video-fit-mode",
+        choices=["fit", "cover"],
+        default="fit",
+        help=(
+            "source framing policy: fit keeps the full frame with "
+            "letterboxing when needed; cover fills the canvas with a "
+            "center crop (default: fit)"
+        ),
+    )
+    video_group.add_argument(
         "--video-concat-mode",
         choices=["random", "sequential", "continuous"],
         default=None,
@@ -554,6 +564,7 @@ def build_video_params(args: argparse.Namespace) -> VideoParams:
         "video_materials": video_materials,
         "video_count": args.video_count,
         "video_aspect": args.video_aspect,
+        "video_fit_mode": args.video_fit_mode,
         "voice_name": args.voice_name,
         "subtitle_enabled": args.subtitle_enabled,
     }
