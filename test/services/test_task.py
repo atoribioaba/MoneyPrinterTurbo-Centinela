@@ -721,7 +721,7 @@ class TestTaskService(unittest.TestCase):
             subtitle_enabled=True,
         )
 
-        def fake_whisper_create(audio_file, subtitle_file):
+        def fake_whisper_create(audio_file, subtitle_file, video_script=""):
             Path(subtitle_file).write_text(
                 "1\n00:00:00,000 --> 00:00:01,000\nHello world.\n\n",
                 encoding="utf-8",
@@ -751,7 +751,9 @@ class TestTaskService(unittest.TestCase):
 
         self.assertTrue(subtitle_path.endswith("subtitle.srt"))
         create.assert_called_once_with(
-            audio_file=audio_file, subtitle_file=subtitle_path
+            audio_file=audio_file,
+            subtitle_file=subtitle_path,
+            video_script="Hello world.",
         )
         correct.assert_called_once_with(
             subtitle_file=subtitle_path, video_script="Hello world."
