@@ -171,6 +171,10 @@ def sanitize_provenance(
     if search_term:
         record["search_term"] = search_term
 
+    title = _safe_text(source.get("title"), limit=1024)
+    if title:
+        record["title"] = title
+
     asset_id = source.get("asset_id")
     if asset_id not in (None, ""):
         record["asset_id"] = str(asset_id)[:512]
@@ -178,6 +182,13 @@ def sanitize_provenance(
     source_page = safe_public_url(source.get("source_page"))
     if source_page:
         record["source_page"] = source_page
+
+    # Reserved for stable public media URLs supplied by trusted adapters.
+    # Signed/transient URLs must remain in provider-specific secret fields
+    # such as signed_url, which are not whitelisted by this sanitizer.
+    file_url = safe_public_url(source.get("file_url"))
+    if file_url:
+        record["file_url"] = file_url
 
     creator = sanitize_creator(source.get("creator"))
     if creator:

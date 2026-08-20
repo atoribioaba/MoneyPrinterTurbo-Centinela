@@ -1,3 +1,4 @@
+import hashlib
 import os
 import random
 import threading
@@ -87,12 +88,33 @@ def _material_source_record(
         else {}
     )
 
-    return sanitize_provenance(
+    record = sanitize_provenance(
         source,
         provider=item.provider,
         local_path=local_path,
         duration=item.duration,
     )
+
+    if local_path and os.path.isfile(local_path):
+        try:
+            digest = hashlib.sha256()
+
+            with open(local_path, "rb") as source_file:
+                for chunk in iter(
+                    lambda: source_file.read(1024 * 1024),
+                    b"",
+                ):
+                    digest.update(chunk)
+
+            record["sha256"] = digest.hexdigest()
+        except OSError as exc:
+            logger.warning(
+                "failed to calculate material SHA256: "
+                f"file={os.path.basename(local_path)!r}, "
+                f"error={type(exc).__name__}"
+            )
+
+    return record
 
 
 def _persist_material_sources(

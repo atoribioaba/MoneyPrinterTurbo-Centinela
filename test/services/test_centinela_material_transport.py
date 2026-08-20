@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import tempfile
@@ -420,6 +421,58 @@ class MaterialArtifactProvenanceTests(unittest.TestCase):
             r"D:\private\task",
             serialized,
         )
+
+
+class MaterialLocalSha256Tests(unittest.TestCase):
+    def test_material_source_record_hashes_downloaded_local_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_path = Path(temp_dir) / "vid-example.webm"
+            payload = b"Centinela local material provenance"
+            local_path.write_bytes(payload)
+
+            item = MaterialInfo(
+                provider="wikimedia",
+                url=(
+                    "https://upload.wikimedia.org/"
+                    "example.webm"
+                ),
+                duration=12,
+                source_info={
+                    "provider": "wikimedia",
+                    "title": "File:Example.webm",
+                    "file_url": (
+                        "https://upload.wikimedia.org/"
+                        "example.webm?tracking=drop"
+                    ),
+                    # Must never override the hash of the actual file.
+                    "sha256": "0" * 64,
+                },
+            )
+
+            record = material._material_source_record(
+                item,
+                str(local_path),
+            )
+
+            expected = hashlib.sha256(payload).hexdigest()
+
+            self.assertEqual(record["sha256"], expected)
+            self.assertNotEqual(record["sha256"], "0" * 64)
+            self.assertEqual(
+                record["local_file"],
+                "vid-example.webm",
+            )
+            self.assertEqual(
+                record["title"],
+                "File:Example.webm",
+            )
+            self.assertEqual(
+                record["file_url"],
+                (
+                    "https://upload.wikimedia.org/"
+                    "example.webm"
+                ),
+            )
 
 
 if __name__ == "__main__":

@@ -79,6 +79,41 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(record["mime"], "video/webm")
         self.assertEqual(len(record["sha256"]), 64)
 
+    def test_title_and_public_file_url_are_preserved(self):
+        source = {
+            "provider": "wikimedia",
+            "title": "File:Saturn Lightning.ogv",
+            "file_url": (
+                "https://upload.wikimedia.org/wikipedia/"
+                "commons/f/fc/Saturn_Lightning.ogv"
+                "?utm_source=commons"
+            ),
+            "signed_url": (
+                "https://example.invalid/download"
+                "?token=DO-NOT-PERSIST"
+            ),
+        }
+
+        record = sanitize_provenance(source)
+
+        self.assertEqual(
+            record["title"],
+            "File:Saturn Lightning.ogv",
+        )
+        self.assertEqual(
+            record["file_url"],
+            (
+                "https://upload.wikimedia.org/wikipedia/"
+                "commons/f/fc/Saturn_Lightning.ogv"
+            ),
+        )
+
+        serialized = repr(record)
+
+        self.assertNotIn("signed_url", record)
+        self.assertNotIn("DO-NOT-PERSIST", serialized)
+
+
     def test_unknown_and_secret_fields_are_not_persisted(self):
         source = {
             "provider": "example",
