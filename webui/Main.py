@@ -56,6 +56,11 @@ from app.services import sonilo as sonilo_service
 from app.services import state as sm
 from app.services import task as tm
 from app.services import version_checker
+from app.services.centinela import (
+    ProviderCapability,
+    ProviderKind,
+    build_default_provider_registry,
+)
 from app.utils.logging_utils import configure_terminal_logger
 from app.utils import utils
 
@@ -3331,6 +3336,63 @@ def _resolve_direct_local_material_paths(raw_paths: str):
 
     return materials, errors
 
+def _webui_video_provider_definitions():
+    """
+    Return video providers in the stable presentation order used by WebUI.
+
+    Provider identity and capabilities come from ProviderRegistry. WebUI only
+    defines presentation semantics: searchable sources first, then generative
+    sources, then local sources.
+    """
+    registry = build_default_provider_registry()
+    providers = []
+
+    for kind in (
+        ProviderKind.SEARCHABLE,
+        ProviderKind.GENERATIVE,
+        ProviderKind.LOCAL,
+    ):
+        providers.extend(
+            registry.matching(
+                kinds=(kind,),
+                required_capabilities=(
+                    ProviderCapability.VIDEO,
+                ),
+            )
+        )
+
+    return tuple(providers)
+
+
+def _webui_video_source_ids() -> tuple[str, ...]:
+    return tuple(
+        provider.provider_id
+        for provider in _webui_video_provider_definitions()
+    )
+
+
+def _webui_video_source_options():
+    """
+    Build translated WebUI labels while keeping provider IDs registry-driven.
+    """
+    label_overrides = {
+        "local": "Local file",
+    }
+
+    return tuple(
+        (
+            tr(
+                label_overrides.get(
+                    provider.provider_id,
+                    provider.display_name,
+                )
+            ),
+            provider.provider_id,
+        )
+        for provider in _webui_video_provider_definitions()
+    )
+
+
 def _render_video_settings(panel, params):
     """渲染视频设置并返回本次选择的本地素材。"""
     uploaded_files = []
@@ -3342,13 +3404,7 @@ def _render_video_settings(panel, params):
                 (tr("Random"), "random"),
                 ("Continuous", "continuous"),
             ]
-            video_sources = [
-                (tr("Pexels"), "pexels"),
-                (tr("Pixabay"), "pixabay"),
-                (tr("Coverr"), "coverr"),
-                (tr("Shengsuan Cloud AI Video"), "loomloom"),
-                (tr("Local file"), "local"),
-            ]
+            video_sources = _webui_video_source_options()
 
             saved_video_source_name = config.app.get("video_source", "pexels")
 
@@ -5311,13 +5367,7 @@ def _render_generation_controls(
             st.error(tr("Video Script and Subject Cannot Both Be Empty"))
             st.stop()
 
-        if params.video_source not in [
-            "pexels",
-            "pixabay",
-            "coverr",
-            "loomloom",
-            "local",
-        ]:
+        if params.video_source not in _webui_video_source_ids():
             _remove_active_generation_task(task_id)
             st.error(tr("Please Select a Valid Video Source"))
             st.stop()

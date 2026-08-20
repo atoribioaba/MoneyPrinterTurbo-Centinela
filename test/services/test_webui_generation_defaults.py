@@ -31,6 +31,70 @@ def _new_app():
     return app
 
 
+def test_video_source_selector_preserves_registry_driven_webui_contract():
+    test_app_config = dict(
+        config.app,
+        video_source="pexels",
+    )
+    test_ui_config = dict(
+        config.ui,
+        language="en",
+        voice_mode="tts",
+        tts_server="azure-tts-v1",
+        voice_name="en-US-JennyNeural-Female",
+    )
+
+    with (
+        patch.object(config, "app", test_app_config),
+        patch.object(config, "ui", test_ui_config),
+        patch.object(config, "try_save_config", return_value=True),
+        patch.object(
+            voice,
+            "get_all_azure_voices",
+            return_value=["en-US-JennyNeural-Female"],
+        ),
+    ):
+        app = _new_app()
+
+        expected_sources = (
+            "pexels",
+            "pixabay",
+            "coverr",
+            "loomloom",
+            "local",
+        )
+
+        for source in expected_sources:
+            with_source = _widget_by_key(
+                app.selectbox,
+                "video_source_select",
+            )
+            with_source.select(source).run()
+
+            assert _widget_by_key(
+                app.selectbox,
+                "video_source_select",
+            ).value == source
+
+        assert [str(item.value) for item in app.exception] == []
+
+
+def test_webui_video_source_identity_is_not_hardcoded_in_selector_or_validation():
+    source = WEBUI_MAIN.read_text(encoding="utf-8")
+
+    assert "video_sources = [" not in source
+    assert "params.video_source not in [" not in source
+
+    assert "video_sources = _webui_video_source_options()" in source
+    assert (
+        "params.video_source not in _webui_video_source_ids()"
+        in source
+    )
+
+    assert "build_default_provider_registry()" in source
+    assert "registry.matching(" in source
+
+
 def test_reusable_generation_settings_survive_a_new_webui_session():
     """Reusable controls should persist while per-video content stays session-only."""
     test_app_config = dict(
