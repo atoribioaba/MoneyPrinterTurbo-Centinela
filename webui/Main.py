@@ -113,7 +113,7 @@ DEFAULT_SUBTITLE_SETTINGS = {
     "text_fore_color": "#FFFFFF",
     "font_size": 60,
     "stroke_color": "#000000",
-    "stroke_width": 3.0,
+    "stroke_width": 1.5,
     "subtitle_background_enabled": False,
     "subtitle_background_color": "#000000",
     "rounded_subtitle_background": False,

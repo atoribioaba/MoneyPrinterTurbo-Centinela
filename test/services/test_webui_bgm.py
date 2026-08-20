@@ -86,7 +86,7 @@ class TestWebuiBackgroundMusic(unittest.TestCase):
         return self._widget_by_key(app.file_uploader, "custom_bgm_uploader")
 
     def _volume_select(self, app):
-        return self._widget_by_key(app.selectbox, "bgm_volume_select")
+        return self._widget_by_key(app.slider, "bgm_volume_select")
 
     def test_invalid_audio_shows_error_without_ready_state_or_player(self):
         for locale in TEST_LOCALES:
