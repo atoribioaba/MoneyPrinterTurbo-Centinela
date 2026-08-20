@@ -152,12 +152,19 @@ class TestMaterialSearchCache(unittest.TestCase):
         cache_path = self._cache_path()
         cache_path.write_text("{invalid-json", encoding="utf-8")
 
+        # Force this test into the corrupted-JSON branch. On filesystems where
+        # a just-written mtime can be fractionally ahead of time.time(), the
+        # production code correctly treats the entry as future-dated and
+        # removes it before parsing JSON, which made this assertion flaky.
+        cache_now = cache_path.stat().st_mtime + 1
+
         with patch("app.services.material_cache.logger.warning") as warning:
             loaded = material_cache.load_material_search_cache(
                 provider="pixabay",
                 search_term="nature",
                 minimum_duration=5,
                 video_aspect=VideoAspect.portrait,
+                now=cache_now,
             )
 
         self.assertIsNone(loaded)
