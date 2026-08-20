@@ -53,6 +53,49 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertTrue(loomloom.supports(ProviderCapability.REMOTE))
         self.assertTrue(loomloom.supports(ProviderCapability.PROGRESS))
 
+    def test_matching_selects_cli_compatible_video_sources_in_order(self):
+        registry = build_default_provider_registry()
+
+        providers = registry.matching(
+            kinds=(
+                ProviderKind.SEARCHABLE,
+                ProviderKind.LOCAL,
+            ),
+            required_capabilities=(
+                ProviderCapability.VIDEO,
+            ),
+        )
+
+        self.assertEqual(
+            [provider.provider_id for provider in providers],
+            [
+                "pexels",
+                "pixabay",
+                "coverr",
+                "local",
+            ],
+        )
+
+    def test_matching_can_select_all_current_video_sources(self):
+        registry = build_default_provider_registry()
+
+        providers = registry.matching(
+            required_capabilities=(
+                ProviderCapability.VIDEO,
+            )
+        )
+
+        self.assertEqual(
+            [provider.provider_id for provider in providers],
+            [
+                "pexels",
+                "pixabay",
+                "coverr",
+                "local",
+                "loomloom",
+            ],
+        )
+
     def test_duplicate_provider_is_rejected(self):
         registry = ProviderRegistry()
 

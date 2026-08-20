@@ -85,6 +85,32 @@ class ProviderRegistry:
     def all(self) -> tuple[ProviderDefinition, ...]:
         return tuple(self._providers.values())
 
+    def matching(
+        self,
+        *,
+        kinds: Iterable[ProviderKind] | None = None,
+        required_capabilities: Iterable[ProviderCapability] = (),
+    ) -> tuple[ProviderDefinition, ...]:
+        """
+        Return registered providers matching kind and capability constraints.
+
+        Registration order is preserved so callers such as CLI and WebUI can
+        derive stable user-facing source lists without maintaining separate
+        provider identity tables.
+        """
+        allowed_kinds = frozenset(kinds) if kinds is not None else None
+        required = frozenset(required_capabilities)
+
+        return tuple(
+            provider
+            for provider in self._providers.values()
+            if (
+                allowed_kinds is None
+                or provider.kind in allowed_kinds
+            )
+            and required.issubset(provider.capabilities)
+        )
+
 
 def build_default_provider_registry() -> ProviderRegistry:
     """Describe providers already implemented by the current MPT baseline."""
