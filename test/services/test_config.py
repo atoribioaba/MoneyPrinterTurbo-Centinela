@@ -536,3 +536,13 @@ def test_config_example_documents_video_fit_mode():
         '"cover"'
         in text
     )
+
+    assert (
+        "# focal_x = 0.5"
+        in text
+    )
+
+    assert (
+        "# focal_y = 0.5"
+        in text
+    )

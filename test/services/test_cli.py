@@ -757,5 +757,50 @@ def test_video_fit_mode_cli_default_and_cover():
         == "cover"
     )
 
+
+def test_focal_cli_defaults_and_custom_values():
+    import cli as cli_module
+
+    default_args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "focal defaults",
+        ]
+    )
+
+    assert default_args.focal_x == 0.5
+    assert default_args.focal_y == 0.5
+
+    default_params = (
+        cli_module.build_video_params(
+            default_args
+        )
+    )
+
+    assert default_params.focal_x == 0.5
+    assert default_params.focal_y == 0.5
+
+    custom_args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "focal custom",
+            "--video-fit-mode",
+            "cover",
+            "--focal-x",
+            "0.8",
+            "--focal-y",
+            "0.2",
+        ]
+    )
+
+    custom_params = (
+        cli_module.build_video_params(
+            custom_args
+        )
+    )
+
+    assert custom_params.focal_x == 0.8
+    assert custom_params.focal_y == 0.2
+
 if __name__ == "__main__":
     unittest.main()

@@ -1983,5 +1983,67 @@ def test_generate_final_videos_forwards_video_fit_mode():
         == "cover"
     )
 
+
+def test_generate_final_videos_forwards_focal_coordinates():
+    params = VideoParams(
+        video_subject="focal-task",
+        video_count=1,
+        video_fit_mode="cover",
+        focal_x=0.8,
+        focal_y=0.2,
+    )
+
+    with (
+        patch.object(
+            tm.video,
+            "combine_videos",
+        ) as combine_videos,
+        patch.object(
+            tm.video,
+            "generate_video",
+        ),
+        patch.object(
+            tm.sm.state,
+            "update_task",
+        ),
+    ):
+        tm.generate_final_videos(
+            task_id="focal-task",
+            params=params,
+            downloaded_videos=[
+                "material.mp4"
+            ],
+            audio_file="audio.mp3",
+            subtitle_path="",
+            audio_duration=5,
+        )
+
+    kwargs = (
+        combine_videos
+        .call_args
+        .kwargs
+    )
+
+    forwarded_fit_mode = kwargs[
+        "video_fit_mode"
+    ]
+
+    assert (
+        getattr(
+            forwarded_fit_mode,
+            "value",
+            forwarded_fit_mode,
+        )
+        == "cover"
+    )
+
+    assert kwargs[
+        "focal_x"
+    ] == 0.8
+
+    assert kwargs[
+        "focal_y"
+    ] == 0.2
+
 if __name__ == "__main__":
     unittest.main()

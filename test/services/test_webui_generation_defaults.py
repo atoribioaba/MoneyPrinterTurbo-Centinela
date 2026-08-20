@@ -155,6 +155,14 @@ def test_reusable_generation_settings_survive_a_new_webui_session():
             first_session.selectbox,
             "video_fit_mode_select",
         ).set_value("cover")
+        _widget_by_key(
+            first_session.slider,
+            "focal_x_slider",
+        ).set_value(0.8)
+        _widget_by_key(
+            first_session.slider,
+            "focal_y_slider",
+        ).set_value(0.2)
         _widget_by_key(first_session.selectbox, "video_clip_duration_select").set_value(
             7
         )
@@ -216,6 +224,8 @@ def test_reusable_generation_settings_survive_a_new_webui_session():
             "video_aspect_pexels": "16:9",
             "video_aspect_coverr": "9:16",
             "video_fit_mode": "cover",
+            "focal_x": 0.8,
+            "focal_y": 0.2,
             "video_clip_duration": 7,
             "video_clip_speed": 1.5,
             "video_count": 3,
@@ -266,6 +276,14 @@ def test_reusable_generation_settings_survive_a_new_webui_session():
             second_session.selectbox,
             "video_fit_mode_select",
         ).value == "cover"
+        assert _widget_by_key(
+            second_session.slider,
+            "focal_x_slider",
+        ).value == 0.8
+        assert _widget_by_key(
+            second_session.slider,
+            "focal_y_slider",
+        ).value == 0.2
         _widget_by_key(second_session.selectbox, "video_source_select").set_value(
             "coverr"
         ).run()
@@ -359,6 +377,8 @@ def test_invalid_saved_generation_settings_fall_back_without_breaking_webui():
         video_transition_mode="not-a-transition",
         video_aspect_pexels="4:3",
         video_fit_mode="not-a-mode",
+        focal_x=-1,
+        focal_y="nan",
         video_clip_duration=999,
         video_clip_speed="nan",
         video_count=True,
@@ -394,6 +414,8 @@ def test_invalid_saved_generation_settings_fall_back_without_breaking_webui():
     )
     assert _widget_by_key(app.selectbox, "video_aspect_for_pexels").value == "9:16"
     assert _widget_by_key(app.selectbox, "video_fit_mode_select").value == "fit"
+    assert _widget_by_key(app.slider, "focal_x_slider").value == 0.5
+    assert _widget_by_key(app.slider, "focal_y_slider").value == 0.5
     assert _widget_by_key(app.selectbox, "video_clip_duration_select").value == 3
     assert _widget_by_key(app.slider, "video_clip_speed_slider").value == 1.0
     assert _widget_by_key(app.selectbox, "video_count_select").value == 1

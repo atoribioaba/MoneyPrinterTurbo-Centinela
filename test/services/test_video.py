@@ -1379,11 +1379,428 @@ def test_combine_videos_fit_mode_default_is_backward_compatible():
         is vd.VideoFitMode.fit
     )
 
+    names = list(
+        signature.parameters
+    )
+
+    assert names[-3:] == [
+        "video_fit_mode",
+        "focal_x",
+        "focal_y",
+    ]
+
+
+def test_focal_crop_schema_defaults_and_bounds():
+    params = vd.VideoParams(
+        video_subject="focal defaults"
+    )
+
+    assert params.focal_x == 0.5
+    assert params.focal_y == 0.5
+
+    edge = vd.VideoParams(
+        video_subject="focal edges",
+        focal_x=0.0,
+        focal_y=1.0,
+    )
+
+    assert edge.focal_x == 0.0
+    assert edge.focal_y == 1.0
+
+    with pytest.raises(
+        Exception
+    ):
+        vd.VideoParams(
+            video_subject="bad focal x",
+            focal_x=-0.01,
+        )
+
+    with pytest.raises(
+        Exception
+    ):
+        vd.VideoParams(
+            video_subject="bad focal y",
+            focal_y=1.01,
+        )
+
+
+def test_focal_crop_origin_horizontal_contract():
+    center = vd._focal_crop_origin(
+        resized_width=3414,
+        resized_height=1920,
+        target_width=1080,
+        target_height=1920,
+        focal_x=0.5,
+        focal_y=0.5,
+    )
+
+    left = vd._focal_crop_origin(
+        resized_width=3414,
+        resized_height=1920,
+        target_width=1080,
+        target_height=1920,
+        focal_x=0.0,
+        focal_y=0.5,
+    )
+
+    right = vd._focal_crop_origin(
+        resized_width=3414,
+        resized_height=1920,
+        target_width=1080,
+        target_height=1920,
+        focal_x=1.0,
+        focal_y=0.5,
+    )
+
+    assert center == (
+        1167,
+        0,
+    )
+
+    assert left == (
+        0,
+        0,
+    )
+
+    assert right == (
+        2334,
+        0,
+    )
+
+
+def test_focal_crop_origin_vertical_contract():
+    center = vd._focal_crop_origin(
+        resized_width=1920,
+        resized_height=3414,
+        target_width=1920,
+        target_height=1080,
+        focal_x=0.5,
+        focal_y=0.5,
+    )
+
+    top = vd._focal_crop_origin(
+        resized_width=1920,
+        resized_height=3414,
+        target_width=1920,
+        target_height=1080,
+        focal_x=0.5,
+        focal_y=0.0,
+    )
+
+    bottom = vd._focal_crop_origin(
+        resized_width=1920,
+        resized_height=3414,
+        target_width=1920,
+        target_height=1080,
+        focal_x=0.5,
+        focal_y=1.0,
+    )
+
+    assert center == (
+        0,
+        1167,
+    )
+
+    assert top == (
+        0,
+        0,
+    )
+
+    assert bottom == (
+        0,
+        2334,
+    )
+
+
+def test_focal_crop_origin_rejects_invalid_coordinates():
+    for focal_x in (
+        -0.01,
+        1.01,
+    ):
+        with pytest.raises(
+            ValueError
+        ):
+            vd._focal_crop_origin(
+                3414,
+                1920,
+                1080,
+                1920,
+                focal_x,
+                0.5,
+            )
+
+    for focal_y in (
+        -0.01,
+        1.01,
+    ):
+        with pytest.raises(
+            ValueError
+        ):
+            vd._focal_crop_origin(
+                1920,
+                3414,
+                1920,
+                1080,
+                0.5,
+                focal_y,
+            )
+
+
+def test_focal_center_preserves_cover_center_for_odd_overflow():
+    # Historical COVER uses overflow // 2.
+    # The focal implementation must remain identical when focal=0.5,
+    # including odd overflow dimensions.
+    resized_width = 3413
+    target_width = 1080
+
+    crop_x, crop_y = (
+        vd._focal_crop_origin(
+            resized_width=resized_width,
+            resized_height=1920,
+            target_width=target_width,
+            target_height=1920,
+            focal_x=0.5,
+            focal_y=0.5,
+        )
+    )
+
+    assert crop_x == (
+        resized_width
+        - target_width
+    ) // 2
+
+    assert crop_y == 0
+
+
+def test_cover_uses_requested_focal_x():
+    class FakeClip:
+        def __init__(
+            self,
+            width,
+            height,
+            duration=2.0,
+        ):
+            self.size = (
+                width,
+                height,
+            )
+            self.w = width
+            self.h = height
+            self.duration = duration
+            self.resized_result = None
+            self.crop_call = None
+
+        def resized(
+            self,
+            new_size=None,
+            **kwargs,
+        ):
+            child = FakeClip(
+                new_size[0],
+                new_size[1],
+                self.duration,
+            )
+
+            self.resized_result = child
+            return child
+
+        def cropped(
+            self,
+            **kwargs,
+        ):
+            self.crop_call = kwargs
+
+            return FakeClip(
+                kwargs["width"],
+                kwargs["height"],
+                self.duration,
+            )
+
+    source = FakeClip(
+        1920,
+        1080,
+    )
+
+    result = (
+        vd._fit_video_clip_to_canvas(
+            source,
+            1080,
+            1920,
+            vd.VideoFitMode.cover,
+            focal_x=1.0,
+            focal_y=0.5,
+        )
+    )
+
+    resized = source.resized_result
+
+    assert resized.size == (
+        3414,
+        1920,
+    )
+
+    assert resized.crop_call == {
+        "x1": 2334,
+        "y1": 0,
+        "width": 1080,
+        "height": 1920,
+    }
+
+    assert result.size == (
+        1080,
+        1920,
+    )
+
+
+def test_fit_geometry_is_independent_of_focal_coordinates():
+    class FakeClip:
+        def __init__(
+            self,
+            width,
+            height,
+            duration=2.0,
+        ):
+            self.size = (
+                width,
+                height,
+            )
+            self.w = width
+            self.h = height
+            self.duration = duration
+            self.position = None
+
+        def resized(
+            self,
+            new_size=None,
+            **kwargs,
+        ):
+            return FakeClip(
+                new_size[0],
+                new_size[1],
+                self.duration,
+            )
+
+        def with_position(
+            self,
+            position,
+        ):
+            self.position = position
+            return self
+
+    class FakeColorClip:
+        def __init__(
+            self,
+            size,
+            color,
+        ):
+            self.size = size
+            self.color = color
+
+        def with_duration(
+            self,
+            _duration,
+        ):
+            return self
+
+    class FakeCompositeVideoClip:
+        def __init__(
+            self,
+            clips,
+        ):
+            self.clips = clips
+            self.size = clips[0].size
+
+    with (
+        patch.object(
+            vd,
+            "ColorClip",
+            FakeColorClip,
+        ),
+        patch.object(
+            vd,
+            "CompositeVideoClip",
+            FakeCompositeVideoClip,
+        ),
+    ):
+        left = (
+            vd._fit_video_clip_to_canvas(
+                FakeClip(
+                    1920,
+                    1080,
+                ),
+                1080,
+                1920,
+                vd.VideoFitMode.fit,
+                focal_x=0.0,
+                focal_y=0.0,
+            )
+        )
+
+        right = (
+            vd._fit_video_clip_to_canvas(
+                FakeClip(
+                    1920,
+                    1080,
+                ),
+                1080,
+                1920,
+                vd.VideoFitMode.fit,
+                focal_x=1.0,
+                focal_y=1.0,
+            )
+        )
+
+    assert left.size == right.size == (
+        1080,
+        1920,
+    )
+
     assert (
-        list(
-            signature.parameters
-        )[-1]
-        == "video_fit_mode"
+        left.clips[1].size
+        == right.clips[1].size
+        == (
+            1080,
+            607,
+        )
+    )
+
+
+def test_combine_videos_focal_parameters_are_appended():
+    import inspect
+
+    signature = inspect.signature(
+        vd.combine_videos
+    )
+
+    names = list(
+        signature.parameters
+    )
+
+    assert names[-3:] == [
+        "video_fit_mode",
+        "focal_x",
+        "focal_y",
+    ]
+
+    assert (
+        signature.parameters[
+            "video_fit_mode"
+        ].default
+        is vd.VideoFitMode.fit
+    )
+
+    assert (
+        signature.parameters[
+            "focal_x"
+        ].default
+        == 0.5
+    )
+
+    assert (
+        signature.parameters[
+            "focal_y"
+        ].default
+        == 0.5
     )
 
 if __name__ == "__main__":

@@ -1128,6 +1128,32 @@ def _infer_tts_server_from_voice(voice_name):
     return "azure-tts-v1"
 
 
+
+def _normalize_focal_value(value, default=0.5):
+    """
+    Normalize WebUI/task focal values to the renderer contract [0, 1].
+
+    Invalid legacy configuration values, booleans, NaN and infinities
+    fall back to the centered default instead of breaking Streamlit.
+    """
+    if isinstance(value, bool):
+        return float(default)
+
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+    if not (
+        0.0
+        <= value
+        <= 1.0
+    ):
+        return float(default)
+
+    return value
+
+
 def _set_stable_widget_value(key, value):
     if value is not None:
         st.session_state[localized_widget_key(key)] = value
@@ -1173,6 +1199,18 @@ def _apply_pending_task_restore():
     _set_stable_widget_value(
         "video_fit_mode_select",
         params.get("video_fit_mode") or VideoFitMode.fit.value,
+    )
+    _set_stable_widget_value(
+        "focal_x_slider",
+        _normalize_focal_value(
+            params.get("focal_x", 0.5)
+        ),
+    )
+    _set_stable_widget_value(
+        "focal_y_slider",
+        _normalize_focal_value(
+            params.get("focal_y", 0.5)
+        ),
     )
     _set_stable_widget_value(
         "video_clip_duration_select", params.get("video_clip_duration", 3)
@@ -3675,6 +3713,78 @@ def _render_video_settings(panel, params):
                 "ui",
                 "video_fit_mode",
                 params.video_fit_mode.value,
+            )
+
+            focal_x_key = localized_widget_key(
+                "focal_x_slider"
+            )
+            focal_y_key = localized_widget_key(
+                "focal_y_slider"
+            )
+
+            st.session_state[focal_x_key] = (
+                _normalize_focal_value(
+                    st.session_state.get(
+                        focal_x_key,
+                        config.ui.get(
+                            "focal_x",
+                            0.5,
+                        ),
+                    )
+                )
+            )
+            st.session_state[focal_y_key] = (
+                _normalize_focal_value(
+                    st.session_state.get(
+                        focal_y_key,
+                        config.ui.get(
+                            "focal_y",
+                            0.5,
+                        ),
+                    )
+                )
+            )
+
+            focal_disabled = (
+                params.video_fit_mode
+                != VideoFitMode.cover
+            )
+
+            focal_cols = st.columns(2)
+
+            with focal_cols[0]:
+                params.focal_x = st.slider(
+                    tr("Horizontal Focus"),
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.05,
+                    format="%.2f",
+                    key=focal_x_key,
+                    disabled=focal_disabled,
+                    help=tr("Horizontal Focus Help"),
+                )
+
+            with focal_cols[1]:
+                params.focal_y = st.slider(
+                    tr("Vertical Focus"),
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.05,
+                    format="%.2f",
+                    key=focal_y_key,
+                    disabled=focal_disabled,
+                    help=tr("Vertical Focus Help"),
+                )
+
+            _set_runtime_config(
+                "ui",
+                "focal_x",
+                params.focal_x,
+            )
+            _set_runtime_config(
+                "ui",
+                "focal_y",
+                params.focal_y,
             )
 
             video_clip_durations = [2, 3, 4, 5, 6, 7, 8, 9, 10]

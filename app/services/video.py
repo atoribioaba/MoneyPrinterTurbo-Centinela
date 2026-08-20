@@ -537,11 +537,116 @@ def get_bgm_file(bgm_type: str = "random", bgm_file: str = ""):
 
 
 
+
+def _focal_crop_origin(
+    resized_width: int,
+    resized_height: int,
+    target_width: int,
+    target_height: int,
+    focal_x: float = 0.5,
+    focal_y: float = 0.5,
+) -> tuple[int, int]:
+    """
+    Return a clamped crop origin for normalized focal coordinates.
+
+    The focal point is expressed in normalized source-frame space:
+
+    x: 0.0 = left, 0.5 = center, 1.0 = right
+    y: 0.0 = top,  0.5 = center, 1.0 = bottom
+
+    Center focal coordinates deliberately reproduce the historical
+    centered COVER crop.
+    """
+    focal_x = float(
+        focal_x
+    )
+    focal_y = float(
+        focal_y
+    )
+
+    if not (
+        0.0
+        <= focal_x
+        <= 1.0
+    ):
+        raise ValueError(
+            "focal_x must be between 0.0 and 1.0"
+        )
+
+    if not (
+        0.0
+        <= focal_y
+        <= 1.0
+    ):
+        raise ValueError(
+            "focal_y must be between 0.0 and 1.0"
+        )
+
+    if (
+        resized_width <= 0
+        or resized_height <= 0
+        or target_width <= 0
+        or target_height <= 0
+    ):
+        raise ValueError(
+            "focal crop dimensions must be positive"
+        )
+
+    max_x = max(
+        0,
+        resized_width
+        - target_width,
+    )
+
+    max_y = max(
+        0,
+        resized_height
+        - target_height,
+    )
+
+    # int() floors every positive candidate and therefore makes
+    # focal=0.5 identical to the historical overflow // 2 crop.
+    desired_x = int(
+        focal_x
+        * resized_width
+        - target_width / 2
+    )
+
+    desired_y = int(
+        focal_y
+        * resized_height
+        - target_height / 2
+    )
+
+    crop_x = max(
+        0,
+        min(
+            desired_x,
+            max_x,
+        ),
+    )
+
+    crop_y = max(
+        0,
+        min(
+            desired_y,
+            max_y,
+        ),
+    )
+
+    return (
+        crop_x,
+        crop_y,
+    )
+
+
 def _fit_video_clip_to_canvas(
     clip,
     target_width: int,
     target_height: int,
     fit_mode: VideoFitMode = VideoFitMode.fit,
+    focal_x: float = 0.5,
+    focal_y: float = 0.5,
 ):
     """
     Map a source clip onto the output canvas.
@@ -554,7 +659,9 @@ def _fit_video_clip_to_canvas(
         Fill the complete canvas without distortion and remove only
         overflowing pixels with a centered crop.
 
-    Subject-aware or focal-point cropping is intentionally outside V0.1.
+    COVER can be positioned with normalized focal coordinates.
+    Subject detection and automatic focal selection are intentionally
+    outside this implementation.
     """
     mode = VideoFitMode(
         fit_mode
@@ -688,22 +795,13 @@ def _fit_video_clip_to_canvas(
         )
     )
 
-    crop_x = max(
-        0,
-        (
-            new_width
-            - target_width
-        )
-        // 2,
-    )
-
-    crop_y = max(
-        0,
-        (
-            new_height
-            - target_height
-        )
-        // 2,
+    crop_x, crop_y = _focal_crop_origin(
+        resized_width=new_width,
+        resized_height=new_height,
+        target_width=target_width,
+        target_height=target_height,
+        focal_x=focal_x,
+        focal_y=focal_y,
     )
 
     return resized.cropped(
@@ -725,6 +823,8 @@ def combine_videos(
     threads: int = 2,
     clip_speed: float = 1.0,
     video_fit_mode: VideoFitMode = VideoFitMode.fit,
+    focal_x: float = 0.5,
+    focal_y: float = 0.5,
 ) -> str:
     audio_clip = AudioFileClip(audio_file)
     try:
@@ -827,6 +927,8 @@ def combine_videos(
                 target_width=video_width,
                 target_height=video_height,
                 fit_mode=fit_mode,
+                focal_x=focal_x,
+                focal_y=focal_y,
             )
 
             shuffle_side = random.choice(["left", "right", "top", "bottom"])

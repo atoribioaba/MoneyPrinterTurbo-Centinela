@@ -402,7 +402,9 @@ open_task_folder_on_completion = true
 # video_concat_mode = "random"       # "random" or "sequential"
 # video_transition_mode = "None"     # "None", "Shuffle", "FadeIn", etc.
 # video_aspect_pexels = "9:16"       # Stored separately for each video source.
-# video_fit_mode = "fit"              # "fit" keeps the full frame; "cover" fills and center-crops.
+# video_fit_mode = "fit"              # "fit" keeps the full frame; "cover" fills and crops around the focal point.
+# focal_x = 0.5                       # Cover focus: 0=left, 0.5=center, 1=right. Ignored by fit.
+# focal_y = 0.5                       # Cover focus: 0=top, 0.5=center, 1=bottom. Ignored by fit.
 # video_clip_duration = 3
 # video_clip_speed = 1.0
 # video_count = 1

@@ -279,8 +279,26 @@ Output and exit status:
         default="fit",
         help=(
             "source framing policy: fit keeps the full frame with "
-            "letterboxing when needed; cover fills the canvas with a "
-            "center crop (default: fit)"
+            "letterboxing when needed; cover fills the canvas and crops "
+            "around the focal point (default: fit)"
+        ),
+    )
+    video_group.add_argument(
+        "--focal-x",
+        type=float,
+        default=0.5,
+        help=(
+            "horizontal focal coordinate used by cover: "
+            "0.0=left, 0.5=center, 1.0=right (default: 0.5)"
+        ),
+    )
+    video_group.add_argument(
+        "--focal-y",
+        type=float,
+        default=0.5,
+        help=(
+            "vertical focal coordinate used by cover: "
+            "0.0=top, 0.5=center, 1.0=bottom (default: 0.5)"
         ),
     )
     video_group.add_argument(
@@ -565,6 +583,8 @@ def build_video_params(args: argparse.Namespace) -> VideoParams:
         "video_count": args.video_count,
         "video_aspect": args.video_aspect,
         "video_fit_mode": args.video_fit_mode,
+        "focal_x": args.focal_x,
+        "focal_y": args.focal_y,
         "voice_name": args.voice_name,
         "subtitle_enabled": args.subtitle_enabled,
     }
