@@ -2069,6 +2069,7 @@ def _resolve_remote_video_search_provider(
         "pixabay": search_videos_pixabay,
         "coverr": search_videos_coverr,
         "wikimedia": search_videos_wikimedia,
+        "nasa": search_videos_nasa,
     }
 
     remote_search_videos = search_adapters.get(

@@ -42,6 +42,7 @@ class TestConfigPersistence:
             "pixabay",
             "coverr",
             "wikimedia",
+            "nasa",
             "loomloom",
             "local",
         }

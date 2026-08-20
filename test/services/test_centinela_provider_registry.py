@@ -19,10 +19,11 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertTrue(registry.contains("pixabay"))
         self.assertTrue(registry.contains("coverr"))
         self.assertTrue(registry.contains("wikimedia"))
+        self.assertTrue(registry.contains("nasa"))
         self.assertTrue(registry.contains("local"))
         self.assertTrue(registry.contains("loomloom"))
 
-        self.assertEqual(len(registry.all()), 6)
+        self.assertEqual(len(registry.all()), 7)
 
     def test_search_provider_capabilities(self):
         registry = build_default_provider_registry()
@@ -104,6 +105,7 @@ class ProviderRegistryTests(unittest.TestCase):
                 "pixabay",
                 "coverr",
                 "wikimedia",
+                "nasa",
                 "local",
             ],
         )
@@ -124,6 +126,7 @@ class ProviderRegistryTests(unittest.TestCase):
                 "pixabay",
                 "coverr",
                 "wikimedia",
+                "nasa",
                 "local",
                 "loomloom",
             ],
@@ -159,6 +162,40 @@ class ProviderRegistryTests(unittest.TestCase):
                 capabilities=frozenset(),
             )
 
+
+
+def test_nasa_search_provider_capabilities():
+    from app.services.centinela import (
+        ProviderCapability,
+        ProviderKind,
+        build_default_provider_registry,
+    )
+
+    registry = build_default_provider_registry()
+    provider = registry.get("nasa")
+
+    assert (
+        provider.display_name
+        == "NASA Image and Video Library"
+    )
+
+    assert (
+        provider.kind
+        is ProviderKind.SEARCHABLE
+    )
+
+    assert provider.requires_api_key is False
+
+    for capability in (
+        ProviderCapability.SEARCH,
+        ProviderCapability.DOWNLOAD,
+        ProviderCapability.REMOTE,
+        ProviderCapability.VIDEO,
+        ProviderCapability.LICENSE_METADATA,
+    ):
+        assert provider.supports(
+            capability
+        )
 
 if __name__ == "__main__":
     unittest.main()

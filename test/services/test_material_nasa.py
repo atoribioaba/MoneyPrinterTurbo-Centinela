@@ -823,19 +823,28 @@ class TestNasaMaterialAdapter(
         )
 
 
-    def test_nasa_adapter_exists_but_provider_and_router_remain_inactive(self):
+    def test_registered_nasa_routes_to_search_adapter(self):
         self.assertTrue(
             callable(
                 material.search_videos_nasa
             )
         )
 
-        with self.assertRaises(
-            ValueError,
-        ):
+        provider_id, adapter = (
             material._resolve_remote_video_search_provider(
                 "nasa"
             )
+        )
+
+        self.assertEqual(
+            provider_id,
+            "nasa",
+        )
+
+        self.assertIs(
+            adapter,
+            material.search_videos_nasa,
+        )
 
 
 if __name__ == "__main__":

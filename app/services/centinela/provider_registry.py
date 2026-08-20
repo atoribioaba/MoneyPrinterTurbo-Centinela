@@ -177,6 +177,21 @@ def build_default_provider_registry() -> ProviderRegistry:
                 requires_api_key=False,
             ),
             ProviderDefinition(
+                provider_id="nasa",
+                display_name="NASA Image and Video Library",
+                kind=ProviderKind.SEARCHABLE,
+                capabilities=frozenset(
+                    {
+                        ProviderCapability.SEARCH,
+                        ProviderCapability.DOWNLOAD,
+                        ProviderCapability.REMOTE,
+                        ProviderCapability.VIDEO,
+                        ProviderCapability.LICENSE_METADATA,
+                    }
+                ),
+                requires_api_key=False,
+            ),
+            ProviderDefinition(
                 provider_id="local",
                 display_name="Local",
                 kind=ProviderKind.LOCAL,

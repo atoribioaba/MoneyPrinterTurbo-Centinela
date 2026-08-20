@@ -1907,5 +1907,31 @@ class TestTaskService(unittest.TestCase):
         print(result)
 
 
+
+def test_nasa_provider_resolves_as_searchable_and_requires_terms():
+    from app.services.centinela import (
+        ProviderKind,
+    )
+
+    provider = (
+        tm._resolve_task_video_provider(
+            "nasa"
+        )
+    )
+
+    assert provider.provider_id == "nasa"
+
+    assert (
+        provider.kind
+        is ProviderKind.SEARCHABLE
+    )
+
+    assert (
+        tm._task_provider_requires_terms(
+            provider
+        )
+        is True
+    )
+
 if __name__ == "__main__":
     unittest.main()

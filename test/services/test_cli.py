@@ -165,6 +165,7 @@ class TestCli(unittest.TestCase):
                 "pixabay",
                 "coverr",
                 "wikimedia",
+                "nasa",
                 "local",
             ),
         )
@@ -681,6 +682,25 @@ class TestCli(unittest.TestCase):
         self.assertIn("Generate MoneyPrinterTurbo videos", result.stdout)
         self.assertEqual(result.stderr, "")
 
+
+
+def test_nasa_video_source_accepted():
+    import cli as cli_module
+
+    args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "test",
+            "--video-source",
+            "nasa",
+        ]
+    )
+
+    params = cli_module.build_video_params(
+        args
+    )
+
+    assert params.video_source == "nasa"
 
 if __name__ == "__main__":
     unittest.main()
