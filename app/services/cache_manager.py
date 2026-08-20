@@ -13,9 +13,12 @@ from loguru import logger
 from app.utils import utils
 
 
-# 在线素材使用 URL 的 MD5 作为稳定文件名。缓存管理只接受该命名格式，避免把
-# 用户误放到目录中的视频、说明文件或其它业务文件当作缓存删除。
-_VIDEO_CACHE_FILE_PATTERN = re.compile(r"^vid-[0-9a-f]{32}\.mp4$")
+# 在线素材使用 URL 的 MD5 作为稳定文件名。缓存管理只接受该命名格式和
+# 明确允许的视频容器，避免把用户误放到目录中的说明文件或其它业务文件当作
+# 缓存删除。
+_VIDEO_CACHE_FILE_PATTERN = re.compile(
+    r"^vid-[0-9a-f]{32}\.(?:mp4|webm|ogv|ogg)$"
+)
 _SECONDS_PER_DAY = 24 * 60 * 60
 
 

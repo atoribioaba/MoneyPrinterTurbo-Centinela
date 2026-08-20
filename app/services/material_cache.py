@@ -16,6 +16,7 @@ from urllib.parse import urlsplit, urlunsplit
 from loguru import logger
 
 from app.models.schema import MaterialInfo, VideoAspect
+from app.services.centinela.provenance import sanitize_provenance
 from app.utils import utils
 
 
@@ -52,51 +53,26 @@ def _safe_public_url(value) -> str | None:
 
 def _cached_source_info(item: MaterialInfo) -> dict | None:
     """
-    按白名单构造可落盘的来源信息。
+    Build disk-safe source metadata using Centinela's canonical provenance gate.
 
-    搜索关键词已经包含在缓存键中，不再明文写入缓存内容；读取时由调用参数
-    恢复。下载 URL 由 ``MaterialInfo.url`` 单独保存，这里只允许公开素材页、
-    作者公开页和稳定业务标识，避免任意扩展字段进入磁盘缓存。
+    Search terms already participate in the cache key and are deliberately not
+    persisted in cache contents. They are restored by the cache reader. Legal
+    provenance, on the other hand, must survive a cache round trip.
     """
     source = item.source_info
+
     if not isinstance(source, dict) or not source:
         return None
 
-    cached: dict = {
-        "provider": str(source.get("provider") or item.provider),
-    }
-    asset_id = source.get("asset_id")
-    source_page = _safe_public_url(source.get("source_page"))
-    if asset_id not in (None, ""):
-        cached["asset_id"] = str(asset_id)
-    if source_page:
-        cached["source_page"] = source_page
+    source_without_search_term = dict(source)
+    source_without_search_term.pop("search_term", None)
 
-    raw_creator = source.get("creator")
-    if isinstance(raw_creator, dict):
-        creator = {}
-        creator_id = raw_creator.get("id")
-        creator_name = raw_creator.get("name")
-        creator_page = _safe_public_url(raw_creator.get("profile_page"))
-        if creator_id not in (None, ""):
-            creator["id"] = str(creator_id)
-        if creator_name not in (None, ""):
-            creator["name"] = str(creator_name)
-        if creator_page:
-            creator["profile_page"] = creator_page
-        if creator:
-            cached["creator"] = creator
+    cached = sanitize_provenance(
+        source_without_search_term,
+        provider=item.provider,
+    )
 
-    raw_rendition = source.get("rendition")
-    if isinstance(raw_rendition, dict):
-        rendition = {}
-        for field in ("id", "width", "height"):
-            value = raw_rendition.get(field)
-            if value not in (None, ""):
-                rendition[field] = str(value) if field == "id" else value
-        if rendition:
-            cached["rendition"] = rendition
-    return cached
+    return cached or None
 
 
 def _cache_dir() -> Path:

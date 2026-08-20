@@ -605,6 +605,36 @@ def search_videos_coverr(
     return []
 
 
+_SUPPORTED_REMOTE_VIDEO_SUFFIXES = frozenset(
+    {
+        ".mp4",
+        ".webm",
+        ".ogv",
+        ".ogg",
+    }
+)
+
+
+def _remote_video_suffix(video_url: str) -> str:
+    """
+    Preserve a small allowlist of known remote video container suffixes.
+
+    Existing providers such as Coverr may expose extensionless download URLs;
+    those keep the historical .mp4 fallback. Arbitrary URL suffixes are never
+    copied into local filenames.
+    """
+    try:
+        path = urlsplit(str(video_url or "")).path
+        suffix = os.path.splitext(path)[1].lower()
+    except (TypeError, ValueError):
+        suffix = ""
+
+    if suffix in _SUPPORTED_REMOTE_VIDEO_SUFFIXES:
+        return suffix
+
+    return ".mp4"
+
+
 def save_video(video_url: str, save_dir: str = "") -> str:
     if not save_dir:
         save_dir = utils.storage_dir("cache_videos")
@@ -615,7 +645,11 @@ def save_video(video_url: str, save_dir: str = "") -> str:
     url_without_query = video_url.split("?")[0]
     url_hash = utils.md5(url_without_query)
     video_id = f"vid-{url_hash}"
-    video_path = f"{save_dir}/{video_id}.mp4"
+    video_suffix = _remote_video_suffix(video_url)
+    video_path = os.path.join(
+        save_dir,
+        f"{video_id}{video_suffix}",
+    )
 
     # if video already exists, return the path
     if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
