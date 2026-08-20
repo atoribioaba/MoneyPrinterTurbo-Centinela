@@ -15,6 +15,16 @@ from app.models.schema import MaterialInfo, VideoAspect, VideoConcatMode
 from app.services import material_cache, task_artifacts
 from app.services.centinela.capabilities import ProviderCapability
 from app.services.centinela.licensing import LicenseDecision
+from app.services.centinela.nasa import (
+    NASA_PRIMARY_RENDITIONS,
+    assess_nasa_rights,
+    nasa_rendition_label,
+    nasa_video_suffix,
+    normalize_nasa_asset_url,
+    normalize_nasa_rights,
+    parse_nasa_duration,
+    select_nasa_rendition,
+)
 from app.services.centinela.provenance import sanitize_provenance
 from app.services.centinela.provider_registry import build_default_provider_registry
 from app.services.centinela.wikimedia import (
@@ -704,6 +714,815 @@ def search_videos_wikimedia(
         )
 
     return []
+
+
+
+_NASA_API_URL = "https://images-api.nasa.gov"
+
+_NASA_SEARCH_PAGE_SIZE = 6
+
+_NASA_HEADERS = {
+    "User-Agent": (
+        "MoneyPrinterTurbo-Centinela-Edition/0.2 "
+        "(NASA Image and Video Library material search)"
+    )
+}
+
+_NASA_VIDEO_MIME_BY_SUFFIX = {
+    ".mp4": frozenset(
+        {
+            "video/mp4",
+            "application/mp4",
+        }
+    ),
+    ".webm": frozenset(
+        {
+            "video/webm",
+        }
+    ),
+    ".ogv": frozenset(
+        {
+            "application/ogg",
+            "video/ogg",
+        }
+    ),
+    ".ogg": frozenset(
+        {
+            "application/ogg",
+            "video/ogg",
+        }
+    ),
+}
+
+
+def _nasa_positive_int(
+    value: Any,
+) -> int | None:
+    if isinstance(value, bool):
+        return None
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    if parsed <= 0:
+        return None
+
+    return parsed
+
+
+def _nasa_json_request(
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    response = requests.get(
+        url,
+        params=params,
+        headers=_NASA_HEADERS,
+        proxies=config.proxy,
+        verify=_get_tls_verify(),
+        timeout=(30, 60),
+    )
+
+    response.raise_for_status()
+
+    payload = response.json()
+
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "NASA API returned an unsupported JSON root"
+        )
+
+    return payload
+
+
+def _nasa_metadata_duration(
+    metadata: dict[str, Any],
+) -> float | None:
+    for field in (
+        "QuickTime:Duration",
+        "QuickTime:MediaDuration",
+        "QuickTime:TrackDuration",
+    ):
+        duration = parse_nasa_duration(
+            metadata.get(field)
+        )
+
+        if duration is not None:
+            return duration
+
+    return None
+
+
+def _nasa_metadata_dimensions(
+    metadata: dict[str, Any],
+) -> tuple[int | None, int | None]:
+    width = None
+    height = None
+
+    for field in (
+        "QuickTime:ImageWidth",
+        "QuickTime:SourceImageWidth",
+    ):
+        width = _nasa_positive_int(
+            metadata.get(field)
+        )
+
+        if width is not None:
+            break
+
+    for field in (
+        "QuickTime:ImageHeight",
+        "QuickTime:SourceImageHeight",
+    ):
+        height = _nasa_positive_int(
+            metadata.get(field)
+        )
+
+        if height is not None:
+            break
+
+    return width, height
+
+
+def _nasa_manifest_video_candidates(
+    asset_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    collection = asset_payload.get(
+        "collection",
+        {},
+    )
+
+    raw_items = (
+        collection.get("items", [])
+        if isinstance(collection, dict)
+        else []
+    )
+
+    if not isinstance(raw_items, list):
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        url = normalize_nasa_asset_url(
+            item.get("href")
+        )
+
+        if not url or url in seen_urls:
+            continue
+
+        suffix = nasa_video_suffix(url)
+
+        # NASA's API can expose original MOV assets. The current generic
+        # downloader does not yet support .mov, so V0.1 deliberately limits
+        # automatic NASA selection to containers already proven by the
+        # existing MoneyPrinterTurbo remote-material transport.
+        if suffix not in _SUPPORTED_REMOTE_VIDEO_SUFFIXES:
+            continue
+
+        label = nasa_rendition_label(url)
+
+        if not label:
+            continue
+
+        seen_urls.add(url)
+
+        candidates.append(
+            {
+                "url": url,
+                "label": label,
+            }
+        )
+
+    return candidates
+
+
+def _nasa_expected_mime(
+    url: str,
+) -> str:
+    suffix = nasa_video_suffix(url)
+
+    allowed = _NASA_VIDEO_MIME_BY_SUFFIX.get(
+        suffix,
+    )
+
+    if not allowed:
+        return ""
+
+    return sorted(allowed)[0]
+
+
+def _nasa_probe_rendition(
+    candidate: dict[str, Any],
+) -> dict[str, Any] | None:
+    url = normalize_nasa_asset_url(
+        candidate.get("url")
+    )
+
+    label = str(
+        candidate.get("label") or ""
+    ).strip().lower()
+
+    if not url or not label:
+        return None
+
+    suffix = nasa_video_suffix(url)
+
+    allowed_mimes = (
+        _NASA_VIDEO_MIME_BY_SUFFIX.get(
+            suffix
+        )
+    )
+
+    if not allowed_mimes:
+        return None
+
+    try:
+        response = requests.head(
+            url,
+            headers=_NASA_HEADERS,
+            proxies=config.proxy,
+            verify=_get_tls_verify(),
+            timeout=(20, 45),
+            allow_redirects=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "NASA rendition HEAD failed: "
+            f"label={label!r}, "
+            f"error={type(exc).__name__}"
+        )
+        return None
+
+    status_code = int(
+        getattr(
+            response,
+            "status_code",
+            200,
+        )
+    )
+
+    if status_code < 200 or status_code >= 400:
+        logger.warning(
+            "NASA rendition HEAD returned unusable status: "
+            f"label={label!r}, status={status_code}"
+        )
+        return None
+
+    final_url = normalize_nasa_asset_url(
+        getattr(
+            response,
+            "url",
+            url,
+        )
+        or url
+    )
+
+    if not final_url:
+        logger.warning(
+            "NASA rendition redirected outside trusted NASA asset host: "
+            f"label={label!r}"
+        )
+        return None
+
+    headers = (
+        getattr(
+            response,
+            "headers",
+            {},
+        )
+        or {}
+    )
+
+    raw_mime = str(
+        headers.get(
+            "Content-Type",
+            headers.get(
+                "content-type",
+                "",
+            ),
+        )
+        or ""
+    )
+
+    mime = (
+        raw_mime.split(";", 1)[0]
+        .strip()
+        .lower()
+    )
+
+    if mime and mime not in allowed_mimes:
+        logger.warning(
+            "NASA rendition returned incompatible MIME: "
+            f"label={label!r}, mime={mime!r}"
+        )
+        return None
+
+    if not mime:
+        mime = _nasa_expected_mime(
+            final_url
+        )
+
+    content_length = _nasa_positive_int(
+        headers.get(
+            "Content-Length",
+            headers.get(
+                "content-length",
+            ),
+        )
+    )
+
+    return {
+        "url": final_url,
+        "label": label,
+        "content_length": content_length,
+        "mime": mime,
+    }
+
+
+def _nasa_select_compatible_rendition(
+    candidates: list[dict[str, Any]],
+) -> tuple[
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
+    if not candidates:
+        return None, None
+
+    primary = [
+        candidate
+        for candidate in candidates
+        if candidate.get("label")
+        in NASA_PRIMARY_RENDITIONS
+    ]
+
+    probe_source = (
+        primary
+        if primary
+        else candidates
+    )
+
+    probed: list[dict[str, Any]] = []
+
+    for candidate in probe_source:
+        result = _nasa_probe_rendition(
+            candidate
+        )
+
+        if result is not None:
+            probed.append(result)
+
+    # If primary renditions existed but none survived the technical HEAD
+    # validation, permit the lower-bandwidth NASA fallbacks rather than
+    # silently attempting a broken primary URL.
+    if not probed and primary:
+        primary_urls = {
+            candidate.get("url")
+            for candidate in primary
+        }
+
+        for candidate in candidates:
+            if (
+                candidate.get("url")
+                in primary_urls
+            ):
+                continue
+
+            result = _nasa_probe_rendition(
+                candidate
+            )
+
+            if result is not None:
+                probed.append(result)
+
+    if not probed:
+        return None, None
+
+    selected = select_nasa_rendition(
+        probed
+    )
+
+    if selected is None:
+        return None, None
+
+    selected_url = selected.get("url")
+
+    head_info = next(
+        (
+            candidate
+            for candidate in probed
+            if candidate.get("url")
+            == selected_url
+        ),
+        None,
+    )
+
+    return selected, head_info
+
+
+def search_videos_nasa(
+    search_term: str,
+    minimum_duration: int,
+    video_aspect: VideoAspect = VideoAspect.portrait,
+) -> List[MaterialInfo]:
+    """
+    Search NASA's Image and Video Library for automatically usable videos.
+
+    V0.1 is deliberately fail-closed:
+    - only media_type=video;
+    - only official images-assets.nasa.gov assets;
+    - only containers already supported by the generic downloader;
+    - NASA rights policy must ACCEPT or ACCEPT_WITH_ATTRIBUTION;
+    - metadata must expose positive duration and dimensions;
+    - selected rendition must pass a HEAD transport/MIME validation.
+
+    NASA remains outside ProviderRegistry/router until this adapter has passed
+    unit tests and a real API validation.
+    """
+
+    term = str(
+        search_term or ""
+    ).strip()
+
+    if not term:
+        return []
+
+    aspect = VideoAspect(
+        video_aspect
+    )
+
+    logger.info(
+        "searching videos on NASA Image and Video Library: "
+        f"term={term!r}"
+    )
+
+    try:
+        search_payload = _nasa_json_request(
+            f"{_NASA_API_URL}/search",
+            params={
+                "q": term,
+                "media_type": "video",
+                "page_size":
+                    _NASA_SEARCH_PAGE_SIZE,
+                "page": 1,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "NASA video search failed: "
+            f"error={type(exc).__name__}, "
+            f"detail={_redact_request_error(exc)}"
+        )
+        return []
+
+    collection = search_payload.get(
+        "collection",
+        {},
+    )
+
+    raw_items = (
+        collection.get("items", [])
+        if isinstance(collection, dict)
+        else []
+    )
+
+    if not isinstance(
+        raw_items,
+        list,
+    ):
+        return []
+
+    accepted_items: list[
+        MaterialInfo
+    ] = []
+
+    seen_nasa_ids: set[str] = set()
+
+    review_count = 0
+    reject_count = 0
+    technical_reject_count = 0
+
+    for raw_item in raw_items:
+        if not isinstance(
+            raw_item,
+            dict,
+        ):
+            technical_reject_count += 1
+            continue
+
+        data = raw_item.get("data")
+
+        if (
+            not isinstance(data, list)
+            or not data
+            or not isinstance(
+                data[0],
+                dict,
+            )
+        ):
+            technical_reject_count += 1
+            continue
+
+        search_record = data[0]
+
+        if (
+            str(
+                search_record.get(
+                    "media_type"
+                )
+                or ""
+            )
+            .strip()
+            .lower()
+            != "video"
+        ):
+            technical_reject_count += 1
+            continue
+
+        nasa_id = str(
+            search_record.get(
+                "nasa_id"
+            )
+            or ""
+        ).strip()
+
+        if (
+            not nasa_id
+            or nasa_id
+            in seen_nasa_ids
+        ):
+            technical_reject_count += 1
+            continue
+
+        seen_nasa_ids.add(
+            nasa_id
+        )
+
+        encoded_id = quote(
+            nasa_id,
+            safe="",
+        )
+
+        try:
+            asset_payload = (
+                _nasa_json_request(
+                    f"{_NASA_API_URL}/asset/{encoded_id}"
+                )
+            )
+
+            metadata_pointer = (
+                _nasa_json_request(
+                    f"{_NASA_API_URL}/metadata/{encoded_id}"
+                )
+            )
+
+            metadata_url = (
+                normalize_nasa_asset_url(
+                    metadata_pointer.get(
+                        "location"
+                    )
+                )
+            )
+
+            if (
+                not metadata_url
+                or Path(
+                    urlsplit(
+                        metadata_url
+                    ).path
+                ).suffix.lower()
+                != ".json"
+            ):
+                technical_reject_count += 1
+                continue
+
+            metadata = (
+                _nasa_json_request(
+                    metadata_url
+                )
+            )
+
+        except Exception as exc:
+            technical_reject_count += 1
+
+            logger.warning(
+                "NASA candidate metadata retrieval failed: "
+                f"nasa_id={nasa_id!r}, "
+                f"error={type(exc).__name__}"
+            )
+            continue
+
+        duration_seconds = (
+            _nasa_metadata_duration(
+                metadata
+            )
+        )
+
+        if (
+            duration_seconds is None
+            or duration_seconds
+            < minimum_duration
+        ):
+            technical_reject_count += 1
+            continue
+
+        width, height = (
+            _nasa_metadata_dimensions(
+                metadata
+            )
+        )
+
+        if (
+            width is None
+            or height is None
+        ):
+            technical_reject_count += 1
+            continue
+
+        if (
+            aspect
+            != VideoAspect.square
+            and not _matches_video_aspect(
+                width,
+                height,
+                aspect,
+            )
+        ):
+            technical_reject_count += 1
+            continue
+
+        candidates = (
+            _nasa_manifest_video_candidates(
+                asset_payload
+            )
+        )
+
+        if not candidates:
+            technical_reject_count += 1
+            continue
+
+        # Rights evaluation happens before rendition HEAD traffic. A candidate
+        # requiring legal review must not consume extra transport work or enter
+        # automatic material selection.
+        source_info = (
+            normalize_nasa_rights(
+                search_record,
+                metadata,
+                asset_url=candidates[0][
+                    "url"
+                ],
+            )
+        )
+
+        assessment = (
+            assess_nasa_rights(
+                source_info
+            )
+        )
+
+        if (
+            assessment.decision
+            == LicenseDecision.REVIEW
+        ):
+            review_count += 1
+            continue
+
+        if (
+            assessment.decision
+            == LicenseDecision.REJECT
+        ):
+            reject_count += 1
+            continue
+
+        if (
+            assessment.decision
+            not in {
+                LicenseDecision.ACCEPT,
+                LicenseDecision.ACCEPT_WITH_ATTRIBUTION,
+            }
+        ):
+            technical_reject_count += 1
+            continue
+
+        selected, head_info = (
+            _nasa_select_compatible_rendition(
+                candidates
+            )
+        )
+
+        if (
+            selected is None
+            or head_info is None
+        ):
+            technical_reject_count += 1
+            continue
+
+        selected_url = str(
+            selected.get("url")
+            or ""
+        ).strip()
+
+        selected_label = str(
+            selected.get("label")
+            or ""
+        ).strip()
+
+        selected_mime = str(
+            head_info.get("mime")
+            or ""
+        ).strip().lower()
+
+        if (
+            not selected_url
+            or not selected_label
+            or not selected_mime
+        ):
+            technical_reject_count += 1
+            continue
+
+        title = str(
+            search_record.get(
+                "title"
+            )
+            or metadata.get(
+                "AVAIL:Title"
+            )
+            or nasa_id
+        ).strip()
+
+        source_info = dict(
+            source_info
+        )
+
+        source_info.update(
+            {
+                "provider": "nasa",
+                "search_term": term,
+                "title": title,
+                "asset_id": nasa_id,
+                "file_url":
+                    selected_url,
+                "mime":
+                    selected_mime,
+                "rendition": {
+                    "id":
+                        selected_label,
+                    # NASA's manifest does not expose rendition dimensions.
+                    # V0.1 stores source/original dimensions here solely as the
+                    # aspect-orientation contract required by the shared cache
+                    # and _filter_materials_by_aspect(). Do not interpret them
+                    # as a claim that every transcoded rendition has identical
+                    # pixel dimensions.
+                    "width": width,
+                    "height": height,
+                    "content_length":
+                        selected.get(
+                            "content_length"
+                        ),
+                    "dimensions_basis":
+                        "source_metadata",
+                },
+            }
+        )
+
+        accepted_items.append(
+            MaterialInfo(
+                provider="nasa",
+                url=selected_url,
+                duration=max(
+                    1,
+                    int(
+                        duration_seconds
+                    ),
+                ),
+                source_info=source_info,
+            )
+        )
+
+    filtered_items = (
+        _filter_materials_by_aspect(
+            accepted_items,
+            aspect,
+        )
+    )
+
+    logger.info(
+        "NASA Image and Video Library search completed: "
+        f"accepted={len(filtered_items)}, "
+        f"accepted_before_aspect={len(accepted_items)}, "
+        f"review={review_count}, "
+        f"rejected={reject_count}, "
+        f"technical_rejected={technical_reject_count}"
+    )
+
+    return filtered_items
 
 
 def search_videos_pexels(
