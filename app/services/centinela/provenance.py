@@ -202,6 +202,7 @@ def sanitize_provenance(
         "license",
         "credit",
         "attribution",
+        "rights_basis",
         "copyright_status",
         "deletion_reason",
     ):
@@ -212,6 +213,10 @@ def sanitize_provenance(
     license_url = safe_public_url(source.get("license_url"))
     if license_url:
         record["license_url"] = license_url
+
+    rights_url = safe_public_url(source.get("rights_url"))
+    if rights_url:
+        record["rights_url"] = rights_url
 
     for field in (
         "attribution_required",
