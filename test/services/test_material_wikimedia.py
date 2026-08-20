@@ -464,6 +464,22 @@ class WikimediaSearchAdapterTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
 
+    def test_registered_wikimedia_routes_to_search_adapter(self):
+        provider_id, adapter = (
+            material._resolve_remote_video_search_provider(
+                "wikimedia"
+            )
+        )
+
+        self.assertEqual(
+            provider_id,
+            "wikimedia",
+        )
+        self.assertIs(
+            adapter,
+            material.search_videos_wikimedia,
+        )
+
     def test_network_failure_returns_empty_without_fallback(self):
         with patch.object(
             material.requests,

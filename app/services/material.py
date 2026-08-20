@@ -1249,6 +1249,7 @@ def _resolve_remote_video_search_provider(
         "pexels": search_videos_pexels,
         "pixabay": search_videos_pixabay,
         "coverr": search_videos_coverr,
+        "wikimedia": search_videos_wikimedia,
     }
 
     remote_search_videos = search_adapters.get(

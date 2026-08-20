@@ -164,6 +164,7 @@ class TestCli(unittest.TestCase):
                 "pexels",
                 "pixabay",
                 "coverr",
+                "wikimedia",
                 "local",
             ),
         )
@@ -181,6 +182,22 @@ class TestCli(unittest.TestCase):
                     )
 
                 self.assertEqual(cm.exception.code, 2)
+
+    def test_wikimedia_video_source_accepted(self):
+        args = cli.parse_args(
+            [
+                "--video-subject",
+                "test",
+                "--video-source",
+                "wikimedia",
+            ]
+        )
+        params = cli.build_video_params(args)
+
+        self.assertEqual(
+            params.video_source,
+            "wikimedia",
+        )
 
     def test_coverr_video_source_accepted(self):
         args = cli.parse_args(["--video-subject", "test", "--video-source", "coverr"])

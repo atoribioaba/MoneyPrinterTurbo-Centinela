@@ -18,10 +18,11 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertTrue(registry.contains("pexels"))
         self.assertTrue(registry.contains("pixabay"))
         self.assertTrue(registry.contains("coverr"))
+        self.assertTrue(registry.contains("wikimedia"))
         self.assertTrue(registry.contains("local"))
         self.assertTrue(registry.contains("loomloom"))
 
-        self.assertEqual(len(registry.all()), 5)
+        self.assertEqual(len(registry.all()), 6)
 
     def test_search_provider_capabilities(self):
         registry = build_default_provider_registry()
@@ -33,6 +34,36 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertTrue(pexels.supports(ProviderCapability.REMOTE))
         self.assertTrue(pexels.supports(ProviderCapability.VIDEO))
         self.assertFalse(pexels.supports(ProviderCapability.GENERATE))
+
+    def test_wikimedia_search_provider_capabilities(self):
+        registry = build_default_provider_registry()
+        provider = registry.get("wikimedia")
+
+        self.assertEqual(
+            provider.display_name,
+            "Wikimedia Commons",
+        )
+        self.assertEqual(
+            provider.kind,
+            ProviderKind.SEARCHABLE,
+        )
+        self.assertFalse(
+            provider.requires_api_key
+        )
+
+        for capability in (
+            ProviderCapability.SEARCH,
+            ProviderCapability.DOWNLOAD,
+            ProviderCapability.REMOTE,
+            ProviderCapability.VIDEO,
+            ProviderCapability.LICENSE_METADATA,
+        ):
+            with self.subTest(
+                capability=capability
+            ):
+                self.assertTrue(
+                    provider.supports(capability)
+                )
 
     def test_local_provider_capabilities(self):
         registry = build_default_provider_registry()
@@ -72,6 +103,7 @@ class ProviderRegistryTests(unittest.TestCase):
                 "pexels",
                 "pixabay",
                 "coverr",
+                "wikimedia",
                 "local",
             ],
         )
@@ -91,6 +123,7 @@ class ProviderRegistryTests(unittest.TestCase):
                 "pexels",
                 "pixabay",
                 "coverr",
+                "wikimedia",
                 "local",
                 "loomloom",
             ],

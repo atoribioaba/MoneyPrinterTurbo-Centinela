@@ -60,6 +60,7 @@ def test_video_source_selector_preserves_registry_driven_webui_contract():
             "pexels",
             "pixabay",
             "coverr",
+            "wikimedia",
             "loomloom",
             "local",
         )

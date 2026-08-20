@@ -353,6 +353,11 @@ class TestTaskService(unittest.TestCase):
         )
         self.assertTrue(
             tm._task_provider_requires_terms(
+                registry.get("wikimedia")
+            )
+        )
+        self.assertTrue(
+            tm._task_provider_requires_terms(
                 registry.get("loomloom")
             )
         )

@@ -241,7 +241,7 @@ Output and exit status:
         "--video-source",
         default="pexels",
         choices=_cli_video_source_choices(),
-        help="video material provider; online providers require matching API keys in config.toml",
+        help="video material provider; some online providers require matching API keys in config.toml",
     )
     material_group.add_argument(
         "--video-materials",
