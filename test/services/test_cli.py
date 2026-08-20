@@ -112,6 +112,76 @@ class TestCli(unittest.TestCase):
         params = cli.build_video_params(args)
         self.assertFalse(params.subtitle_enabled)
 
+    def test_cli_video_source_choices_are_derived_from_provider_registry(self):
+        from app.services.centinela import (
+            ProviderCapability,
+            ProviderKind,
+        )
+
+        with patch(
+            "app.services.centinela.build_default_provider_registry"
+        ) as build_registry:
+            registry = build_registry.return_value
+            provider_a = type(
+                "Provider",
+                (),
+                {"provider_id": "example-search"},
+            )()
+            provider_b = type(
+                "Provider",
+                (),
+                {"provider_id": "example-local"},
+            )()
+            registry.matching.return_value = (
+                provider_a,
+                provider_b,
+            )
+
+            choices = cli._cli_video_source_choices()
+
+        self.assertEqual(
+            choices,
+            (
+                "example-search",
+                "example-local",
+            ),
+        )
+        build_registry.assert_called_once_with()
+        registry.matching.assert_called_once_with(
+            kinds=(
+                ProviderKind.SEARCHABLE,
+                ProviderKind.LOCAL,
+            ),
+            required_capabilities=(
+                ProviderCapability.VIDEO,
+            ),
+        )
+
+    def test_cli_video_source_contract_excludes_unsupported_sources(self):
+        self.assertEqual(
+            cli._cli_video_source_choices(),
+            (
+                "pexels",
+                "pixabay",
+                "coverr",
+                "local",
+            ),
+        )
+
+        for source in ("loomloom", "does-not-exist"):
+            with self.subTest(source=source):
+                with self.assertRaises(SystemExit) as cm:
+                    cli.parse_args(
+                        [
+                            "--video-subject",
+                            "test",
+                            "--video-source",
+                            source,
+                        ]
+                    )
+
+                self.assertEqual(cm.exception.code, 2)
+
     def test_coverr_video_source_accepted(self):
         args = cli.parse_args(["--video-subject", "test", "--video-source", "coverr"])
         params = cli.build_video_params(args)

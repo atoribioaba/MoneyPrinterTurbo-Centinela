@@ -126,6 +126,34 @@ def _bgm_type(value: str) -> str:
     )
 
 
+def _cli_video_source_choices() -> tuple[str, ...]:
+    """
+    Derive CLI-safe video providers from the Centinela provider registry.
+
+    The CLI currently supports searchable providers and local materials.
+    Generative providers require execution flows such as quote/confirmation
+    that are not exposed by this command-line interface.
+    """
+    from app.services.centinela import (
+        ProviderCapability,
+        ProviderKind,
+        build_default_provider_registry,
+    )
+
+    registry = build_default_provider_registry()
+    providers = registry.matching(
+        kinds=(
+            ProviderKind.SEARCHABLE,
+            ProviderKind.LOCAL,
+        ),
+        required_capabilities=(
+            ProviderCapability.VIDEO,
+        ),
+    )
+
+    return tuple(provider.provider_id for provider in providers)
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -212,7 +240,7 @@ Output and exit status:
     material_group.add_argument(
         "--video-source",
         default="pexels",
-        choices=["pexels", "pixabay", "coverr", "local"],
+        choices=_cli_video_source_choices(),
         help="video material provider; online providers require matching API keys in config.toml",
     )
     material_group.add_argument(
