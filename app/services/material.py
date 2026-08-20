@@ -4,7 +4,7 @@ import random
 import threading
 from pathlib import Path
 from typing import Any, Callable, List
-from urllib.parse import quote_plus, urlencode, urlsplit, urlunsplit
+from urllib.parse import quote, quote_plus, urlencode, urlsplit, urlunsplit
 
 import requests
 from loguru import logger
@@ -14,8 +14,13 @@ from app.config import config
 from app.models.schema import MaterialInfo, VideoAspect, VideoConcatMode
 from app.services import material_cache, task_artifacts
 from app.services.centinela.capabilities import ProviderCapability
+from app.services.centinela.licensing import LicenseDecision
 from app.services.centinela.provenance import sanitize_provenance
 from app.services.centinela.provider_registry import build_default_provider_registry
+from app.services.centinela.wikimedia import (
+    assess_wikimedia_license,
+    normalize_wikimedia_extmetadata,
+)
 from app.utils import utils
 
 # Thread-safe counter for API key rotation
@@ -299,6 +304,406 @@ def _filter_materials_by_aspect(
         ):
             filtered_items.append(item)
     return filtered_items
+
+
+_WIKIMEDIA_API_URL = "https://commons.wikimedia.org/w/api.php"
+
+_WIKIMEDIA_EXTMETADATA_FIELDS = (
+    "LicenseShortName",
+    "LicenseUrl",
+    "UsageTerms",
+    "Artist",
+    "Credit",
+    "Attribution",
+    "AttributionRequired",
+    "NonFree",
+    "Restrictions",
+    "DeletionReason",
+    "Copyrighted",
+)
+
+_WIKIMEDIA_VIDEO_MIME_BY_SUFFIX = {
+    ".mp4": frozenset(
+        {
+            "video/mp4",
+            "application/mp4",
+        }
+    ),
+    ".webm": frozenset(
+        {
+            "video/webm",
+        }
+    ),
+    ".ogv": frozenset(
+        {
+            "application/ogg",
+            "video/ogg",
+        }
+    ),
+    ".ogg": frozenset(
+        {
+            "application/ogg",
+            "video/ogg",
+        }
+    ),
+}
+
+
+def _wikimedia_metadata_value(
+    metadata: Any,
+    name: str,
+) -> Any:
+    """Return one named MediaWiki imageinfo metadata value."""
+    if not isinstance(metadata, list):
+        return None
+
+    target = str(name or "").strip().lower()
+
+    for entry in metadata:
+        if not isinstance(entry, dict):
+            continue
+
+        entry_name = str(entry.get("name") or "").strip().lower()
+
+        if entry_name == target:
+            return entry.get("value")
+
+    return None
+
+
+def _wikimedia_duration_seconds(image_info: dict[str, Any]) -> float | None:
+    """
+    Extract video duration from Commons imageinfo metadata.
+
+    Commons currently exposes video length through the ``metadata`` imageinfo
+    property. Unknown, non-numeric and non-positive values fail closed.
+    """
+    value = _wikimedia_metadata_value(
+        image_info.get("metadata"),
+        "length",
+    )
+
+    if value in (None, ""):
+        return None
+
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if duration <= 0:
+        return None
+
+    return duration
+
+
+def _wikimedia_positive_dimension(value: Any) -> int | None:
+    try:
+        dimension = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    if dimension <= 0:
+        return None
+
+    return dimension
+
+
+def _wikimedia_public_video_url(
+    image_info: dict[str, Any],
+) -> str | None:
+    """
+    Accept only known public video containers with a compatible MIME type.
+
+    The generic downloader has a historical .mp4 fallback for extensionless
+    stock-provider URLs. Commons is stricter: its API gives us MIME and file
+    identity, so unsupported or ambiguous containers are rejected here.
+    """
+    public_url = _safe_public_url(
+        image_info.get("url")
+    )
+
+    if not public_url:
+        return None
+
+    try:
+        suffix = Path(
+            urlsplit(public_url).path
+        ).suffix.lower()
+    except ValueError:
+        return None
+
+    accepted_mimes = _WIKIMEDIA_VIDEO_MIME_BY_SUFFIX.get(
+        suffix
+    )
+
+    if not accepted_mimes:
+        return None
+
+    mime = str(
+        image_info.get("mime") or ""
+    ).strip().lower()
+
+    if mime not in accepted_mimes:
+        return None
+
+    return public_url
+
+
+def _wikimedia_source_page(
+    page: dict[str, Any],
+    title: str,
+) -> str:
+    public_page = _safe_public_url(
+        page.get("canonicalurl")
+        or page.get("fullurl")
+    )
+
+    if public_page:
+        return public_page
+
+    safe_title = quote(
+        str(title or "").replace(" ", "_"),
+        safe=":_-.()",
+    )
+
+    return (
+        "https://commons.wikimedia.org/wiki/"
+        + safe_title
+    )
+
+
+def search_videos_wikimedia(
+    search_term: str,
+    minimum_duration: int,
+    video_aspect: VideoAspect = VideoAspect.portrait,
+) -> List[MaterialInfo]:
+    """
+    Search Wikimedia Commons for automatically usable video material.
+
+    Only videos whose legal assessment is ACCEPT or
+    ACCEPT_WITH_ATTRIBUTION are returned. REVIEW and REJECT candidates are
+    deliberately excluded until Centinela has a material-review gate capable
+    of presenting them to the user before download.
+    """
+    aspect = VideoAspect(video_aspect)
+
+    params = {
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": str(search_term or "").strip(),
+        "gsrnamespace": 6,
+        "gsrlimit": 50,
+        "prop": "info|imageinfo",
+        "inprop": "url",
+        "iiprop": (
+            "url|size|mime|mediatype|"
+            "metadata|extmetadata"
+        ),
+        "iiextmetadatafilter": "|".join(
+            _WIKIMEDIA_EXTMETADATA_FIELDS
+        ),
+        "format": "json",
+        "formatversion": 2,
+    }
+
+    headers = {
+        "User-Agent": (
+            "MoneyPrinterTurbo-Centinela-Edition/0.2 "
+            "(Wikimedia Commons material search)"
+        ),
+    }
+
+    logger.info(
+        "searching videos on Wikimedia Commons: "
+        f"term={search_term!r}"
+    )
+
+    try:
+        response = requests.get(
+            _WIKIMEDIA_API_URL,
+            params=params,
+            headers=headers,
+            proxies=config.proxy,
+            verify=_get_tls_verify(),
+            timeout=(30, 60),
+        )
+
+        response.raise_for_status()
+        payload = response.json()
+
+        raw_pages = (
+            payload.get("query", {}).get("pages", [])
+            if isinstance(payload, dict)
+            else []
+        )
+
+        if isinstance(raw_pages, dict):
+            pages = list(raw_pages.values())
+        elif isinstance(raw_pages, list):
+            pages = raw_pages
+        else:
+            pages = []
+
+        accepted_items: list[MaterialInfo] = []
+        review_count = 0
+        reject_count = 0
+        technical_reject_count = 0
+
+        for page in pages:
+            if not isinstance(page, dict):
+                technical_reject_count += 1
+                continue
+
+            title = str(
+                page.get("title") or ""
+            ).strip()
+
+            image_infos = page.get("imageinfo")
+
+            if (
+                not title
+                or not isinstance(image_infos, list)
+                or not image_infos
+                or not isinstance(image_infos[0], dict)
+            ):
+                technical_reject_count += 1
+                continue
+
+            image_info = image_infos[0]
+
+            if (
+                str(
+                    image_info.get("mediatype") or ""
+                ).strip().upper()
+                != "VIDEO"
+            ):
+                technical_reject_count += 1
+                continue
+
+            file_url = _wikimedia_public_video_url(
+                image_info
+            )
+
+            if not file_url:
+                technical_reject_count += 1
+                continue
+
+            width = _wikimedia_positive_dimension(
+                image_info.get("width")
+            )
+            height = _wikimedia_positive_dimension(
+                image_info.get("height")
+            )
+
+            if width is None or height is None:
+                technical_reject_count += 1
+                continue
+
+            duration_seconds = _wikimedia_duration_seconds(
+                image_info
+            )
+
+            if (
+                duration_seconds is None
+                or duration_seconds < minimum_duration
+            ):
+                technical_reject_count += 1
+                continue
+
+            extmetadata = image_info.get(
+                "extmetadata"
+            )
+
+            source_info = (
+                normalize_wikimedia_extmetadata(
+                    extmetadata
+                    if isinstance(extmetadata, dict)
+                    else {}
+                )
+            )
+
+            assessment = assess_wikimedia_license(
+                source_info
+            )
+
+            if assessment.decision == LicenseDecision.REVIEW:
+                review_count += 1
+                continue
+
+            if assessment.decision == LicenseDecision.REJECT:
+                reject_count += 1
+                continue
+
+            if assessment.decision not in {
+                LicenseDecision.ACCEPT,
+                LicenseDecision.ACCEPT_WITH_ATTRIBUTION,
+            }:
+                technical_reject_count += 1
+                continue
+
+            source_info = dict(source_info)
+
+            source_info.update(
+                {
+                    "provider": "wikimedia",
+                    "search_term": str(
+                        search_term or ""
+                    ).strip(),
+                    "title": title,
+                    "asset_id": title,
+                    "source_page": _wikimedia_source_page(
+                        page,
+                        title,
+                    ),
+                    "file_url": file_url,
+                    "mime": str(
+                        image_info.get("mime") or ""
+                    ).strip().lower(),
+                    "rendition": {
+                        "id": "original",
+                        "width": width,
+                        "height": height,
+                    },
+                }
+            )
+
+            accepted_items.append(
+                MaterialInfo(
+                    provider="wikimedia",
+                    url=file_url,
+                    duration=max(
+                        1,
+                        int(duration_seconds),
+                    ),
+                    source_info=source_info,
+                )
+            )
+
+        filtered_items = _filter_materials_by_aspect(
+            accepted_items,
+            aspect,
+        )
+
+        logger.info(
+            "Wikimedia Commons search completed: "
+            f"accepted={len(filtered_items)}, "
+            f"accepted_before_aspect={len(accepted_items)}, "
+            f"review={review_count}, "
+            f"rejected={reject_count}, "
+            f"technical_rejected={technical_reject_count}"
+        )
+
+        return filtered_items
+
+    except Exception as exc:
+        logger.error(
+            "Wikimedia Commons video search failed: "
+            f"error={type(exc).__name__}, "
+            f"detail={_redact_request_error(exc)}"
+        )
+
+    return []
 
 
 def search_videos_pexels(
