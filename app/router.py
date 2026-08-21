@@ -19,6 +19,7 @@ from app.controllers.v1 import (
     llm,
     material_selection,
     shot_quality,
+    smart_ken_burns,
     smart_reframing,
     video,
     video_base,
@@ -40,3 +41,4 @@ root_api_router.include_router(shot_quality.router)
 root_api_router.include_router(best_moment.router)
 root_api_router.include_router(astronomical_tracker.router)
 root_api_router.include_router(smart_reframing.router)
+root_api_router.include_router(smart_ken_burns.router)
