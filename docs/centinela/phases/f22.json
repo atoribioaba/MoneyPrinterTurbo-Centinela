@@ -1,0 +1,42 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F22",
+  "name": "Sound Design",
+  "version": "sound-design-v0.1",
+  "branch": "centinela-edition/sound-design-v0.1",
+  "expected_parent": "863410c0fdfaae984aeb7933322b148bc68a7ac0",
+  "checkpoint_number": 31,
+  "commit_message": "feat(audio): add deterministic Sound Design planner",
+  "bundle_slug": "sound-design-v01",
+  "expected_paths": [
+    "app/controllers/v1/sound_design.py",
+    "app/models/sound_design.py",
+    "app/router.py",
+    "app/services/sound_design.py",
+    "docs/centinela/sound-design.md",
+    "docs/centinela/phases/f22.json",
+    "test/services/test_sound_design.py",
+    "test/services/test_sound_design_api.py",
+    "webui/pages/22_Sound_Design.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase22-Evidence\\phase22-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase22-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F22",
+    "status": "REAL_SOUND_DESIGN_PLAN_GENERATED",
+    "sound_design_version": "sound-design-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "asset_count": 0,
+    "renders_audio": false,
+    "generates_audio": false,
+    "downloads_audio": false,
+    "searches_audio": false,
+    "selects_assets": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase22-final-manifest.json"
+}
