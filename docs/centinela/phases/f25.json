@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F25",
+  "name": "Subtitle Intelligence",
+  "version": "subtitle-intelligence-v0.1",
+  "branch": "centinela-edition/subtitle-intelligence-v0.1",
+  "expected_parent": "7668db2054f5f43f77f9d0945fe1d9b77e0c66d1",
+  "checkpoint_number": 34,
+  "commit_message": "feat(subtitles): add deterministic Subtitle Intelligence planner",
+  "bundle_slug": "subtitle-intelligence-v01",
+  "expected_paths": [
+    "app/controllers/v1/subtitle_intelligence.py",
+    "app/models/subtitle_intelligence.py",
+    "app/router.py",
+    "app/services/subtitle_intelligence.py",
+    "docs/centinela/subtitle-intelligence.md",
+    "docs/centinela/phases/f25.json",
+    "test/services/test_subtitle_intelligence.py",
+    "test/services/test_subtitle_intelligence_api.py",
+    "webui/pages/25_Subtitle_Intelligence.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase25-Evidence\\phase25-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase25-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F25",
+    "status": "REAL_SUBTITLE_INTELLIGENCE_PLAN_GENERATED",
+    "subtitle_intelligence_version": "subtitle-intelligence-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "whisper_triggered": false,
+    "downloads_models": false,
+    "transcribes_audio": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase25-final-manifest.json"
+}

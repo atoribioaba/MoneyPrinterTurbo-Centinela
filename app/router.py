@@ -31,6 +31,7 @@ from app.controllers.v1 import (
     sound_design,
     voice_studio,
     audio_mastering,
+    subtitle_intelligence,
 
 )
 
@@ -61,3 +62,4 @@ root_api_router.include_router(transition_director.router)
 root_api_router.include_router(sound_design.router)
 root_api_router.include_router(voice_studio.router)
 root_api_router.include_router(audio_mastering.router)
+root_api_router.include_router(subtitle_intelligence.router)
