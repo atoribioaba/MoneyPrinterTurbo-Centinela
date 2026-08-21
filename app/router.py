@@ -13,6 +13,7 @@ from app.controllers.v1 import (
     astronomy,
     astronomy_director,
     astromedia,
+    cinematic_director,
     llm,
     material_selection,
     video,
@@ -28,3 +29,4 @@ root_api_router.include_router(astronomy_director.router)
 root_api_router.include_router(astromedia.router)
 root_api_router.include_router(material_selection.router)
 root_api_router.include_router(video_base.router)
+root_api_router.include_router(cinematic_director.router)
