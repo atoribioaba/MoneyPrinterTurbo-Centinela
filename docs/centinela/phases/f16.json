@@ -1,0 +1,43 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F16",
+  "name": "Astronomy Motion Graphics",
+  "version": "astronomy-motion-graphics-v0.1",
+  "branch": "centinela-edition/astronomy-motion-graphics-v0.1",
+  "expected_parent": "b2fb8765d2f9b00a86b519f95a4c14ad69ea300f",
+  "checkpoint_number": 25,
+  "commit_message": "feat(graphics): add astronomy motion graphics planner",
+  "bundle_slug": "astronomy-motion-graphics-v01",
+  "expected_paths": [
+    "app/controllers/v1/astronomy_motion_graphics.py",
+    "app/models/astronomy_motion_graphics.py",
+    "app/router.py",
+    "app/services/astronomy_motion_graphics.py",
+    "docs/centinela/astronomy-motion-graphics.md",
+    "docs/centinela/phases/f16.json",
+    "test/services/test_astronomy_motion_graphics.py",
+    "test/services/test_astronomy_motion_graphics_api.py",
+    "webui/pages/16_Astronomy_Motion_Graphics.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase16-Evidence\\phase16-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase16-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F16",
+    "status": "REAL_ASTRONOMY_MOTION_GRAPHICS_PLAN_GENERATED",
+    "motion_graphics_version": "astronomy-motion-graphics-v0.1",
+    "planning_only": true,
+    "explicit_objects_only": true,
+    "invented_coordinates": false,
+    "invented_trajectories": false,
+    "invented_numeric_values": false,
+    "renders_graphics": false,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "plan_claims_only": true,
+    "verified_claim_fact_ids_preserved": true
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase16-final-manifest.json"
+}
