@@ -13,6 +13,7 @@ from app.controllers.v1 import (
     astronomy,
     astronomy_director,
     astromedia,
+    best_moment,
     cinematic_director,
     llm,
     material_selection,
@@ -34,3 +35,4 @@ root_api_router.include_router(video_base.router)
 root_api_router.include_router(cinematic_director.router)
 root_api_router.include_router(visual_story_graph.router)
 root_api_router.include_router(shot_quality.router)
+root_api_router.include_router(best_moment.router)
