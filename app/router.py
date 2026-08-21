@@ -32,6 +32,7 @@ from app.controllers.v1 import (
     voice_studio,
     audio_mastering,
     subtitle_intelligence,
+    selective_upscaling,
 
 )
 
@@ -63,3 +64,4 @@ root_api_router.include_router(sound_design.router)
 root_api_router.include_router(voice_studio.router)
 root_api_router.include_router(audio_mastering.router)
 root_api_router.include_router(subtitle_intelligence.router)
+root_api_router.include_router(selective_upscaling.router)

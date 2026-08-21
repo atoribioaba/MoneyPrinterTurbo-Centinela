@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F26",
+  "name": "Selective Upscaling",
+  "version": "selective-upscaling-v0.1",
+  "branch": "centinela-edition/selective-upscaling-v0.1",
+  "expected_parent": "7fb982e090b4cc7fc436b76bad0f3ef38ea2233d",
+  "checkpoint_number": 35,
+  "commit_message": "feat(upscale): add deterministic Selective Upscaling planner",
+  "bundle_slug": "selective-upscaling-v01",
+  "expected_paths": [
+    "app/controllers/v1/selective_upscaling.py",
+    "app/models/selective_upscaling.py",
+    "app/router.py",
+    "app/services/selective_upscaling.py",
+    "docs/centinela/selective-upscaling.md",
+    "docs/centinela/phases/f26.json",
+    "test/services/test_selective_upscaling.py",
+    "test/services/test_selective_upscaling_api.py",
+    "webui/pages/26_Selective_Upscaling.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase26-Evidence\\phase26-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase26-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F26",
+    "status": "REAL_SELECTIVE_UPSCALING_PLAN_GENERATED",
+    "selective_upscaling_version": "selective-upscaling-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "runs_upscaler": false,
+    "downloads_models": false,
+    "renders_video": false,
+    "invents_astronomy_detail": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase26-final-manifest.json"
+}
