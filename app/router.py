@@ -5,6 +5,8 @@ Defines all FastAPI application endpoints.
 
 from fastapi import APIRouter
 
+from app.controllers import ping
+
 from app.controllers.v1 import (
     astronomical_tracker, astronomy, astronomy_director, astromedia, best_moment, cinematic_director, llm,
     master_image_i2v, material_selection, shot_quality, smart_ken_burns, smart_reframing, video, video_base,
@@ -35,6 +37,7 @@ from app.controllers.v1 import (
 )
 
 root_api_router = APIRouter()
+root_api_router.include_router(ping.router)
 root_api_router.include_router(video.router)
 root_api_router.include_router(llm.router)
 root_api_router.include_router(astronomy.router)
