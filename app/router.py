@@ -17,6 +17,7 @@ from app.controllers.v1 import (
     best_moment,
     cinematic_director,
     llm,
+    master_image_i2v,
     material_selection,
     shot_quality,
     smart_ken_burns,
@@ -42,3 +43,4 @@ root_api_router.include_router(best_moment.router)
 root_api_router.include_router(astronomical_tracker.router)
 root_api_router.include_router(smart_reframing.router)
 root_api_router.include_router(smart_ken_burns.router)
+root_api_router.include_router(master_image_i2v.router)
