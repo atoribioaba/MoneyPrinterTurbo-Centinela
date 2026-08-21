@@ -1569,6 +1569,18 @@ def _run_pipeline(
             str(exc),
         )
 
+    # Shared FFmpeg preflight.
+    #
+    # Preserve Centinela's provider checks above while failing before LLM,
+    # TTS, media acquisition and video work if FFmpeg is unavailable.
+    # Script-only and terms-only operations do not require FFmpeg.
+    if stop_at not in ("script", "terms") and not utils.check_ffmpeg_ready():
+        return _mark_task_failed(
+            task_id,
+            "preflight",
+            "ffmpeg is not available; install ffmpeg or set app.ffmpeg_path "
+            "in config.toml to a working ffmpeg executable",
+        )
     # 1. Generate script
     video_script = generate_script(task_id, params)
     if not video_script or "Error: " in video_script:
