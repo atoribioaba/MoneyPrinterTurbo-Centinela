@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F24",
+  "name": "Audio Mastering",
+  "version": "audio-mastering-v0.1",
+  "branch": "centinela-edition/audio-mastering-v0.1",
+  "expected_parent": "a68a5c6630baa0d2fe3f102fa7677420741dbb3d",
+  "checkpoint_number": 33,
+  "commit_message": "feat(audio): add deterministic Audio Mastering planner",
+  "bundle_slug": "audio-mastering-v01",
+  "expected_paths": [
+    "app/controllers/v1/audio_mastering.py",
+    "app/models/audio_mastering.py",
+    "app/router.py",
+    "app/services/audio_mastering.py",
+    "docs/centinela/audio-mastering.md",
+    "docs/centinela/phases/f24.json",
+    "test/services/test_audio_mastering.py",
+    "test/services/test_audio_mastering_api.py",
+    "webui/pages/24_Audio_Mastering.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase24-Evidence\\phase24-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase24-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F24",
+    "status": "REAL_AUDIO_MASTERING_PLAN_GENERATED",
+    "audio_mastering_version": "audio-mastering-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "renders_audio": false,
+    "modifies_audio": false,
+    "ffmpeg_invocations": 0
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase24-final-manifest.json"
+}
