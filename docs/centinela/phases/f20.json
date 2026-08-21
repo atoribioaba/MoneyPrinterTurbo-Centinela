@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F20",
+  "name": "Shot Matching",
+  "version": "shot-matching-v0.1",
+  "branch": "centinela-edition/shot-matching-v0.1",
+  "expected_parent": "c4254b9f818156fa100ec1ea2c4dabb3d227ce83",
+  "checkpoint_number": 29,
+  "commit_message": "feat(matching): add deterministic Shot Matching planner",
+  "bundle_slug": "shot-matching-v01",
+  "expected_paths": [
+    "app/controllers/v1/shot_matching.py",
+    "app/models/shot_matching.py",
+    "app/router.py",
+    "app/services/shot_matching.py",
+    "docs/centinela/shot-matching.md",
+    "docs/centinela/phases/f20.json",
+    "test/services/test_shot_matching.py",
+    "test/services/test_shot_matching_api.py",
+    "webui/pages/20_Shot_Matching.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase20-Evidence\\phase20-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase20-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F20",
+    "status": "REAL_SHOT_MATCHING_PLAN_GENERATED",
+    "shot_matching_version": "shot-matching-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "analyzes_new_frames": false,
+    "renders_video": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase20-final-manifest.json"
+}
