@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F28",
+  "name": "Quality Comparator",
+  "version": "quality-comparator-v0.1",
+  "branch": "centinela-edition/quality-comparator-v0.1",
+  "expected_parent": "069f88ca66013e0ffdbdbb1fec0865d5426a4a39",
+  "checkpoint_number": 37,
+  "commit_message": "feat(quality): add deterministic Quality Comparator",
+  "bundle_slug": "quality-comparator-v01",
+  "expected_paths": [
+    "app/controllers/v1/quality_comparator.py",
+    "app/models/quality_comparator.py",
+    "app/router.py",
+    "app/services/quality_comparator.py",
+    "docs/centinela/quality-comparator.md",
+    "docs/centinela/phases/f28.json",
+    "test/services/test_quality_comparator.py",
+    "test/services/test_quality_comparator_api.py",
+    "webui/pages/28_Quality_Comparator.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase28-Evidence\\phase28-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase28-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F28",
+    "status": "REAL_QUALITY_COMPARATOR_PLAN_GENERATED",
+    "quality_comparator_version": "quality-comparator-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "analyzes_new_frames": false,
+    "executes_ab_comparison": false,
+    "selects_winner": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase28-final-manifest.json"
+}

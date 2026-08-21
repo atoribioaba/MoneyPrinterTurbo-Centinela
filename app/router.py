@@ -34,6 +34,7 @@ from app.controllers.v1 import (
     subtitle_intelligence,
     selective_upscaling,
     media_mining,
+    quality_comparator,
 
 )
 
@@ -67,3 +68,4 @@ root_api_router.include_router(audio_mastering.router)
 root_api_router.include_router(subtitle_intelligence.router)
 root_api_router.include_router(selective_upscaling.router)
 root_api_router.include_router(media_mining.router)
+root_api_router.include_router(quality_comparator.router)
