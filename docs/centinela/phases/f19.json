@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F19",
+  "name": "Color Science",
+  "version": "color-science-v0.1",
+  "branch": "centinela-edition/color-science-v0.1",
+  "expected_parent": "18cebfd82b12088df86edcb7be9f5f6242f6a62c",
+  "checkpoint_number": 28,
+  "commit_message": "feat(color): add deterministic Color Science planner",
+  "bundle_slug": "color-science-v01",
+  "expected_paths": [
+    "app/controllers/v1/color_science.py",
+    "app/models/color_science.py",
+    "app/router.py",
+    "app/services/color_science.py",
+    "docs/centinela/color-science.md",
+    "docs/centinela/phases/f19.json",
+    "test/services/test_color_science.py",
+    "test/services/test_color_science_api.py",
+    "webui/pages/19_Color_Science.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase19-Evidence\\phase19-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase19-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F19",
+    "status": "REAL_COLOR_SCIENCE_PLAN_GENERATED",
+    "color_science_version": "color-science-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "analyzes_pixels": false,
+    "applies_lut": false,
+    "downloads_luts": false,
+    "renders_video": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase19-final-manifest.json"
+}
