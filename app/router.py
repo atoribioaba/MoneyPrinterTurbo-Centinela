@@ -10,6 +10,7 @@ Resources:
 from fastapi import APIRouter
 
 from app.controllers.v1 import (
+    astronomical_tracker,
     astronomy,
     astronomy_director,
     astromedia,
@@ -36,3 +37,4 @@ root_api_router.include_router(cinematic_director.router)
 root_api_router.include_router(visual_story_graph.router)
 root_api_router.include_router(shot_quality.router)
 root_api_router.include_router(best_moment.router)
+root_api_router.include_router(astronomical_tracker.router)
