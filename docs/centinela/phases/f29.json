@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F29",
+  "name": "Automated Quality Gates",
+  "version": "quality-gates-v0.1",
+  "branch": "centinela-edition/quality-gates-v0.1",
+  "expected_parent": "778a7632d40d007726e26bf12102dd57de28a5b9",
+  "checkpoint_number": 38,
+  "commit_message": "feat(quality): add automated Quality Gates",
+  "bundle_slug": "quality-gates-v01",
+  "expected_paths": [
+    "app/controllers/v1/quality_gates.py",
+    "app/models/quality_gates.py",
+    "app/router.py",
+    "app/services/quality_gates.py",
+    "docs/centinela/quality-gates.md",
+    "docs/centinela/phases/f29.json",
+    "test/services/test_quality_gates.py",
+    "test/services/test_quality_gates_api.py",
+    "webui/pages/29_Quality_Gates.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase29-Evidence\\phase29-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase29-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F29",
+    "status": "REAL_QUALITY_GATES_PLAN_GENERATED",
+    "quality_gates_version": "quality-gates-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "renders_media": false,
+    "modifies_media": false,
+    "human_approval_required": true,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase29-final-manifest.json"
+}
