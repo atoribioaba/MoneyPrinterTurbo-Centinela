@@ -25,6 +25,7 @@ from app.controllers.v1 import (
     video,
     video_base,
     visual_story_graph,
+    wangp_backend,
 )
 
 root_api_router = APIRouter()
@@ -44,3 +45,4 @@ root_api_router.include_router(astronomical_tracker.router)
 root_api_router.include_router(smart_reframing.router)
 root_api_router.include_router(smart_ken_burns.router)
 root_api_router.include_router(master_image_i2v.router)
+root_api_router.include_router(wangp_backend.router)

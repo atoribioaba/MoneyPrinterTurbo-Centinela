@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F15",
+  "name": "WanGP Backend Audit",
+  "version": "wangp-backend-v0.1",
+  "branch": "centinela-edition/wangp-backend-v0.1",
+  "expected_parent": "5c74c1b70a84b8f1d09537f802cdba4df8136136",
+  "checkpoint_number": 24,
+  "commit_message": "feat(wangp): add local backend audit contract",
+  "bundle_slug": "wangp-backend-v01",
+  "expected_paths": [
+    "app/controllers/v1/wangp_backend.py",
+    "app/models/wangp_backend.py",
+    "app/router.py",
+    "app/services/wangp_backend.py",
+    "docs/centinela/phases/f15.json",
+    "docs/centinela/wangp-backend.md",
+    "test/services/test_wangp_backend.py",
+    "test/services/test_wangp_backend_api.py",
+    "webui/pages/15_WanGP_Backend.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase15-Evidence\\phase15-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase15-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F15",
+    "status": "REAL_WANGP_BACKEND_AUDIT_GENERATED",
+    "backend_version": "wangp-backend-v0.1",
+    "install_path": "E:\\IA\\WanGP",
+    "audit_only": true,
+    "modifies_wangp": false,
+    "network_access_used": false,
+    "downloads_models": false,
+    "imports_wangp_runtime": false,
+    "launches_wangp": false,
+    "large_download_authorized": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase15-final-manifest.json"
+}
