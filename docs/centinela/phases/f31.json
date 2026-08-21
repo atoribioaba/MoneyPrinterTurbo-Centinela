@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F31",
+  "name": "Analytics Brain",
+  "version": "analytics-brain-v0.1",
+  "branch": "centinela-edition/analytics-brain-v0.1",
+  "expected_parent": "c6773eb2e0fde43a77876e8bdef16616f9b127cb",
+  "checkpoint_number": 40,
+  "commit_message": "feat(analytics): add canonical Analytics Brain contract",
+  "bundle_slug": "analytics-brain-v01",
+  "expected_paths": [
+    "app/controllers/v1/analytics_brain.py",
+    "app/models/analytics_brain.py",
+    "app/router.py",
+    "app/services/analytics_brain.py",
+    "docs/centinela/analytics-brain.md",
+    "docs/centinela/phases/f31.json",
+    "test/services/test_analytics_brain.py",
+    "test/services/test_analytics_brain_api.py",
+    "webui/pages/31_Analytics_Brain.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase31-Evidence\\phase31-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase31-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F31",
+    "status": "REAL_ANALYTICS_BRAIN_PLAN_GENERATED",
+    "analytics_brain_version": "analytics-brain-v0.1",
+    "planning_only": true,
+    "storage_writes": 0,
+    "api_calls": 0,
+    "network_calls": 0,
+    "credentials_required": false,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase31-final-manifest.json"
+}
