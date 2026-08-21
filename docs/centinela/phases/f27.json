@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F27",
+  "name": "Media Mining",
+  "version": "media-mining-v0.1",
+  "branch": "centinela-edition/media-mining-v0.1",
+  "expected_parent": "0b381b1b1bca967b4e9ad99d7118b23e80f0611a",
+  "checkpoint_number": 36,
+  "commit_message": "feat(mining): add deterministic Media Mining planner",
+  "bundle_slug": "media-mining-v01",
+  "expected_paths": [
+    "app/controllers/v1/media_mining.py",
+    "app/models/media_mining.py",
+    "app/router.py",
+    "app/services/media_mining.py",
+    "docs/centinela/media-mining.md",
+    "docs/centinela/phases/f27.json",
+    "test/services/test_media_mining.py",
+    "test/services/test_media_mining_api.py",
+    "webui/pages/27_Media_Mining.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase27-Evidence\\phase27-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase27-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F27",
+    "status": "REAL_MEDIA_MINING_PLAN_GENERATED",
+    "media_mining_version": "media-mining-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "scenedetect_invocations": 0,
+    "analyzes_video": false,
+    "splits_video": false,
+    "downloads_dependencies": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase27-final-manifest.json"
+}
