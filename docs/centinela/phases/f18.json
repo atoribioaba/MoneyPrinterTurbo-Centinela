@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F18",
+  "name": "Depth / Parallax",
+  "version": "depth-parallax-v0.1",
+  "branch": "centinela-edition/depth-parallax-v0.1",
+  "expected_parent": "bffd71537a8432e44139e622477adb43abded3c1",
+  "checkpoint_number": 27,
+  "commit_message": "feat(depth): add deterministic Depth Parallax planner",
+  "bundle_slug": "depth-parallax-v01",
+  "expected_paths": [
+    "app/controllers/v1/depth_parallax.py",
+    "app/models/depth_parallax.py",
+    "app/router.py",
+    "app/services/depth_parallax.py",
+    "docs/centinela/depth-parallax.md",
+    "docs/centinela/phases/f18.json",
+    "test/services/test_depth_parallax.py",
+    "test/services/test_depth_parallax_api.py",
+    "webui/pages/18_Depth_Parallax.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase18-Evidence\\phase18-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase18-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F18",
+    "status": "REAL_DEPTH_PARALLAX_PLAN_GENERATED",
+    "depth_parallax_version": "depth-parallax-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "runs_depth_model": false,
+    "downloads_models": false,
+    "renders_video": false,
+    "recommended_candidate": "Depth Anything V2 Small",
+    "candidate_license": "Apache-2.0 (Small model)"
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase18-final-manifest.json"
+}

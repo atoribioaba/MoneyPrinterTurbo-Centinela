@@ -1,10 +1,6 @@
 """Application configuration - root APIRouter.
 
 Defines all FastAPI application endpoints.
-
-Resources:
-    1. https://fastapi.tiangolo.com/tutorial/bigger-applications
-
 """
 
 from fastapi import APIRouter
@@ -28,6 +24,7 @@ from app.controllers.v1 import (
     astronomy_motion_graphics,
     cinematic_infographics,
     wangp_backend,
+    depth_parallax,
 )
 
 root_api_router = APIRouter()
@@ -50,3 +47,4 @@ root_api_router.include_router(master_image_i2v.router)
 root_api_router.include_router(wangp_backend.router)
 root_api_router.include_router(astronomy_motion_graphics.router)
 root_api_router.include_router(cinematic_infographics.router)
+root_api_router.include_router(depth_parallax.router)
