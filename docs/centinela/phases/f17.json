@@ -1,0 +1,43 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F17",
+  "name": "Cinematic Infographics",
+  "version": "cinematic-infographics-v0.1",
+  "branch": "centinela-edition/cinematic-infographics-v0.1",
+  "expected_parent": "1e6c241bdb3017c97cb939fdf671f30892697208",
+  "checkpoint_number": 26,
+  "commit_message": "feat(infographics): add grounded cinematic infographics",
+  "bundle_slug": "cinematic-infographics-v01",
+  "expected_paths": [
+    "app/controllers/v1/cinematic_infographics.py",
+    "app/models/cinematic_infographics.py",
+    "app/router.py",
+    "app/services/cinematic_infographics.py",
+    "docs/centinela/cinematic-infographics.md",
+    "docs/centinela/phases/f17.json",
+    "test/services/test_cinematic_infographics.py",
+    "test/services/test_cinematic_infographics_api.py",
+    "webui/pages/17_Cinematic_Infographics.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase17-Evidence\\phase17-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase17-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F17",
+    "status": "REAL_CINEMATIC_INFOGRAPHICS_PLAN_GENERATED",
+    "infographics_version": "cinematic-infographics-v0.1",
+    "planning_only": true,
+    "plan_claims_only": true,
+    "fact_ids_preserved": true,
+    "scientific_status_preserved": true,
+    "external_data_added": false,
+    "invented_numbers": false,
+    "invented_charts": false,
+    "renders_infographics": false,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase17-final-manifest.json"
+}
