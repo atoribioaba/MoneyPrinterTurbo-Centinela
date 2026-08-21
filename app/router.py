@@ -9,7 +9,7 @@ Resources:
 
 from fastapi import APIRouter
 
-from app.controllers.v1 import astronomy, astronomy_director, llm, video
+from app.controllers.v1 import astronomy, astronomy_director, llm, video, astromedia
 
 root_api_router = APIRouter()
 # v1
@@ -17,3 +17,4 @@ root_api_router.include_router(video.router)
 root_api_router.include_router(llm.router)
 root_api_router.include_router(astronomy.router)
 root_api_router.include_router(astronomy_director.router)
+root_api_router.include_router(astromedia.router)
