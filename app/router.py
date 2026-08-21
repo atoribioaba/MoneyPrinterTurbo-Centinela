@@ -36,6 +36,7 @@ from app.controllers.v1 import (
     media_mining,
     quality_comparator,
     quality_gates,
+    delivery_render,
 
 )
 
@@ -71,3 +72,4 @@ root_api_router.include_router(selective_upscaling.router)
 root_api_router.include_router(media_mining.router)
 root_api_router.include_router(quality_comparator.router)
 root_api_router.include_router(quality_gates.router)
+root_api_router.include_router(delivery_render.router)

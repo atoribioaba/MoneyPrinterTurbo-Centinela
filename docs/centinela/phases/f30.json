@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F30",
+  "name": "Delivery Render",
+  "version": "delivery-render-v0.1",
+  "branch": "centinela-edition/delivery-render-v0.1",
+  "expected_parent": "376a7091924fc3bec6ddf42f4d33bfc24759db2f",
+  "checkpoint_number": 39,
+  "commit_message": "feat(render): add deterministic Delivery Render planner",
+  "bundle_slug": "delivery-render-v01",
+  "expected_paths": [
+    "app/controllers/v1/delivery_render.py",
+    "app/models/delivery_render.py",
+    "app/router.py",
+    "app/services/delivery_render.py",
+    "docs/centinela/delivery-render.md",
+    "docs/centinela/phases/f30.json",
+    "test/services/test_delivery_render.py",
+    "test/services/test_delivery_render_api.py",
+    "webui/pages/30_Delivery_Render.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase30-Evidence\\phase30-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase30-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F30",
+    "status": "REAL_DELIVERY_RENDER_PLAN_GENERATED",
+    "delivery_render_version": "delivery-render-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "project_render_invocations": 0,
+    "renders_project_video": false,
+    "upscales_social_to_master": false,
+    "downloads_dependencies": false,
+    "human_render_approval_required": true,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase30-final-manifest.json"
+}
