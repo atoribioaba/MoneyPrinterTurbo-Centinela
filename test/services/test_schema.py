@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from app.models.schema import VideoAspect, VideoParams
+from app.models.schema import FocalMode, VideoAspect, VideoFitMode, VideoParams
 
 
 class TestVideoAspect(unittest.TestCase):
@@ -18,6 +18,79 @@ class TestVideoAspect(unittest.TestCase):
     def test_to_resolution_rejects_unsupported_value(self):
         with self.assertRaises(ValueError):
             VideoAspect.to_resolution("4:5")
+
+
+class TestFocalMode(unittest.TestCase):
+    def test_focal_mode_schema_contract(self):
+        self.assertEqual(
+            [item.value for item in FocalMode],
+            ["manual", "smart"],
+        )
+
+        # Smart focal selection is orthogonal to FIT/COVER.
+        self.assertEqual(
+            [item.value for item in VideoFitMode],
+            ["fit", "cover"],
+        )
+
+    def test_focal_mode_default_and_explicit_smart(self):
+        default_params = VideoParams(
+            video_subject="focal mode default"
+        )
+        self.assertEqual(
+            getattr(
+                default_params.focal_mode,
+                "value",
+                default_params.focal_mode,
+            ),
+            "manual",
+        )
+
+        smart_params = VideoParams(
+            video_subject="focal mode smart",
+            focal_mode="smart",
+        )
+        self.assertEqual(
+            getattr(
+                smart_params.focal_mode,
+                "value",
+                smart_params.focal_mode,
+            ),
+            "smart",
+        )
+
+
+class TestFocalModeSerialization(unittest.TestCase):
+    def test_default_is_real_focal_mode_enum(self):
+        params = VideoParams(
+            video_subject="focal enum default"
+        )
+
+        self.assertIs(
+            params.focal_mode,
+            FocalMode.manual,
+        )
+
+    def test_default_serializes_as_manual(self):
+        params = VideoParams(
+            video_subject="focal serialization"
+        )
+
+        payload = params.model_dump()
+
+        self.assertEqual(
+            payload["focal_mode"],
+            FocalMode.manual,
+        )
+
+        json_payload = (
+            params.model_dump_json()
+        )
+
+        self.assertIn(
+            '"focal_mode":"manual"',
+            json_payload,
+        )
 
 
 class TestVideoParams(unittest.TestCase):

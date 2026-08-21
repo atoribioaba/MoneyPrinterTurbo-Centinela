@@ -52,6 +52,11 @@ class VideoFitMode(str, Enum):
     cover = "cover"
 
 
+class FocalMode(str, Enum):
+    manual = "manual"
+    smart = "smart"
+
+
 class _Config:
     arbitrary_types_allowed = True
 
@@ -87,6 +92,7 @@ class VideoParams(BaseModel):
     video_terms: Optional[str | list] = None  # Keywords used to generate the video
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
     video_fit_mode: Optional[VideoFitMode] = VideoFitMode.fit.value
+    focal_mode: Optional[FocalMode] = FocalMode.manual
     focal_x: float = Field(default=0.5, ge=0.0, le=1.0)
     focal_y: float = Field(default=0.5, ge=0.0, le=1.0)
     video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value

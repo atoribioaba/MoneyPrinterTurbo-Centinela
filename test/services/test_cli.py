@@ -758,6 +758,58 @@ def test_video_fit_mode_cli_default_and_cover():
     )
 
 
+def test_focal_mode_cli_default_and_smart():
+    import cli as cli_module
+
+    default_args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "focal mode default",
+        ]
+    )
+
+    assert default_args.focal_mode == "manual"
+
+    default_params = cli_module.build_video_params(
+        default_args
+    )
+
+    assert (
+        getattr(
+            default_params.focal_mode,
+            "value",
+            default_params.focal_mode,
+        )
+        == "manual"
+    )
+
+    smart_args = cli_module.parse_args(
+        [
+            "--video-subject",
+            "focal mode smart",
+            "--video-fit-mode",
+            "cover",
+            "--focal-mode",
+            "smart",
+        ]
+    )
+
+    assert smart_args.focal_mode == "smart"
+
+    smart_params = cli_module.build_video_params(
+        smart_args
+    )
+
+    assert (
+        getattr(
+            smart_params.focal_mode,
+            "value",
+            smart_params.focal_mode,
+        )
+        == "smart"
+    )
+
+
 def test_focal_cli_defaults_and_custom_values():
     import cli as cli_module
 

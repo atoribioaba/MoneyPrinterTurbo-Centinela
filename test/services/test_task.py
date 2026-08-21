@@ -1989,6 +1989,7 @@ def test_generate_final_videos_forwards_focal_coordinates():
         video_subject="focal-task",
         video_count=1,
         video_fit_mode="cover",
+        focal_mode="smart",
         focal_x=0.8,
         focal_y=0.2,
     )
@@ -2044,6 +2045,19 @@ def test_generate_final_videos_forwards_focal_coordinates():
     assert kwargs[
         "focal_y"
     ] == 0.2
+
+    forwarded_focal_mode = kwargs[
+        "focal_mode"
+    ]
+
+    assert (
+        getattr(
+            forwarded_focal_mode,
+            "value",
+            forwarded_focal_mode,
+        )
+        == "smart"
+    )
 
 if __name__ == "__main__":
     unittest.main()

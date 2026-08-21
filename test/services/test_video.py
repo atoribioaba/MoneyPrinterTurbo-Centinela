@@ -1383,10 +1383,11 @@ def test_combine_videos_fit_mode_default_is_backward_compatible():
         signature.parameters
     )
 
-    assert names[-3:] == [
+    assert names[-4:] == [
         "video_fit_mode",
         "focal_x",
         "focal_y",
+        "focal_mode",
     ]
 
 
@@ -1776,10 +1777,11 @@ def test_combine_videos_focal_parameters_are_appended():
         signature.parameters
     )
 
-    assert names[-3:] == [
+    assert names[-4:] == [
         "video_fit_mode",
         "focal_x",
         "focal_y",
+        "focal_mode",
     ]
 
     assert (
@@ -1803,5 +1805,12 @@ def test_combine_videos_focal_parameters_are_appended():
         == 0.5
     )
 
+
+    assert (
+        signature.parameters[
+            "focal_mode"
+        ].default
+        is vd.FocalMode.manual
+    )
 if __name__ == "__main__":
     unittest.main()

@@ -284,6 +284,15 @@ Output and exit status:
         ),
     )
     video_group.add_argument(
+        "--focal-mode",
+        choices=["manual", "smart"],
+        default="manual",
+        help=(
+            "focal selection policy for cover: manual uses focal-x/focal-y; "
+            "smart will select the focal point automatically (default: manual)"
+        ),
+    )
+    video_group.add_argument(
         "--focal-x",
         type=float,
         default=0.5,
@@ -583,6 +592,7 @@ def build_video_params(args: argparse.Namespace) -> VideoParams:
         "video_count": args.video_count,
         "video_aspect": args.video_aspect,
         "video_fit_mode": args.video_fit_mode,
+        "focal_mode": args.focal_mode,
         "focal_x": args.focal_x,
         "focal_y": args.focal_y,
         "voice_name": args.voice_name,

@@ -1069,6 +1069,7 @@ def generate_final_videos(
             video_fit_mode=params.video_fit_mode,
             focal_x=params.focal_x,
             focal_y=params.focal_y,
+            focal_mode=params.focal_mode,
             video_transition_mode=video_transition_mode,
             max_clip_duration=params.video_clip_duration,
             threads=params.n_threads,

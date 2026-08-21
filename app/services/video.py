@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw, ImageFont
 from app.config import config
 from app.models import const
 from app.models.schema import (
+    FocalMode,
     MaterialInfo,
     VideoAspect,
     VideoFitMode,
@@ -825,6 +826,7 @@ def combine_videos(
     video_fit_mode: VideoFitMode = VideoFitMode.fit,
     focal_x: float = 0.5,
     focal_y: float = 0.5,
+    focal_mode: FocalMode = FocalMode.manual,
 ) -> str:
     audio_clip = AudioFileClip(audio_file)
     try:
