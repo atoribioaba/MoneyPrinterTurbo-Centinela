@@ -1032,6 +1032,46 @@ def _record_loomloom_run_reference(
     return None
 
 
+# CENTINELA_SEMANTIC_MATCHER_V01
+def _apply_semantic_material_matching(
+    *,
+    video_script,
+    video_terms,
+    downloaded_videos,
+):
+    from app.services import semantic_matcher
+
+    if not semantic_matcher.is_enabled():
+        return downloaded_videos
+
+    outcome = (
+        semantic_matcher
+        .reorder_videos_for_script(
+            video_script=video_script,
+            video_terms=video_terms,
+            video_paths=downloaded_videos,
+        )
+    )
+
+    if outcome.analyzed:
+        logger.info(
+            "semantic material order applied, "
+            f"method: {outcome.method}, "
+            f"elapsed: {outcome.elapsed_seconds:.2f}s"
+        )
+
+    elif outcome.error:
+        logger.warning(
+            "semantic material matcher fallback, "
+            f"method: {outcome.method}, "
+            f"error: {outcome.error}"
+        )
+
+    return list(
+        outcome.video_paths
+    )
+
+
 def generate_final_videos(
     task_id, params, downloaded_videos, audio_file, subtitle_path, audio_duration
 ):
@@ -1623,6 +1663,13 @@ def _run_pipeline(
             "materials",
             "failed to prepare video materials",
         )
+
+    # CENTINELA_SEMANTIC_MATCHER_PIPELINE
+    downloaded_videos = _apply_semantic_material_matching(
+        video_script=video_script,
+        video_terms=video_terms,
+        downloaded_videos=downloaded_videos,
+    )
 
     if stop_at == "materials":
         sm.state.update_task(

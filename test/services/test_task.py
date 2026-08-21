@@ -2061,3 +2061,96 @@ def test_generate_final_videos_forwards_focal_coordinates():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# CENTINELA_SEMANTIC_MATCHER_TASK_TESTS
+
+
+def test_semantic_material_matching_disabled_preserves_order(
+    monkeypatch,
+):
+    from app.services import (
+        semantic_matcher,
+        task,
+    )
+
+    monkeypatch.setattr(
+        semantic_matcher,
+        "is_enabled",
+        lambda: False,
+    )
+
+    original = [
+        "first.mp4",
+        "second.mp4",
+    ]
+
+    result = (
+        task._apply_semantic_material_matching(
+            video_script="Sol. Luna.",
+            video_terms=[],
+            downloaded_videos=original,
+        )
+    )
+
+    assert result == original
+
+
+def test_semantic_material_matching_uses_outcome(
+    monkeypatch,
+):
+    from app.services import (
+        semantic_matcher,
+        task,
+    )
+
+    monkeypatch.setattr(
+        semantic_matcher,
+        "is_enabled",
+        lambda: True,
+    )
+
+    outcome = (
+        semantic_matcher
+        .SemanticMatchOutcome(
+            video_paths=(
+                "second.mp4",
+                "first.mp4",
+            ),
+            queries=(
+                "Saturno",
+                "Tierra",
+            ),
+            matches=(
+                {
+                    "query":
+                        "Saturno",
+                },
+            ),
+            method="siglip2_test",
+            elapsed_seconds=0.5,
+        )
+    )
+
+    monkeypatch.setattr(
+        semantic_matcher,
+        "reorder_videos_for_script",
+        lambda **kwargs:
+            outcome,
+    )
+
+    result = (
+        task._apply_semantic_material_matching(
+            video_script="Saturno. Tierra.",
+            video_terms=[],
+            downloaded_videos=[
+                "first.mp4",
+                "second.mp4",
+            ],
+        )
+    )
+
+    assert result == [
+        "second.mp4",
+        "first.mp4",
+    ]

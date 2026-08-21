@@ -13,6 +13,18 @@ listen_port = 8080
 
 [app]
 
+
+# Centinela local semantic script-to-clip matcher
+# Optional. Disabled by default.
+# Heavy ML runtime remains outside MoneyPrinterTurbo.
+semantic_matcher_enabled = false
+semantic_matcher_python = 'E:\IA\SemanticMatcher\venv\Scripts\python.exe'
+semantic_matcher_script = 'E:\IA\SemanticMatcher\matcher.py'
+semantic_matcher_model_dir = 'E:\IA\SemanticMatcher\model'
+semantic_matcher_timeout_seconds = 600
+semantic_matcher_max_segments = 8
+semantic_matcher_sample_fractions = [0.20, 0.50, 0.80]
+
 # -----------------------------------------------------------------------------
 # General / 通用设置
 # -----------------------------------------------------------------------------
