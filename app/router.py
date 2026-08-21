@@ -27,6 +27,7 @@ from app.controllers.v1 import (
     depth_parallax,
     color_science,
     shot_matching,
+    transition_director,
 )
 
 root_api_router = APIRouter()
@@ -52,3 +53,4 @@ root_api_router.include_router(cinematic_infographics.router)
 root_api_router.include_router(depth_parallax.router)
 root_api_router.include_router(color_science.router)
 root_api_router.include_router(shot_matching.router)
+root_api_router.include_router(transition_director.router)

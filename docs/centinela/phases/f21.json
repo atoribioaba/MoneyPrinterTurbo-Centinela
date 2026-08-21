@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F21",
+  "name": "Transition Director",
+  "version": "transition-director-v0.1",
+  "branch": "centinela-edition/transition-director-v0.1",
+  "expected_parent": "2eb21c1d98185e9fd5ad0fe6ad5c293437850a22",
+  "checkpoint_number": 30,
+  "commit_message": "feat(transitions): add deterministic Transition Director",
+  "bundle_slug": "transition-director-v01",
+  "expected_paths": [
+    "app/controllers/v1/transition_director.py",
+    "app/models/transition_director.py",
+    "app/router.py",
+    "app/services/transition_director.py",
+    "docs/centinela/transition-director.md",
+    "docs/centinela/phases/f21.json",
+    "test/services/test_transition_director.py",
+    "test/services/test_transition_director_api.py",
+    "webui/pages/21_Transition_Director.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase21-Evidence\\phase21-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase21-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F21",
+    "status": "REAL_TRANSITION_DIRECTOR_PLAN_GENERATED",
+    "transition_director_version": "transition-director-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "creates_flashy_transitions": false,
+    "renders_video": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase21-final-manifest.json"
+}
