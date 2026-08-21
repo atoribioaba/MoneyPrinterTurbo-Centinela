@@ -29,6 +29,8 @@ from app.controllers.v1 import (
     shot_matching,
     transition_director,
     sound_design,
+    voice_studio,
+
 )
 
 root_api_router = APIRouter()
@@ -56,3 +58,4 @@ root_api_router.include_router(color_science.router)
 root_api_router.include_router(shot_matching.router)
 root_api_router.include_router(transition_director.router)
 root_api_router.include_router(sound_design.router)
+root_api_router.include_router(voice_studio.router)

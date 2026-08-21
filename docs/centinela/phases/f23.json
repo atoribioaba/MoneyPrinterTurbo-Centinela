@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F23",
+  "name": "Voice Studio",
+  "version": "voice-studio-v0.1",
+  "branch": "centinela-edition/voice-studio-v0.1",
+  "expected_parent": "2f9c2b1c9d74d7081396770892e690d0cb714678",
+  "checkpoint_number": 32,
+  "commit_message": "feat(voice): add deterministic Voice Studio planner",
+  "bundle_slug": "voice-studio-v01",
+  "expected_paths": [
+    "app/controllers/v1/voice_studio.py",
+    "app/models/voice_studio.py",
+    "app/router.py",
+    "app/services/voice_studio.py",
+    "docs/centinela/voice-studio.md",
+    "docs/centinela/phases/f23.json",
+    "test/services/test_voice_studio.py",
+    "test/services/test_voice_studio_api.py",
+    "webui/pages/23_Voice_Studio.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase23-Evidence\\phase23-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase23-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F23",
+    "status": "REAL_VOICE_STUDIO_PLAN_GENERATED",
+    "voice_studio_version": "voice-studio-v0.1",
+    "planning_only": true,
+    "uses_llm": false,
+    "gpu_required": false,
+    "auto_publication": false,
+    "tts_invocations": 0,
+    "generates_audio": false,
+    "network_calls": 0,
+    "downloads_models": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase23-final-manifest.json"
+}
