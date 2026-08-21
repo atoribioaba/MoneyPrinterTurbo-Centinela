@@ -18,6 +18,7 @@ from app.controllers.v1 import (
     material_selection,
     video,
     video_base,
+    visual_story_graph,
 )
 
 root_api_router = APIRouter()
@@ -30,3 +31,4 @@ root_api_router.include_router(astromedia.router)
 root_api_router.include_router(material_selection.router)
 root_api_router.include_router(video_base.router)
 root_api_router.include_router(cinematic_director.router)
+root_api_router.include_router(visual_story_graph.router)
