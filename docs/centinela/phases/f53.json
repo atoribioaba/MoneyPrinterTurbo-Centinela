@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F53",
+  "name": "Human Review and Finalization E2E",
+  "version": "finalization-e2e-v0.1",
+  "branch": "centinela-edition/finalization-e2e-v0.1",
+  "expected_parent": "3315ded78af1b507aaae99da5d7ad5118c81e15b",
+  "checkpoint_number": 62,
+  "commit_message": "feat(ops): add Human Review and Finalization E2E gate",
+  "bundle_slug": "finalization-e2e-v01",
+  "expected_paths": [
+    "app/controllers/v1/finalization_e2e.py",
+    "app/models/finalization_e2e.py",
+    "app/router.py",
+    "app/services/finalization_e2e.py",
+    "docs/centinela/finalization-e2e.md",
+    "docs/centinela/phases/f53.json",
+    "test/services/test_finalization_e2e.py",
+    "test/services/test_finalization_e2e_api.py",
+    "webui/pages/53_Finalization_E2E.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase53-Evidence\\phase53-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase53-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F53",
+    "status": "REAL_FINALIZATION_E2E_VERIFICATION_GENERATED",
+    "finalization_e2e_version": "finalization-e2e-v0.1",
+    "verification_only": true,
+    "human_review_required": true,
+    "renders_video": false,
+    "modifies_media": false,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase53-final-manifest.json"
+}
