@@ -1,0 +1,42 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F46",
+  "name": "Shadow Policy Evaluator",
+  "version": "shadow-policy-evaluator-v0.1",
+  "branch": "centinela-edition/shadow-policy-evaluator-v0.1",
+  "expected_parent": "5aaf91a6ba49050c529e0a8d68f1035aaef7bc38",
+  "checkpoint_number": 55,
+  "commit_message": "feat(learning): add Shadow Policy Evaluator",
+  "bundle_slug": "shadow-policy-evaluator-v01",
+  "expected_paths": [
+    "app/controllers/v1/shadow_policy_evaluator.py",
+    "app/models/shadow_policy_evaluator.py",
+    "app/router.py",
+    "app/services/shadow_policy_evaluator.py",
+    "docs/centinela/shadow-policy-evaluator.md",
+    "docs/centinela/phases/f46.json",
+    "test/services/test_shadow_policy_evaluator.py",
+    "test/services/test_shadow_policy_evaluator_api.py",
+    "webui/pages/46_Shadow_Policy_Evaluator.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase46-Evidence\\phase46-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase46-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F46",
+    "status": "REAL_SHADOW_POLICY_PLAN_GENERATED",
+    "shadow_policy_evaluator_version": "shadow-policy-evaluator-v0.1",
+    "planning_only": true,
+    "shadow_only": true,
+    "runtime_effect": false,
+    "writes_runtime_config": false,
+    "activates_policy": false,
+    "renders_video": false,
+    "gpu_required": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase46-final-manifest.json"
+}
