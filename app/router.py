@@ -19,6 +19,7 @@ from app.controllers.v1 import (
     human_policy_approval,
     policy_registry,
     shadow_policy_evaluator,
+    canary_policy_planner,
 
 )
 
@@ -70,3 +71,4 @@ root_api_router.include_router(policy_comparator.router)
 root_api_router.include_router(human_policy_approval.router)
 root_api_router.include_router(policy_registry.router)
 root_api_router.include_router(shadow_policy_evaluator.router)
+root_api_router.include_router(canary_policy_planner.router)

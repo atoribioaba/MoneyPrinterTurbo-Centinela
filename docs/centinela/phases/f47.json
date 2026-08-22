@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F47",
+  "name": "Canary Policy Planner",
+  "version": "canary-policy-planner-v0.1",
+  "branch": "centinela-edition/canary-policy-planner-v0.1",
+  "expected_parent": "12b49d7b50cc183cf07142c9263977f4c13493de",
+  "checkpoint_number": 56,
+  "commit_message": "feat(learning): add bounded Canary Policy Planner",
+  "bundle_slug": "canary-policy-planner-v01",
+  "expected_paths": [
+    "app/controllers/v1/canary_policy_planner.py",
+    "app/models/canary_policy_planner.py",
+    "app/router.py",
+    "app/services/canary_policy_planner.py",
+    "docs/centinela/canary-policy-planner.md",
+    "docs/centinela/phases/f47.json",
+    "test/services/test_canary_policy_planner.py",
+    "test/services/test_canary_policy_planner_api.py",
+    "webui/pages/47_Canary_Policy_Planner.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase47-Evidence\\phase47-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase47-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F47",
+    "status": "REAL_CANARY_POLICY_PLAN_GENERATED",
+    "canary_policy_planner_version": "canary-policy-planner-v0.1",
+    "planning_only": true,
+    "max_exposure_fraction": 0.1,
+    "executes_canary": false,
+    "writes_runtime_config": false,
+    "activates_policy": false,
+    "auto_rollback": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase47-final-manifest.json"
+}
