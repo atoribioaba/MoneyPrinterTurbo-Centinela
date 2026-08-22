@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F52",
+  "name": "Video Base E2E Verifier",
+  "version": "video-base-e2e-v0.1",
+  "branch": "centinela-edition/video-base-e2e-v0.1",
+  "expected_parent": "83a5606343682d1cfcd43a49112b1d5d1fb54e27",
+  "checkpoint_number": 61,
+  "commit_message": "feat(ops): add real Video Base E2E verifier",
+  "bundle_slug": "video-base-e2e-v01",
+  "expected_paths": [
+    "app/controllers/v1/video_base_e2e.py",
+    "app/models/video_base_e2e.py",
+    "app/router.py",
+    "app/services/video_base_e2e.py",
+    "docs/centinela/video-base-e2e.md",
+    "docs/centinela/phases/f52.json",
+    "test/services/test_video_base_e2e.py",
+    "test/services/test_video_base_e2e_api.py",
+    "webui/pages/52_Video_Base_E2E.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase52-Evidence\\phase52-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase52-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F52",
+    "status": "REAL_VIDEO_BASE_E2E_VERIFICATION_GENERATED",
+    "video_base_e2e_version": "video-base-e2e-v0.1",
+    "verification_only": true,
+    "renders_video": false,
+    "modifies_media": false,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase52-final-manifest.json"
+}

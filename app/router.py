@@ -24,6 +24,7 @@ from app.controllers.v1 import (
     rollback_decision_gate,
     controlled_promotion_gate,
     production_orchestrator,
+    video_base_e2e,
 
 )
 
@@ -80,3 +81,4 @@ root_api_router.include_router(canary_monitor.router)
 root_api_router.include_router(rollback_decision_gate.router)
 root_api_router.include_router(controlled_promotion_gate.router)
 root_api_router.include_router(production_orchestrator.router)
+root_api_router.include_router(video_base_e2e.router)
