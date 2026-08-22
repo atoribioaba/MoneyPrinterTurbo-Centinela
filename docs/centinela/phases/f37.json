@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F37",
+  "name": "Outcome Linker",
+  "version": "outcome-linker-v0.1",
+  "branch": "centinela-edition/outcome-linker-v0.1",
+  "expected_parent": "43d3dffa1a6b1763f59230732a13d7839f7d5c4c",
+  "checkpoint_number": 46,
+  "commit_message": "feat(learning): add deterministic Outcome Linker",
+  "bundle_slug": "outcome-linker-v01",
+  "expected_paths": [
+    "app/controllers/v1/outcome_linker.py",
+    "app/models/outcome_linker.py",
+    "app/router.py",
+    "app/services/outcome_linker.py",
+    "docs/centinela/outcome-linker.md",
+    "docs/centinela/phases/f37.json",
+    "test/services/test_outcome_linker.py",
+    "test/services/test_outcome_linker_api.py",
+    "webui/pages/37_Outcome_Linker.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase37-Evidence\\phase37-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase37-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F37",
+    "status": "REAL_OUTCOME_LINKER_PLAN_GENERATED",
+    "outcome_linker_version": "outcome-linker-v0.1",
+    "planning_only": true,
+    "joins_native_only_metrics": false,
+    "cross_platform_join": false,
+    "interpolates_observations": false,
+    "database_writes": 0,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase37-final-manifest.json"
+}

@@ -43,6 +43,7 @@ from app.controllers.v1 import (
     retention_intelligence,
     experiment_planner,
     content_feature_registry,
+    outcome_linker,
 
 )
 
@@ -85,3 +86,4 @@ root_api_router.include_router(performance_signals.router)
 root_api_router.include_router(retention_intelligence.router)
 root_api_router.include_router(experiment_planner.router)
 root_api_router.include_router(content_feature_registry.router)
+root_api_router.include_router(outcome_linker.router)
