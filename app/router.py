@@ -17,6 +17,7 @@ from app.controllers.v1 import (
     policy_simulator,
     policy_comparator,
     human_policy_approval,
+    policy_registry,
 )
 
 root_api_router = APIRouter()
@@ -65,3 +66,4 @@ root_api_router.include_router(policy_candidate.router)
 root_api_router.include_router(policy_simulator.router)
 root_api_router.include_router(policy_comparator.router)
 root_api_router.include_router(human_policy_approval.router)
+root_api_router.include_router(policy_registry.router)

@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F45",
+  "name": "Policy Registry",
+  "version": "policy-registry-v0.1",
+  "branch": "centinela-edition/policy-registry-v0.1",
+  "expected_parent": "15a264944ea97fca9ce032892f0b83d0ead2eafa",
+  "checkpoint_number": 54,
+  "commit_message": "feat(learning): add immutable Policy Registry",
+  "bundle_slug": "policy-registry-v01",
+  "expected_paths": [
+    "app/controllers/v1/policy_registry.py",
+    "app/models/policy_registry.py",
+    "app/router.py",
+    "app/services/policy_registry.py",
+    "docs/centinela/policy-registry.md",
+    "docs/centinela/phases/f45.json",
+    "test/services/test_policy_registry.py",
+    "test/services/test_policy_registry_api.py",
+    "webui/pages/45_Policy_Registry.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase45-Evidence\\phase45-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase45-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F45",
+    "status": "REAL_POLICY_REGISTRY_PLAN_GENERATED",
+    "policy_registry_version": "policy-registry-v0.1",
+    "planning_only": true,
+    "immutable_registry": true,
+    "writes_runtime_config": false,
+    "database_writes": 0,
+    "activates_policy": false,
+    "active_policy_changed": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase45-final-manifest.json"
+}
