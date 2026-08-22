@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F43",
+  "name": "Policy Comparator",
+  "version": "policy-comparator-v0.1",
+  "branch": "centinela-edition/policy-comparator-v0.1",
+  "expected_parent": "3855125f1a7c61b77803bbabba770200a4007aa9",
+  "checkpoint_number": 52,
+  "commit_message": "feat(learning): add structural Policy Comparator",
+  "bundle_slug": "policy-comparator-v01",
+  "expected_paths": [
+    "app/controllers/v1/policy_comparator.py",
+    "app/models/policy_comparator.py",
+    "app/router.py",
+    "app/services/policy_comparator.py",
+    "docs/centinela/policy-comparator.md",
+    "docs/centinela/phases/f43.json",
+    "test/services/test_policy_comparator.py",
+    "test/services/test_policy_comparator_api.py",
+    "webui/pages/43_Policy_Comparator.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase43-Evidence\\phase43-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase43-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F43",
+    "status": "REAL_POLICY_COMPARATOR_PLAN_GENERATED",
+    "policy_comparator_version": "policy-comparator-v0.1",
+    "planning_only": true,
+    "quality_improvement_claims": false,
+    "causal_claims": false,
+    "activates_policy": false,
+    "edits_project": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase43-final-manifest.json"
+}
