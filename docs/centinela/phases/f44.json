@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F44",
+  "name": "Human Policy Approval",
+  "version": "human-policy-approval-v0.1",
+  "branch": "centinela-edition/human-policy-approval-v0.1",
+  "expected_parent": "3f541bc8b1e20790dcd1b9e373597c573f175e83",
+  "checkpoint_number": 53,
+  "commit_message": "feat(learning): add Human Policy Approval gate",
+  "bundle_slug": "human-policy-approval-v01",
+  "expected_paths": [
+    "app/controllers/v1/human_policy_approval.py",
+    "app/models/human_policy_approval.py",
+    "app/router.py",
+    "app/services/human_policy_approval.py",
+    "docs/centinela/human-policy-approval.md",
+    "docs/centinela/phases/f44.json",
+    "test/services/test_human_policy_approval.py",
+    "test/services/test_human_policy_approval_api.py",
+    "webui/pages/44_Human_Policy_Approval.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase44-Evidence\\phase44-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase44-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F44",
+    "status": "REAL_HUMAN_POLICY_APPROVAL_PLAN_GENERATED",
+    "human_policy_approval_version": "human-policy-approval-v0.1",
+    "planning_only": true,
+    "auto_approval": false,
+    "activates_policy": false,
+    "edits_project": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase44-final-manifest.json"
+}

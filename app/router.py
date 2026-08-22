@@ -16,6 +16,7 @@ from app.controllers.v1 import (
     policy_candidate,
     policy_simulator,
     policy_comparator,
+    human_policy_approval,
 )
 
 root_api_router = APIRouter()
@@ -63,3 +64,4 @@ root_api_router.include_router(evidence_recommendation_gate.router)
 root_api_router.include_router(policy_candidate.router)
 root_api_router.include_router(policy_simulator.router)
 root_api_router.include_router(policy_comparator.router)
+root_api_router.include_router(human_policy_approval.router)
