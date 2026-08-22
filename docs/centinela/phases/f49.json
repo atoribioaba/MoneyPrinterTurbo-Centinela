@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F49",
+  "name": "Rollback Decision Gate",
+  "version": "rollback-decision-gate-v0.1",
+  "branch": "centinela-edition/rollback-decision-gate-v0.1",
+  "expected_parent": "cf6bad847a1ca650c42ddee73ae14e8843ec57d9",
+  "checkpoint_number": 58,
+  "commit_message": "feat(learning): add automatic Rollback Decision Gate",
+  "bundle_slug": "rollback-decision-gate-v01",
+  "expected_paths": [
+    "app/controllers/v1/rollback_decision_gate.py",
+    "app/models/rollback_decision_gate.py",
+    "app/router.py",
+    "app/services/rollback_decision_gate.py",
+    "docs/centinela/rollback-decision-gate.md",
+    "docs/centinela/phases/f49.json",
+    "test/services/test_rollback_decision_gate.py",
+    "test/services/test_rollback_decision_gate_api.py",
+    "webui/pages/49_Rollback_Decision_Gate.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase49-Evidence\\phase49-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase49-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F49",
+    "status": "REAL_ROLLBACK_DECISION_PLAN_GENERATED",
+    "rollback_decision_gate_version": "rollback-decision-gate-v0.1",
+    "decision_automatic": true,
+    "executes_rollback": false,
+    "writes_runtime_config": false,
+    "activates_policy": false,
+    "promotes_policy": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase49-final-manifest.json"
+}
