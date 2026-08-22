@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F55",
+  "name": "Analytics Import Adapter",
+  "version": "analytics-import-adapter-v0.1",
+  "branch": "centinela-edition/analytics-import-adapter-v0.1",
+  "expected_parent": "ccb774648a1b110fe3d330f8412e4a5172a5ff29",
+  "checkpoint_number": 64,
+  "commit_message": "feat(learning): add CSV JSON Analytics Import Adapter",
+  "bundle_slug": "analytics-import-adapter-v01",
+  "expected_paths": [
+    "app/controllers/v1/analytics_import_adapter.py",
+    "app/models/analytics_import_adapter.py",
+    "app/router.py",
+    "app/services/analytics_import_adapter.py",
+    "docs/centinela/analytics-import-adapter.md",
+    "docs/centinela/phases/f55.json",
+    "test/services/test_analytics_import_adapter.py",
+    "test/services/test_analytics_import_adapter_api.py",
+    "webui/pages/55_Analytics_Import_Adapter.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase55-Evidence\\phase55-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase55-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F55",
+    "status": "REAL_ANALYTICS_IMPORT_ADAPTER_PLAN_GENERATED",
+    "analytics_import_adapter_version": "analytics-import-adapter-v0.1",
+    "adapter_only": true,
+    "network_calls": 0,
+    "api_calls": 0,
+    "database_writes": 0,
+    "credentials_required": false,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase55-final-manifest.json"
+}
