@@ -14,6 +14,17 @@ listen_port = 8080
 [app]
 
 
+# Optional protection for API routes and generated files under /tasks.
+# Leave empty for local backward-compatible access. When configured, clients
+# must send the same value in the x-api-key request header. Keep real keys only
+# in config.toml and never commit them.
+# API 路由和 /tasks 生成文件的可选保护。留空时保持本地免认证行为；
+# 配置后客户端必须通过 x-api-key 请求头传入同一个值。
+# Task artifact requests also require this header; authenticated clients should
+# attach x-api-key when downloading generated task artifacts.
+api_key = ""
+
+
 # Centinela local semantic script-to-clip matcher
 # Optional. Disabled by default.
 # Heavy ML runtime remains outside MoneyPrinterTurbo.
