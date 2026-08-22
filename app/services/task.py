@@ -368,7 +368,12 @@ def save_script_data(task_id, video_script, video_terms, params):
     task_artifacts.write_script_data(task_id, script_data)
 
 
-def resolve_custom_audio_file(task_id: str, custom_audio_file: str | None) -> str:
+def resolve_custom_audio_file(
+    task_id: str,
+    custom_audio_file: str | None,
+    *,
+    allow_server_file_input: bool = False,
+) -> str:
     requested_file = (custom_audio_file or "").strip()
     if not requested_file:
         return ""
@@ -381,6 +386,19 @@ def resolve_custom_audio_file(task_id: str, custom_audio_file: str | None) -> st
         )
     except ValueError as exc:
         task_dir_error = exc
+
+    # A missing path that stays inside the current task directory can
+    # be reported precisely without exposing the server filesystem.
+    if str(task_dir_error) == "file does not exist":
+        raise task_dir_error
+
+    # HTTP API and WebUI callers must not turn user-controlled paths
+    # into arbitrary server-side file reads. Only trusted local CLI
+    # operation explicitly opts in to that capability.
+    if not allow_server_file_input:
+        raise ValueError(
+            "custom audio file must be stored within the current task directory"
+        ) from task_dir_error
 
     server_audio_file = path.realpath(
         requested_file
@@ -603,7 +621,14 @@ def _generate_qwen3_tts_audio(task_id, video_script):
 
 
 
-def generate_audio(task_id, params, video_script, voice_preview=None):
+def generate_audio(
+    task_id,
+    params,
+    video_script,
+    voice_preview=None,
+    *,
+    allow_server_file_input: bool = False,
+):
     """
     Generate audio for the video script.
     If a custom audio file is provided, it will be used directly.
@@ -620,7 +645,9 @@ def generate_audio(task_id, params, video_script, voice_preview=None):
     requested_custom_audio_file = getattr(params, "custom_audio_file", None)
     try:
         custom_audio_file = resolve_custom_audio_file(
-            task_id, requested_custom_audio_file
+            task_id,
+            requested_custom_audio_file,
+            allow_server_file_input=allow_server_file_input,
         )
     except ValueError as exc:
         _mark_task_failed(
@@ -1515,6 +1542,7 @@ def _run_pipeline(
     stop_at: str = "video",
     voice_preview: dict | None = None,
     loomloom_video_request: loomloom.LoomLoomConfirmedVideoRequest | None = None,
+    allow_server_file_input: bool = False,
 ):
     logger.info(f"start task: {task_id}, stop_at: {stop_at}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
@@ -1626,6 +1654,7 @@ def _run_pipeline(
         params,
         video_script,
         voice_preview=voice_preview,
+        allow_server_file_input=allow_server_file_input,
     )
     if not audio_file:
         return _mark_task_failed(
@@ -1784,6 +1813,7 @@ def start(
     stop_at: str = "video",
     voice_preview: dict | None = None,
     loomloom_video_request: loomloom.LoomLoomConfirmedVideoRequest | None = None,
+    allow_server_file_input: bool = False,
 ):
     """执行任务流水线，并确保未预期异常也会转换成可查询的失败状态。"""
     try:
@@ -1793,6 +1823,7 @@ def start(
             stop_at=stop_at,
             voice_preview=voice_preview,
             loomloom_video_request=loomloom_video_request,
+            allow_server_file_input=allow_server_file_input,
         )
     except Exception as exc:
         logger.exception(
