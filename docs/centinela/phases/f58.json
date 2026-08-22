@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F58",
+  "name": "V1 Readiness Audit",
+  "version": "v1-readiness-audit-v0.1",
+  "branch": "centinela-edition/v1-readiness-audit-v0.1",
+  "expected_parent": "de421ffbe8b01ae2ebe2f83e6ce3a8651aeb1500",
+  "checkpoint_number": 67,
+  "commit_message": "feat(cert): add final V1 readiness audit",
+  "bundle_slug": "v1-readiness-audit-v01",
+  "expected_paths": [
+    "app/controllers/v1/v1_readiness_audit.py",
+    "app/models/v1_readiness_audit.py",
+    "app/router.py",
+    "app/services/v1_readiness_audit.py",
+    "docs/centinela/v1-readiness-audit.md",
+    "docs/centinela/phases/f58.json",
+    "test/services/test_v1_readiness_audit.py",
+    "test/services/test_v1_readiness_audit_api.py",
+    "webui/pages/58_V1_Readiness_Audit.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase58-Evidence\\phase58-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase58-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F58",
+    "status": "REAL_V1_READINESS_AUDIT_GENERATED",
+    "v1_readiness_audit_version": "v1-readiness-audit-v0.1",
+    "audit_only": true,
+    "final_phase": true,
+    "architecture_v1_frozen": false,
+    "freeze_executed": false,
+    "auto_publication": false,
+    "auto_activation": false,
+    "writes_runtime_config": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase58-final-manifest.json"
+}

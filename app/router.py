@@ -30,6 +30,7 @@ from app.controllers.v1 import (
     analytics_import_adapter,
     operational_hardening,
     golden_e2e_certification,
+    v1_readiness_audit,
 
 )
 
@@ -92,3 +93,4 @@ root_api_router.include_router(publication_package.router)
 root_api_router.include_router(analytics_import_adapter.router)
 root_api_router.include_router(operational_hardening.router)
 root_api_router.include_router(golden_e2e_certification.router)
+root_api_router.include_router(v1_readiness_audit.router)
