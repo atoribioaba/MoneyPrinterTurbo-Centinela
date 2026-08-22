@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F33",
+  "name": "Content Performance Signals",
+  "version": "performance-signals-v0.1",
+  "branch": "centinela-edition/performance-signals-v0.1",
+  "expected_parent": "897fdd039b77f27485c2575c28dbad0ed68ce8ef",
+  "checkpoint_number": 42,
+  "commit_message": "feat(analytics): add cohort Performance Signals",
+  "bundle_slug": "performance-signals-v01",
+  "expected_paths": [
+    "app/controllers/v1/performance_signals.py",
+    "app/models/performance_signals.py",
+    "app/router.py",
+    "app/services/performance_signals.py",
+    "docs/centinela/performance-signals.md",
+    "docs/centinela/phases/f33.json",
+    "test/services/test_performance_signals.py",
+    "test/services/test_performance_signals_api.py",
+    "webui/pages/33_Performance_Signals.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase33-Evidence\\phase33-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase33-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F33",
+    "status": "REAL_PERFORMANCE_SIGNALS_PLAN_GENERATED",
+    "performance_signals_version": "performance-signals-v0.1",
+    "planning_only": true,
+    "cross_platform_ranking": false,
+    "composite_score_enabled": false,
+    "causal_claims": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase33-final-manifest.json"
+}

@@ -39,6 +39,7 @@ from app.controllers.v1 import (
     delivery_render,
     analytics_brain,
     metric_normalizer,
+    performance_signals,
 
 )
 
@@ -77,3 +78,4 @@ root_api_router.include_router(quality_gates.router)
 root_api_router.include_router(delivery_render.router)
 root_api_router.include_router(analytics_brain.router)
 root_api_router.include_router(metric_normalizer.router)
+root_api_router.include_router(performance_signals.router)
