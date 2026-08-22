@@ -23,6 +23,7 @@ from app.controllers.v1 import (
     canary_monitor,
     rollback_decision_gate,
     controlled_promotion_gate,
+    production_orchestrator,
 
 )
 
@@ -78,3 +79,4 @@ root_api_router.include_router(canary_policy_planner.router)
 root_api_router.include_router(canary_monitor.router)
 root_api_router.include_router(rollback_decision_gate.router)
 root_api_router.include_router(controlled_promotion_gate.router)
+root_api_router.include_router(production_orchestrator.router)

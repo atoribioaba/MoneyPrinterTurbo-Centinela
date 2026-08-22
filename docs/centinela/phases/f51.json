@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F51",
+  "name": "Production Orchestrator",
+  "version": "production-orchestrator-v0.1",
+  "branch": "centinela-edition/production-orchestrator-v0.1",
+  "expected_parent": "747f3193cad1c281198da2c98d006fcab5b41bcb",
+  "checkpoint_number": 60,
+  "commit_message": "feat(ops): add Centinela Production Orchestrator",
+  "bundle_slug": "production-orchestrator-v01",
+  "expected_paths": [
+    "app/controllers/v1/production_orchestrator.py",
+    "app/models/production_orchestrator.py",
+    "app/router.py",
+    "app/services/production_orchestrator.py",
+    "docs/centinela/production-orchestrator.md",
+    "docs/centinela/phases/f51.json",
+    "test/services/test_production_orchestrator.py",
+    "test/services/test_production_orchestrator_api.py",
+    "webui/pages/51_Production_Orchestrator.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase51-Evidence\\phase51-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase51-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F51",
+    "status": "REAL_PRODUCTION_ORCHESTRATOR_PLAN_GENERATED",
+    "production_orchestrator_version": "production-orchestrator-v0.1",
+    "orchestration_only": true,
+    "invokes_render": false,
+    "invokes_llm": false,
+    "invokes_network": false,
+    "writes_runtime_config": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase51-final-manifest.json"
+}
