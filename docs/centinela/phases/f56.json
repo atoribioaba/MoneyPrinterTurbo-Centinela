@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F56",
+  "name": "Operational Hardening Audit",
+  "version": "operational-hardening-v0.1",
+  "branch": "centinela-edition/operational-hardening-v0.1",
+  "expected_parent": "16eacb19bdf816f8724d256359475d04ae392ef1",
+  "checkpoint_number": 65,
+  "commit_message": "feat(ops): add consolidated Operational Hardening audit",
+  "bundle_slug": "operational-hardening-v01",
+  "expected_paths": [
+    "app/controllers/v1/operational_hardening.py",
+    "app/models/operational_hardening.py",
+    "app/router.py",
+    "app/services/operational_hardening.py",
+    "docs/centinela/operational-hardening.md",
+    "docs/centinela/phases/f56.json",
+    "test/services/test_operational_hardening.py",
+    "test/services/test_operational_hardening_api.py",
+    "webui/pages/56_Operational_Hardening.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase56-Evidence\\phase56-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase56-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F56",
+    "status": "REAL_OPERATIONAL_HARDENING_AUDIT_GENERATED",
+    "operational_hardening_version": "operational-hardening-v0.1",
+    "audit_only": true,
+    "modifies_config": false,
+    "resets_network": false,
+    "deletes_files": false,
+    "downloads_dependencies": false,
+    "network_calls": 0
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase56-final-manifest.json"
+}
