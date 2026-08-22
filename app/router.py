@@ -26,6 +26,7 @@ from app.controllers.v1 import (
     production_orchestrator,
     video_base_e2e,
     finalization_e2e,
+    publication_package,
 
 )
 
@@ -84,3 +85,4 @@ root_api_router.include_router(controlled_promotion_gate.router)
 root_api_router.include_router(production_orchestrator.router)
 root_api_router.include_router(video_base_e2e.router)
 root_api_router.include_router(finalization_e2e.router)
+root_api_router.include_router(publication_package.router)

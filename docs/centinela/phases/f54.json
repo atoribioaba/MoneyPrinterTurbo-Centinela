@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F54",
+  "name": "Manual Publication Package",
+  "version": "publication-package-v0.1",
+  "branch": "centinela-edition/publication-package-v0.1",
+  "expected_parent": "f1dd5d42648a392af5c8797691c52f9b951b6095",
+  "checkpoint_number": 63,
+  "commit_message": "feat(ops): add manual Publication Package planner",
+  "bundle_slug": "publication-package-v01",
+  "expected_paths": [
+    "app/controllers/v1/publication_package.py",
+    "app/models/publication_package.py",
+    "app/router.py",
+    "app/services/publication_package.py",
+    "docs/centinela/publication-package.md",
+    "docs/centinela/phases/f54.json",
+    "test/services/test_publication_package.py",
+    "test/services/test_publication_package_api.py",
+    "webui/pages/54_Publication_Package.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase54-Evidence\\phase54-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase54-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F54",
+    "status": "REAL_PUBLICATION_PACKAGE_PLAN_GENERATED",
+    "publication_package_version": "publication-package-v0.1",
+    "planning_only": true,
+    "manual_publication_only": true,
+    "writes_files": false,
+    "uploads_files": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase54-final-manifest.json"
+}
