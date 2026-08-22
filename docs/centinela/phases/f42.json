@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F42",
+  "name": "Policy Simulator",
+  "version": "policy-simulator-v0.1",
+  "branch": "centinela-edition/policy-simulator-v0.1",
+  "expected_parent": "595d252666cd69487011c24bb6e5ecf518ee46b9",
+  "checkpoint_number": 51,
+  "commit_message": "feat(learning): add deterministic Policy Simulator",
+  "bundle_slug": "policy-simulator-v01",
+  "expected_paths": [
+    "app/controllers/v1/policy_simulator.py",
+    "app/models/policy_simulator.py",
+    "app/router.py",
+    "app/services/policy_simulator.py",
+    "docs/centinela/policy-simulator.md",
+    "docs/centinela/phases/f42.json",
+    "test/services/test_policy_simulator.py",
+    "test/services/test_policy_simulator_api.py",
+    "webui/pages/42_Policy_Simulator.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase42-Evidence\\phase42-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase42-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F42",
+    "status": "REAL_POLICY_SIMULATOR_PLAN_GENERATED",
+    "policy_simulator_version": "policy-simulator-v0.1",
+    "planning_only": true,
+    "uses_real_cinematic_director": true,
+    "renders_video": false,
+    "gpu_required": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "writes_runtime_config": false,
+    "activates_policy": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase42-final-manifest.json"
+}
