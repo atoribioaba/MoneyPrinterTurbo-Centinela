@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F36",
+  "name": "Content Feature Registry",
+  "version": "content-feature-registry-v0.1",
+  "branch": "centinela-edition/content-feature-registry-v0.1",
+  "expected_parent": "ab61165e59cf7ced7614aee3756ae179df15d1a9",
+  "checkpoint_number": 45,
+  "commit_message": "feat(learning): add Content Feature Registry",
+  "bundle_slug": "content-feature-registry-v01",
+  "expected_paths": [
+    "app/controllers/v1/content_feature_registry.py",
+    "app/models/content_feature_registry.py",
+    "app/router.py",
+    "app/services/content_feature_registry.py",
+    "docs/centinela/content-feature-registry.md",
+    "docs/centinela/phases/f36.json",
+    "test/services/test_content_feature_registry.py",
+    "test/services/test_content_feature_registry_api.py",
+    "webui/pages/36_Content_Feature_Registry.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase36-Evidence\\phase36-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase36-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F36",
+    "status": "REAL_CONTENT_FEATURE_REGISTRY_PLAN_GENERATED",
+    "content_feature_registry_version": "content-feature-registry-v0.1",
+    "planning_only": true,
+    "stores_creative_text": false,
+    "analyzes_pixels": false,
+    "database_writes": 0,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase36-final-manifest.json"
+}
