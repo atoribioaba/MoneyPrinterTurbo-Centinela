@@ -1,0 +1,43 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F48",
+  "name": "Canary Monitor",
+  "version": "canary-monitor-v0.1",
+  "branch": "centinela-edition/canary-monitor-v0.1",
+  "expected_parent": "1762002c4999a174f305f042062adba9180a0d42",
+  "checkpoint_number": 57,
+  "commit_message": "feat(learning): add descriptive Canary Monitor",
+  "bundle_slug": "canary-monitor-v01",
+  "expected_paths": [
+    "app/controllers/v1/canary_monitor.py",
+    "app/models/canary_monitor.py",
+    "app/router.py",
+    "app/services/canary_monitor.py",
+    "docs/centinela/canary-monitor.md",
+    "docs/centinela/phases/f48.json",
+    "test/services/test_canary_monitor.py",
+    "test/services/test_canary_monitor_api.py",
+    "webui/pages/48_Canary_Monitor.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase48-Evidence\\phase48-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase48-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F48",
+    "status": "REAL_CANARY_MONITOR_PLAN_GENERATED",
+    "canary_monitor_version": "canary-monitor-v0.1",
+    "descriptive_only": true,
+    "launches_canary": false,
+    "executes_rollback": false,
+    "activates_policy": false,
+    "writes_runtime_config": false,
+    "quality_improvement_claims": false,
+    "causal_claims": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "database_writes": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase48-final-manifest.json"
+}
