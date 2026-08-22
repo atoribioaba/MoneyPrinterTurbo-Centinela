@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F38",
+  "name": "Association Analyzer",
+  "version": "association-analyzer-v0.1",
+  "branch": "centinela-edition/association-analyzer-v0.1",
+  "expected_parent": "90167f7c31edda5eadf0997dbe720355781eeb84",
+  "checkpoint_number": 47,
+  "commit_message": "feat(learning): add descriptive Association Analyzer",
+  "bundle_slug": "association-analyzer-v01",
+  "expected_paths": [
+    "app/controllers/v1/association_analyzer.py",
+    "app/models/association_analyzer.py",
+    "app/router.py",
+    "app/services/association_analyzer.py",
+    "docs/centinela/association-analyzer.md",
+    "docs/centinela/phases/f38.json",
+    "test/services/test_association_analyzer.py",
+    "test/services/test_association_analyzer_api.py",
+    "webui/pages/38_Association_Analyzer.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase38-Evidence\\phase38-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase38-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F38",
+    "status": "REAL_ASSOCIATION_ANALYZER_PLAN_GENERATED",
+    "association_analyzer_version": "association-analyzer-v0.1",
+    "planning_only": true,
+    "method": "SPEARMAN_RANK_CORRELATION",
+    "cross_platform_pooling": false,
+    "p_values_calculated": false,
+    "statistical_significance_claimed": false,
+    "causal_claims": false,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase38-final-manifest.json"
+}
