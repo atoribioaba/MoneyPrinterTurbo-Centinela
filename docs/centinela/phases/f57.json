@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F57",
+  "name": "Golden Real E2E Certification",
+  "version": "golden-e2e-certification-v0.1",
+  "branch": "centinela-edition/golden-e2e-certification-v0.1",
+  "expected_parent": "b04108cc1c767479c256169c5ceb1776096852cb",
+  "checkpoint_number": 66,
+  "commit_message": "feat(cert): add Golden real E2E certification gate",
+  "bundle_slug": "golden-e2e-certification-v01",
+  "expected_paths": [
+    "app/controllers/v1/golden_e2e_certification.py",
+    "app/models/golden_e2e_certification.py",
+    "app/router.py",
+    "app/services/golden_e2e_certification.py",
+    "docs/centinela/golden-e2e-certification.md",
+    "docs/centinela/phases/f57.json",
+    "test/services/test_golden_e2e_certification.py",
+    "test/services/test_golden_e2e_certification_api.py",
+    "webui/pages/57_Golden_E2E_Certification.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase57-Evidence\\phase57-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase57-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F57",
+    "status": "REAL_GOLDEN_E2E_CERTIFICATION_EVALUATION_GENERATED",
+    "golden_e2e_certification_version": "golden-e2e-certification-v0.1",
+    "certification_only": true,
+    "real_video_required": true,
+    "synthetic_only_not_accepted": true,
+    "renders_video": false,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase57-final-manifest.json"
+}
