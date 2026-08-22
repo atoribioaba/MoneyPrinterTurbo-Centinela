@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F50",
+  "name": "Controlled Promotion Gate",
+  "version": "controlled-promotion-gate-v0.1",
+  "branch": "centinela-edition/controlled-promotion-gate-v0.1",
+  "expected_parent": "9d85ad9b05388919812fdd27f2fc483718f61b17",
+  "checkpoint_number": 59,
+  "commit_message": "feat(learning): add Controlled Promotion Gate",
+  "bundle_slug": "controlled-promotion-gate-v01",
+  "expected_paths": [
+    "app/controllers/v1/controlled_promotion_gate.py",
+    "app/models/controlled_promotion_gate.py",
+    "app/router.py",
+    "app/services/controlled_promotion_gate.py",
+    "docs/centinela/controlled-promotion-gate.md",
+    "docs/centinela/phases/f50.json",
+    "test/services/test_controlled_promotion_gate.py",
+    "test/services/test_controlled_promotion_gate_api.py",
+    "webui/pages/50_Controlled_Promotion_Gate.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase50-Evidence\\phase50-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase50-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F50",
+    "status": "REAL_CONTROLLED_PROMOTION_PLAN_GENERATED",
+    "controlled_promotion_gate_version": "controlled-promotion-gate-v0.1",
+    "planning_only": true,
+    "requires_human_promotion_decision": true,
+    "activates_policy": false,
+    "writes_runtime_config": false,
+    "auto_apply": false,
+    "executes_rollback": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase50-final-manifest.json"
+}
