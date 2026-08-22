@@ -1,0 +1,40 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F39",
+  "name": "Experiment Evidence Ledger",
+  "version": "experiment-evidence-ledger-v0.1",
+  "branch": "centinela-edition/experiment-evidence-ledger-v0.1",
+  "expected_parent": "d48b7b51ec03c62f0b0074495e692470e221a880",
+  "checkpoint_number": 48,
+  "commit_message": "feat(learning): add Experiment Evidence Ledger",
+  "bundle_slug": "experiment-evidence-ledger-v01",
+  "expected_paths": [
+    "app/controllers/v1/experiment_evidence_ledger.py",
+    "app/models/experiment_evidence_ledger.py",
+    "app/router.py",
+    "app/services/experiment_evidence_ledger.py",
+    "docs/centinela/experiment-evidence-ledger.md",
+    "docs/centinela/phases/f39.json",
+    "test/services/test_experiment_evidence_ledger.py",
+    "test/services/test_experiment_evidence_ledger_api.py",
+    "webui/pages/39_Experiment_Evidence_Ledger.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase39-Evidence\\phase39-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase39-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F39",
+    "status": "REAL_EXPERIMENT_EVIDENCE_LEDGER_PLAN_GENERATED",
+    "experiment_evidence_ledger_version": "experiment-evidence-ledger-v0.1",
+    "planning_only": true,
+    "runs_experiments": false,
+    "calculates_p_values": false,
+    "causal_claims": false,
+    "database_writes": 0,
+    "network_calls": 0,
+    "auto_apply": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase39-final-manifest.json"
+}
