@@ -6,52 +6,17 @@ Defines all FastAPI application endpoints.
 from fastapi import APIRouter
 
 from app.controllers.v1 import (
-    astronomical_tracker,
-    astronomy,
-    astronomy_director,
-    astromedia,
-    best_moment,
-    cinematic_director,
-    llm,
-    master_image_i2v,
-    material_selection,
-    shot_quality,
-    smart_ken_burns,
-    smart_reframing,
-    video,
-    video_base,
-    visual_story_graph,
-    astronomy_motion_graphics,
-    cinematic_infographics,
-    wangp_backend,
-    depth_parallax,
-    color_science,
-    shot_matching,
-    transition_director,
-    sound_design,
-    voice_studio,
-    audio_mastering,
-    subtitle_intelligence,
-    selective_upscaling,
-    media_mining,
-    quality_comparator,
-    quality_gates,
-    delivery_render,
-    analytics_brain,
-    metric_normalizer,
-    performance_signals,
-    retention_intelligence,
-    experiment_planner,
-    content_feature_registry,
-    outcome_linker,
-    association_analyzer,
-    experiment_evidence_ledger,
-    evidence_recommendation_gate,
-
+    astronomical_tracker, astronomy, astronomy_director, astromedia, best_moment, cinematic_director, llm,
+    master_image_i2v, material_selection, shot_quality, smart_ken_burns, smart_reframing, video, video_base,
+    visual_story_graph, astronomy_motion_graphics, cinematic_infographics, wangp_backend, depth_parallax,
+    color_science, shot_matching, transition_director, sound_design, voice_studio, audio_mastering,
+    subtitle_intelligence, selective_upscaling, media_mining, quality_comparator, quality_gates, delivery_render,
+    analytics_brain, metric_normalizer, performance_signals, retention_intelligence, experiment_planner,
+    content_feature_registry, outcome_linker, association_analyzer, experiment_evidence_ledger, evidence_recommendation_gate,
+    policy_candidate,
 )
 
 root_api_router = APIRouter()
-# v1
 root_api_router.include_router(video.router)
 root_api_router.include_router(llm.router)
 root_api_router.include_router(astronomy.router)
@@ -93,3 +58,4 @@ root_api_router.include_router(outcome_linker.router)
 root_api_router.include_router(association_analyzer.router)
 root_api_router.include_router(experiment_evidence_ledger.router)
 root_api_router.include_router(evidence_recommendation_gate.router)
+root_api_router.include_router(policy_candidate.router)

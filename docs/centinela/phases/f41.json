@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F41",
+  "name": "Policy Candidate",
+  "version": "policy-candidate-v0.1",
+  "branch": "centinela-edition/policy-candidate-v0.1",
+  "expected_parent": "1205617bfee47012dd062e292a1e05fa595f1d64",
+  "checkpoint_number": 50,
+  "commit_message": "feat(learning): add explicit Policy Candidate mapping",
+  "bundle_slug": "policy-candidate-v01",
+  "expected_paths": [
+    "app/controllers/v1/policy_candidate.py",
+    "app/models/policy_candidate.py",
+    "app/router.py",
+    "app/services/policy_candidate.py",
+    "docs/centinela/policy-candidate.md",
+    "docs/centinela/phases/f41.json",
+    "test/services/test_policy_candidate.py",
+    "test/services/test_policy_candidate_api.py",
+    "webui/pages/41_Policy_Candidate.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase41-Evidence\\phase41-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase41-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F41",
+    "status": "REAL_POLICY_CANDIDATE_PLAN_GENERATED",
+    "policy_candidate_version": "policy-candidate-v0.1",
+    "planning_only": true,
+    "inferred_bindings": false,
+    "edits_project": false,
+    "updates_director_policy": false,
+    "activates_policy": false,
+    "uses_llm": false,
+    "network_calls": 0,
+    "database_writes": 0,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase41-final-manifest.json"
+}
