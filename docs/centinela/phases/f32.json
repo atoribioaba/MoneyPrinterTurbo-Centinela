@@ -1,0 +1,38 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F32",
+  "name": "Metric Normalizer",
+  "version": "metric-normalizer-v0.1",
+  "branch": "centinela-edition/metric-normalizer-v0.1",
+  "expected_parent": "e813a9c49a8696894a6a1f68ac4334ddf8635231",
+  "checkpoint_number": 41,
+  "commit_message": "feat(analytics): add conservative Metric Normalizer",
+  "bundle_slug": "metric-normalizer-v01",
+  "expected_paths": [
+    "app/controllers/v1/metric_normalizer.py",
+    "app/models/metric_normalizer.py",
+    "app/router.py",
+    "app/services/metric_normalizer.py",
+    "docs/centinela/metric-normalizer.md",
+    "docs/centinela/phases/f32.json",
+    "test/services/test_metric_normalizer.py",
+    "test/services/test_metric_normalizer_api.py",
+    "webui/pages/32_Metric_Normalizer.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase32-Evidence\\phase32-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase32-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F32",
+    "status": "REAL_METRIC_NORMALIZER_PLAN_GENERATED",
+    "metric_normalizer_version": "metric-normalizer-v0.1",
+    "planning_only": true,
+    "cross_platform_equivalence_assumed": false,
+    "api_calls": 0,
+    "network_calls": 0,
+    "uses_llm": false,
+    "auto_publication": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase32-final-manifest.json"
+}
