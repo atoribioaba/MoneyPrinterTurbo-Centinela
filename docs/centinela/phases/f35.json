@@ -1,0 +1,39 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F35",
+  "name": "Experiment Planner",
+  "version": "experiment-planner-v0.1",
+  "branch": "centinela-edition/experiment-planner-v0.1",
+  "expected_parent": "ef1c909a92b27cea4f8c24170fe939a14bedd184",
+  "checkpoint_number": 44,
+  "commit_message": "feat(analytics): add evidence-gated Experiment Planner",
+  "bundle_slug": "experiment-planner-v01",
+  "expected_paths": [
+    "app/controllers/v1/experiment_planner.py",
+    "app/models/experiment_planner.py",
+    "app/router.py",
+    "app/services/experiment_planner.py",
+    "docs/centinela/experiment-planner.md",
+    "docs/centinela/phases/f35.json",
+    "test/services/test_experiment_planner.py",
+    "test/services/test_experiment_planner_api.py",
+    "webui/pages/35_Experiment_Planner.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase35-Evidence\\phase35-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase35-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F35",
+    "status": "REAL_EXPERIMENT_PLANNER_PLAN_GENERATED",
+    "experiment_planner_version": "experiment-planner-v0.1",
+    "planning_only": true,
+    "causal_claims": false,
+    "edits_project": false,
+    "runs_experiments": false,
+    "publishes_content": false,
+    "uses_llm": false,
+    "network_calls": 0
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase35-final-manifest.json"
+}

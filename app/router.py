@@ -41,6 +41,7 @@ from app.controllers.v1 import (
     metric_normalizer,
     performance_signals,
     retention_intelligence,
+    experiment_planner,
 
 )
 
@@ -81,3 +82,4 @@ root_api_router.include_router(analytics_brain.router)
 root_api_router.include_router(metric_normalizer.router)
 root_api_router.include_router(performance_signals.router)
 root_api_router.include_router(retention_intelligence.router)
+root_api_router.include_router(experiment_planner.router)
