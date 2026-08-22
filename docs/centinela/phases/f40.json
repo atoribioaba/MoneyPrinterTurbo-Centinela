@@ -1,0 +1,41 @@
+{
+  "schema": "centinela-phase-manifest-v0.1",
+  "phase": "F40",
+  "name": "Evidence Recommendation Gate",
+  "version": "evidence-recommendation-gate-v0.1",
+  "branch": "centinela-edition/evidence-recommendation-gate-v0.1",
+  "expected_parent": "6e430fda0b68dc93100c6730223d2bf196435523",
+  "checkpoint_number": 49,
+  "commit_message": "feat(learning): add Evidence Recommendation Gate",
+  "bundle_slug": "evidence-recommendation-gate-v01",
+  "expected_paths": [
+    "app/controllers/v1/evidence_recommendation_gate.py",
+    "app/models/evidence_recommendation_gate.py",
+    "app/router.py",
+    "app/services/evidence_recommendation_gate.py",
+    "docs/centinela/evidence-recommendation-gate.md",
+    "docs/centinela/phases/f40.json",
+    "test/services/test_evidence_recommendation_gate.py",
+    "test/services/test_evidence_recommendation_gate_api.py",
+    "webui/pages/40_Evidence_Recommendation_Gate.py"
+  ],
+  "validation_manifest": "E:\\IA\\MPT-Phase40-Evidence\\phase40-validation-latest.json",
+  "run_pointer": "E:\\IA\\MPT-Phase40-Evidence\\latest-run.json",
+  "run_expectations": {
+    "phase": "F40",
+    "status": "REAL_EVIDENCE_RECOMMENDATION_GATE_PLAN_GENERATED",
+    "evidence_recommendation_gate_version": "evidence-recommendation-gate-v0.1",
+    "planning_only": true,
+    "association_only_recommendations": false,
+    "causal_claims": false,
+    "edits_project": false,
+    "updates_director_policy": false,
+    "auto_apply": false,
+    "auto_publication": false,
+    "network_calls": 0,
+    "uses_llm": false
+  },
+  "private_origin_repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "backup_root": "E:\\Backups\\MPT",
+  "final_evidence_name": "phase40-final-manifest.json"
+}

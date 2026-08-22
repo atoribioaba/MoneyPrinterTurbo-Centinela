@@ -46,6 +46,7 @@ from app.controllers.v1 import (
     outcome_linker,
     association_analyzer,
     experiment_evidence_ledger,
+    evidence_recommendation_gate,
 
 )
 
@@ -91,3 +92,4 @@ root_api_router.include_router(content_feature_registry.router)
 root_api_router.include_router(outcome_linker.router)
 root_api_router.include_router(association_analyzer.router)
 root_api_router.include_router(experiment_evidence_ledger.router)
+root_api_router.include_router(evidence_recommendation_gate.router)
