@@ -5,6 +5,11 @@ from collections import Counter
 from typing import Any
 
 from app.services.astromedia import AstroMediaCatalog
+from app.services.centinela.av_runtime import (
+    build_audio_stage_binding,
+    build_scene_stage_binding,
+    build_video_base_stage_binding,
+)
 from app.services.centinela.media_resolver import MediaResolver, build_media_stage_binding
 from app.services.centinela.orchestration import (
     JobManager,
@@ -69,11 +74,11 @@ _STATE_LABELS = {
 _BACKEND_STATUS = {
     SpineStage.RESEARCH: "R6 Fact Lock local conectado",
     SpineStage.SCRIPT: "R6 Writer Room local conectado",
-    SpineStage.SCENES: "directores existentes; adapter de aplicación pendiente",
+    SpineStage.SCENES: "R7 puente FinalScript → scene_plan conectado",
     SpineStage.MEDIA: "R4 Media Resolver conectado",
-    SpineStage.AUDIO: "executors pendientes (R7)",
-    SpineStage.VIDEO_BASE: "renderer existente; adapter de aplicación pendiente",
-    SpineStage.REVIEW_PREP: "quality/review executors pendientes (R7/R8)",
+    SpineStage.AUDIO: "R7 Qwen3-TTS + Whisper + mastering conectado",
+    SpineStage.VIDEO_BASE: "R7 social/master + preview conectado",
+    SpineStage.REVIEW_PREP: "Review Studio pendiente (R8)",
     SpineStage.PUBLICATION_PACKAGE: "materialización pendiente (R8)",
 }
 
@@ -102,6 +107,7 @@ class CentinelaControlCenter:
         stage_bindings: dict[SpineStage | str, StageBinding] | None = None,
         register_default_writer_room: bool = False,
         register_default_media: bool = True,
+        register_default_av: bool = False,
         max_workers: int = 2,
     ) -> None:
         if max_workers < 2:
@@ -152,6 +158,20 @@ class CentinelaControlCenter:
                 build_media_stage_binding(
                     MediaResolver(catalog=self.catalog),
                 ),
+            )
+
+        if register_default_av:
+            self.register_stage(
+                SpineStage.SCENES,
+                build_scene_stage_binding(),
+            )
+            self.register_stage(
+                SpineStage.AUDIO,
+                build_audio_stage_binding(),
+            )
+            self.register_stage(
+                SpineStage.VIDEO_BASE,
+                build_video_base_stage_binding(catalog=self.catalog),
             )
 
         for stage, binding in (stage_bindings or {}).items():

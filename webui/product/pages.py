@@ -22,7 +22,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @st.cache_resource(show_spinner=False)
 def get_control_center() -> CentinelaControlCenter:
-    service = CentinelaControlCenter(register_default_writer_room=True)
+    service = CentinelaControlCenter(
+        register_default_writer_room=True,
+        register_default_av=True,
+    )
     service.recover_runtime()
     return service
 
