@@ -144,6 +144,68 @@ class TestMaterialSearchCache(unittest.TestCase):
         self.assertIsNone(loaded)
         self.assertFalse(cache_path.exists())
 
+    def test_small_future_mtime_is_tolerated_as_clock_skew(self):
+        """A tiny filesystem clock skew must not invalidate a fresh cache."""
+        material_cache.save_material_search_cache(
+            provider="pixabay",
+            search_term="nature",
+            minimum_duration=5,
+            video_aspect=VideoAspect.portrait,
+            items=[self._item()],
+        )
+        cache_path = self._cache_path()
+        now = 2_000_000_000.0
+        near_future_mtime = now + 0.5
+        os.utime(
+            cache_path,
+            (near_future_mtime, near_future_mtime),
+        )
+
+        loaded = material_cache.load_material_search_cache(
+            provider="pixabay",
+            search_term="nature",
+            minimum_duration=5,
+            video_aspect=VideoAspect.portrait,
+            now=now,
+        )
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded), 1)
+        self.assertTrue(cache_path.exists())
+
+    def test_cleanup_tolerates_small_future_mtime(self):
+        """Cleanup must use the same small clock-skew tolerance as reads."""
+        near_future_path = self._cache_path()
+        near_future_path.write_text("{}", encoding="utf-8")
+
+        far_future_path = material_cache._cache_path(
+            provider="pexels",
+            search_term="far-future",
+            minimum_duration=5,
+            video_aspect=VideoAspect.portrait,
+        )
+        far_future_path.write_text("{}", encoding="utf-8")
+
+        now = 2_000_000_000.0
+
+        os.utime(
+            near_future_path,
+            (now + 0.5, now + 0.5),
+        )
+        os.utime(
+            far_future_path,
+            (now + 60, now + 60),
+        )
+
+        deleted = material_cache.cleanup_expired_material_search_cache(
+            now=now,
+            force=True,
+        )
+
+        self.assertEqual(deleted, 1)
+        self.assertTrue(near_future_path.exists())
+        self.assertFalse(far_future_path.exists())
+
     def test_corrupted_cache_is_removed_without_breaking_search(self):
         """
         进程异常退出、磁盘故障或用户手动修改都可能留下损坏文件。读取失败应回退

@@ -21,6 +21,7 @@ from app.utils import utils
 
 
 MATERIAL_SEARCH_CACHE_TTL_SECONDS = 24 * 60 * 60
+_CACHE_FUTURE_MTIME_TOLERANCE_SECONDS = 5.0
 _CACHE_FORMAT_VERSION = 2
 _CACHE_CLEANUP_INTERVAL_SECONDS = 60 * 60
 _CACHE_FILE_PATTERN = re.compile(r"^[0-9a-f]{64}\.json$")
@@ -217,7 +218,10 @@ def load_material_search_cache(
     cache_age = current_time - stat_result.st_mtime
     # 系统时间回拨或文件从其它机器复制后，mtime 可能落在未来。此时不能把
     # 缓存长期视为新鲜数据，直接失效并重新请求远端更可靠。
-    if cache_age < 0 or cache_age >= MATERIAL_SEARCH_CACHE_TTL_SECONDS:
+    if (
+        cache_age < -_CACHE_FUTURE_MTIME_TOLERANCE_SECONDS
+        or cache_age >= MATERIAL_SEARCH_CACHE_TTL_SECONDS
+    ):
         _remove_invalid_cache(cache_path)
         return None
 
@@ -402,7 +406,11 @@ def cleanup_expired_material_search_cache(
                 if not entry.is_file(follow_symlinks=False):
                     continue
                 cache_age = current_time - entry.stat(follow_symlinks=False).st_mtime
-                if 0 <= cache_age < MATERIAL_SEARCH_CACHE_TTL_SECONDS:
+                if (
+                    -_CACHE_FUTURE_MTIME_TOLERANCE_SECONDS
+                    <= cache_age
+                    < MATERIAL_SEARCH_CACHE_TTL_SECONDS
+                ):
                     continue
                 os.unlink(entry.path)
                 deleted_count += 1
