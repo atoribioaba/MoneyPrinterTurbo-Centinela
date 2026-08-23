@@ -31,6 +31,14 @@ from app.services.centinela.writer_room import (
     build_writer_room_stage_binding,
 )
 
+from app.services.centinela.review_publication import (
+    build_publication_package_stage_binding,
+    build_review_prep_stage_binding,
+    publication_snapshot,
+    record_structured_review,
+    review_snapshot,
+)
+
 from .media_policy import DEFAULT_MEDIA_ROOT, MediaAutomationPolicy
 from .models import (
     AUTO_PIPELINE_JOB_TYPE,
@@ -78,8 +86,8 @@ _BACKEND_STATUS = {
     SpineStage.MEDIA: "R4 Media Resolver conectado",
     SpineStage.AUDIO: "R7 Qwen3-TTS + Whisper + mastering conectado",
     SpineStage.VIDEO_BASE: "R7 social/master + preview conectado",
-    SpineStage.REVIEW_PREP: "Review Studio pendiente (R8)",
-    SpineStage.PUBLICATION_PACKAGE: "materialización pendiente (R8)",
+    SpineStage.REVIEW_PREP: "R8 Review Studio conectado",
+    SpineStage.PUBLICATION_PACKAGE: "R8 Publication Package conectado",
 }
 
 _ACTIVE_JOB_STATUSES = {
@@ -108,6 +116,7 @@ class CentinelaControlCenter:
         register_default_writer_room: bool = False,
         register_default_media: bool = True,
         register_default_av: bool = False,
+        register_default_review_publication: bool = False,
         max_workers: int = 2,
     ) -> None:
         if max_workers < 2:
@@ -172,6 +181,16 @@ class CentinelaControlCenter:
             self.register_stage(
                 SpineStage.VIDEO_BASE,
                 build_video_base_stage_binding(catalog=self.catalog),
+            )
+
+        if register_default_review_publication:
+            self.register_stage(
+                SpineStage.REVIEW_PREP,
+                build_review_prep_stage_binding(),
+            )
+            self.register_stage(
+                SpineStage.PUBLICATION_PACKAGE,
+                build_publication_package_stage_binding(),
             )
 
         for stage, binding in (stage_bindings or {}).items():
@@ -514,6 +533,30 @@ class CentinelaControlCenter:
             reviewer=reviewer,
             notes=notes,
         )
+
+    def review_with_checklist(
+        self,
+        project_id: str,
+        *,
+        approved: bool,
+        reviewer: str,
+        notes: str,
+        checks: dict[str, bool],
+    ):
+        return record_structured_review(
+            self.spine,
+            project_id,
+            approved=approved,
+            reviewer=reviewer,
+            notes=notes,
+            checks=checks,
+        )
+
+    def review_material(self, project_id: str) -> dict[str, Any]:
+        return review_snapshot(self.store, project_id)
+
+    def publication_material(self, project_id: str) -> dict[str, Any]:
+        return publication_snapshot(self.store, project_id)
 
     def cancel_job(self, job_id: str) -> bool:
         return self.jobs.request_cancel(job_id, reason="cancelled from Control Center")

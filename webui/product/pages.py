@@ -15,6 +15,7 @@ from app.services.centinela.control_center import (
     CentinelaControlCenter,
 )
 from app.services.centinela.orchestration import JobStatus, ProjectState
+from app.services.centinela.review_publication import REQUIRED_REVIEW_CHECKS
 
 LOGGER = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,7 @@ def get_control_center() -> CentinelaControlCenter:
     service = CentinelaControlCenter(
         register_default_writer_room=True,
         register_default_av=True,
+        register_default_review_publication=True,
     )
     service.recover_runtime()
     return service
@@ -342,7 +344,7 @@ def review_page() -> None:
     service = _service()
     _header(
         "Revisión",
-        "La aprobación humana es una frontera deliberada del pipeline.",
+        "Review Studio · imagen, audio, subtítulos, derechos y copy antes de aprobar.",
     )
     project = _project_selector(service, "review-selector")
     if project is None:
@@ -351,39 +353,192 @@ def review_page() -> None:
     if project.state != ProjectState.READY_FOR_HUMAN_REVIEW:
         st.info(
             f"Este proyecto está en **{project.state_label}**. "
-            "La revisión se habilitará cuando exista un vídeo preparado para revisión humana."
+            "Review Studio se habilita cuando VIDEO_BASE ha sido preparado por R8."
         )
         return
 
-    st.warning("Revisa el vídeo y sus evidencias antes de aprobar.")
-    reviewer = st.text_input("Revisor", value="Revisión humana")
-    notes = st.text_area("Notas de revisión", placeholder="Motivo de aprobación o cambios requeridos")
-    c1, c2 = st.columns(2)
+    try:
+        material = service.review_material(project.project_id)
+    except Exception:
+        LOGGER.exception("Review Studio materialization read failed")
+        st.error(
+            "No se pudo cargar el paquete de revisión. "
+            "El detalle técnico queda reservado para Ingeniería."
+        )
+        return
 
-    if c1.button("Aprobar", type="primary", use_container_width=True):
+    packet = material["packet"]
+    copy = material["copy"]
+
+    st.subheader("Vista previa real")
+    st.video(material["preview_path"])
+    st.caption(
+        "La vista previa usa la voz masterizada de R7. "
+        "Los subtítulos siguen siendo un sidecar; no están quemados en imagen."
+    )
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.subheader("Miniatura candidata")
+        st.image(material["thumbnail_path"], use_container_width=True)
+        st.caption("Extraída del vídeo real; no es una recreación IA.")
+    with c2:
+        st.subheader("Derechos y licencias")
+        if material["license_gate_passed"]:
+            st.success("Gate de derechos: APTO para aprobación humana.")
+        else:
+            st.error(
+                "Gate de derechos: BLOQUEADO. Hay material sin derechos/licencia "
+                "suficientemente verificados."
+            )
+        st.metric(
+            "Escenas publicables",
+            f"{packet['publication_eligible_scene_count']}/{packet['rights_scene_count']}",
+        )
+
+    rights_rows = [
+        {
+            "Escena": row["scene_number"],
+            "Proveedor": row["provider"] or "—",
+            "Derechos": row["rights_status"] or "—",
+            "Licencia": row["license_name"] or "—",
+            "Atribución": row["attribution"] or "—",
+            "Gate": "PASS" if row["package_rights_gate"] else "BLOCK",
+        }
+        for row in material["rights_records"]
+    ]
+    st.dataframe(rights_rows, use_container_width=True, hide_index=True)
+
+    if material["primary_source_verification_required"]:
+        st.warning(
+            "El guion exige verificación de fuentes primarias antes de publicación. "
+            "El check científico de abajo representa esa comprobación humana explícita."
+        )
+
+    st.subheader("Copy de publicación")
+    with st.expander("Instagram", expanded=True):
+        st.text_area(
+            "Caption Instagram",
+            value=copy["instagram_caption"],
+            height=170,
+            disabled=True,
+            key=f"review-copy-instagram-{project.project_id}",
+        )
+    with st.expander("TikTok"):
+        st.text_area(
+            "Caption TikTok",
+            value=copy["tiktok_caption"],
+            height=140,
+            disabled=True,
+            key=f"review-copy-tiktok-{project.project_id}",
+        )
+    with st.expander("YouTube"):
+        st.text_input(
+            "Título YouTube",
+            value=copy["youtube_title"],
+            disabled=True,
+            key=f"review-copy-youtube-title-{project.project_id}",
+        )
+        st.text_area(
+            "Descripción YouTube",
+            value=copy["youtube_description"],
+            height=220,
+            disabled=True,
+            key=f"review-copy-youtube-description-{project.project_id}",
+        )
+        st.code(" ".join(copy["hashtags"]), language=None)
+
+    st.subheader("Checklist humano obligatorio")
+    check_labels = {
+        "science_verified": "Rigor científico y fuentes necesarias verificados",
+        "visual_match_verified": "Las imágenes corresponden al guion y a cada escena",
+        "audio_quality_verified": "Voz, volumen y calidad de audio verificados",
+        "subtitle_text_verified": "Texto y sincronización de subtítulos verificados",
+        "rights_verified": "Derechos, licencias y atribuciones verificados",
+        "thumbnail_verified": "Miniatura revisada y aceptada",
+        "publication_copy_verified": "Captions, título, descripción y hashtags revisados",
+    }
+    checks = {
+        name: st.checkbox(
+            check_labels[name],
+            value=False,
+            key=f"review-check-{project.project_id}-{name}",
+        )
+        for name in REQUIRED_REVIEW_CHECKS
+    }
+    all_checks = all(checks.values())
+
+    reviewer = st.text_input(
+        "Revisor",
+        value="Revisión humana",
+        key=f"reviewer-{project.project_id}",
+    )
+    notes = st.text_area(
+        "Notas de revisión",
+        placeholder="Qué se ha verificado o qué debe cambiar",
+        key=f"review-notes-{project.project_id}",
+    )
+
+    approval_enabled = bool(
+        material["approval_available"]
+        and all_checks
+        and reviewer.strip()
+        and notes.strip()
+    )
+    decision_enabled = bool(reviewer.strip() and notes.strip())
+
+    c1, c2 = st.columns(2)
+    approve = c1.button(
+        "Aprobar contenido y preparar paquete",
+        type="primary",
+        use_container_width=True,
+        disabled=not approval_enabled,
+    )
+    request_changes = c2.button(
+        "Solicitar cambios",
+        use_container_width=True,
+        disabled=not decision_enabled,
+    )
+
+    if approve:
         try:
-            service.review(
+            service.review_with_checklist(
                 project.project_id,
                 approved=True,
                 reviewer=reviewer,
                 notes=notes,
+                checks=checks,
             )
-            st.success("Proyecto aprobado explícitamente.")
-        except Exception as exc:
-            st.error(str(exc))
+            service.start_pipeline(project.project_id)
+            st.success(
+                "Contenido aprobado. R8 está materializando el Publication Package. "
+                "Esto NO autoriza ni ejecuta publicación automática."
+            )
+            st.rerun()
+        except Exception:
+            LOGGER.exception("R8 structured approval failed")
+            st.error(
+                "No se pudo registrar la aprobación. "
+                "El proyecto no se publicará ni avanzará silenciosamente."
+            )
 
-    if c2.button("Solicitar cambios", use_container_width=True):
+    if request_changes:
         try:
-            service.review(
+            service.review_with_checklist(
                 project.project_id,
                 approved=False,
                 reviewer=reviewer,
                 notes=notes,
+                checks=checks,
             )
-            st.warning("El proyecto vuelve a necesitar intervención antes de continuar.")
-        except Exception as exc:
-            st.error(str(exc))
-
+            st.warning(
+                "Cambios solicitados. El proyecto queda en NEEDS_INPUT; "
+                "no se crea un paquete publicable hasta una aprobación posterior."
+            )
+            st.rerun()
+        except Exception:
+            LOGGER.exception("R8 change request failed")
+            st.error("No se pudo registrar la solicitud de cambios.")
 
 def observatory_page() -> None:
     _header("Observatorio", "Capacidad astronómica local y determinista.")
@@ -470,19 +625,85 @@ def sources_page() -> None:
 
 def publication_page() -> None:
     service = _service()
-    _header("Publicación", "Salida controlada; nunca autopublicación.")
+    _header(
+        "Publicación",
+        "Publication Package revisado · la publicación sigue siendo manual.",
+    )
     projects = service.projects()
-    ready = [item for item in projects if item.state == ProjectState.PUBLICATION_PACKAGE_READY]
+    ready = [
+        item for item in projects
+        if item.state == ProjectState.PUBLICATION_PACKAGE_READY
+    ]
     approved = [item for item in projects if item.state == ProjectState.FINAL_APPROVED]
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Paquetes listos", len(ready))
-    c2.metric("Aprobados pendientes de paquete", len(approved))
-    st.info(
-        "R8 materializará el Publication Package completo. Incluso entonces, publicar seguirá "
-        "requiriendo una acción humana explícita."
+    c2.metric("Aprobados materializando", len(approved))
+    c3.metric("Auto publicación", "NO")
+
+    st.warning(
+        "Un paquete listo significa que el contenido ha sido revisado y materializado. "
+        "No significa autorización para publicar y no se llama a ninguna API social."
     )
 
+    if not ready:
+        st.info("Todavía no hay Publication Packages listos.")
+        return
+
+    mapping = {item.project_id: item for item in ready}
+    selected = st.selectbox(
+        "Paquete",
+        options=list(mapping),
+        format_func=lambda value: mapping[value].title,
+        key="publication-ready-selector",
+    )
+
+    try:
+        material = service.publication_material(selected)
+    except Exception:
+        LOGGER.exception("Publication Package read failed")
+        st.error(
+            "No se pudo abrir el Publication Package. "
+            "El detalle técnico queda reservado para Ingeniería."
+        )
+        return
+
+    manifest = material["manifest"]
+    st.success("Publication Package íntegro y listo para descarga manual.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Archivos de payload", len(manifest["files"]))
+    c2.metric("Derechos revisados", "PASS" if manifest["license_review_complete"] else "BLOCK")
+    c3.metric("Publicación autorizada", "NO")
+
+    rows = [
+        {
+            "Archivo": item["name"],
+            "Tamaño": item["size_bytes"],
+            "SHA256": item["sha256"],
+        }
+        for item in manifest["files"]
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    zip_path = Path(material["zip_path"])
+    if not zip_path.is_file():
+        st.error("El ZIP registrado no está disponible en almacenamiento.")
+        return
+
+    with zip_path.open("rb") as handle:
+        st.download_button(
+            "Descargar Publication Package (.zip)",
+            data=handle,
+            file_name=f"{selected}-publication-package.zip",
+            mime="application/zip",
+            type="primary",
+        )
+
+    st.caption(
+        "El SHA256 final del ZIP está registrado en el manifest persistido. "
+        "Publicar en Instagram, TikTok o YouTube sigue requiriendo una acción humana externa."
+    )
 
 def analytics_page() -> None:
     _header("Analítica", "Capa de producto reservada para datos reales posteriores.")
