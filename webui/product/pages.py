@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import tomllib
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
 
@@ -20,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @st.cache_resource(show_spinner=False)
 def get_control_center() -> CentinelaControlCenter:
-    service = CentinelaControlCenter()
+    service = CentinelaControlCenter(register_default_writer_room=True)
     service.recover_runtime()
     return service
 
@@ -175,6 +177,59 @@ def create_video_page() -> None:
             placeholder="Ej.: La Luna y Júpiter esta noche",
             max_chars=512,
         )
+        use_observation_context = st.checkbox(
+            "El tema depende de un lugar y/o momento de observación",
+            value=False,
+            help=(
+                "Úsalo para visibilidad, conjunciones, eclipses o "
+                "contenidos del cielo desde un lugar concreto."
+            ),
+        )
+
+        latitude_text = ""
+        longitude_text = ""
+        elevation_text = "0"
+        timezone_name = "Europe/Madrid"
+        observation_date = datetime.now().date()
+        observation_time = datetime.now().time().replace(
+            second=0,
+            microsecond=0,
+        )
+
+        if use_observation_context:
+            with st.container(border=True):
+                st.caption(
+                    "R6 no inventa ubicación ni fecha. Estos datos quedan "
+                    "fijados en el Fact Lock astronómico."
+                )
+                c1, c2 = st.columns(2)
+                latitude_text = c1.text_input(
+                    "Latitud (grados)",
+                    placeholder="Ej.: 41.65",
+                )
+                longitude_text = c2.text_input(
+                    "Longitud (grados)",
+                    placeholder="Ej.: -4.72",
+                )
+                c3, c4 = st.columns(2)
+                elevation_text = c3.text_input(
+                    "Elevación (m)",
+                    value="0",
+                )
+                timezone_name = c4.text_input(
+                    "Zona horaria IANA",
+                    value="Europe/Madrid",
+                )
+                c5, c6 = st.columns(2)
+                observation_date = c5.date_input(
+                    "Fecha local",
+                    value=observation_date,
+                )
+                observation_time = c6.time_input(
+                    "Hora local",
+                    value=observation_time,
+                )
+
         submitted = st.form_submit_button(
             "Generar borrador",
             type="primary",
@@ -184,8 +239,45 @@ def create_video_page() -> None:
     if not submitted:
         return
 
+    observation_context = {}
+    if use_observation_context:
+        try:
+            latitude = float(latitude_text.strip())
+            longitude = float(longitude_text.strip())
+            elevation = float(elevation_text.strip())
+            if not -90.0 <= latitude <= 90.0:
+                raise ValueError("La latitud debe estar entre -90 y 90.")
+            if not -180.0 <= longitude <= 180.0:
+                raise ValueError("La longitud debe estar entre -180 y 180.")
+            timezone_info = ZoneInfo(timezone_name.strip())
+            moment = datetime.combine(
+                observation_date,
+                observation_time,
+                tzinfo=timezone_info,
+            )
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            st.error(f"Contexto de observación inválido: {exc}")
+            return
+
+        observation_context = {
+            "astronomy": {
+                "observer": {
+                    "latitude_deg": latitude,
+                    "longitude_deg": longitude,
+                    "elevation_m": elevation,
+                    "timezone": timezone_name.strip(),
+                },
+                "moment": moment.isoformat(),
+                "include_eclipses": True,
+            }
+        }
+
     try:
-        project, started = service.create_project(title, auto_start=True)
+        project, started = service.create_project(
+            title,
+            observation_context=observation_context,
+            auto_start=True,
+        )
     except ValueError as exc:
         st.error(str(exc))
         return
@@ -195,6 +287,7 @@ def create_video_page() -> None:
             "No se pudo crear el proyecto. El detalle técnico queda reservado para Ingeniería."
         )
         return
+
 
     st.session_state["centinela_project_id"] = project.project_id
     st.success(f"Proyecto creado: {project.title}")

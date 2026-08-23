@@ -21,6 +21,10 @@ from app.services.centinela.production_spine import (
     StageBinding,
 )
 from app.services.centinela.project_foundation import ArtifactStore
+from app.services.centinela.writer_room import (
+    build_fact_lock_stage_binding,
+    build_writer_room_stage_binding,
+)
 
 from .media_policy import DEFAULT_MEDIA_ROOT, MediaAutomationPolicy
 from .models import (
@@ -63,8 +67,8 @@ _STATE_LABELS = {
 }
 
 _BACKEND_STATUS = {
-    SpineStage.RESEARCH: "núcleo astronómico disponible; adapter de Fact Lock pendiente",
-    SpineStage.SCRIPT: "Writer Room pendiente (R6)",
+    SpineStage.RESEARCH: "R6 Fact Lock local conectado",
+    SpineStage.SCRIPT: "R6 Writer Room local conectado",
     SpineStage.SCENES: "directores existentes; adapter de aplicación pendiente",
     SpineStage.MEDIA: "R4 Media Resolver conectado",
     SpineStage.AUDIO: "executors pendientes (R7)",
@@ -96,6 +100,7 @@ class CentinelaControlCenter:
         catalog: AstroMediaCatalog | None = None,
         media_policy: MediaAutomationPolicy | None = None,
         stage_bindings: dict[SpineStage | str, StageBinding] | None = None,
+        register_default_writer_room: bool = False,
         register_default_media: bool = True,
         max_workers: int = 2,
     ) -> None:
@@ -130,6 +135,16 @@ class CentinelaControlCenter:
             media_root=DEFAULT_MEDIA_ROOT,
         )
         self._registered_stages: set[SpineStage] = set()
+
+        if register_default_writer_room:
+            self.register_stage(
+                SpineStage.RESEARCH,
+                build_fact_lock_stage_binding(),
+            )
+            self.register_stage(
+                SpineStage.SCRIPT,
+                build_writer_room_stage_binding(),
+            )
 
         if register_default_media:
             self.register_stage(
