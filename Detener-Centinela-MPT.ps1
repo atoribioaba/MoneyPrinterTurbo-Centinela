@@ -25,7 +25,7 @@ function Test-CentinelaStreamlit {
 
     if (
         $Process.CommandLine -notmatch '(?i)\bstreamlit\b' -or
-        $Process.CommandLine -notmatch '(?i)webui[\\/]+Main\.py'
+        $Process.CommandLine -notmatch '(?i)webui[\\/]+(?:Centinela|Main)\.py'
     ) {
         return $false
     }
@@ -48,7 +48,7 @@ function Test-CentinelaStreamlit {
         [System.IO.Path]::GetFullPath($Parent.ExecutablePath) -eq
         [System.IO.Path]::GetFullPath($VenvPython) -and
         $Parent.CommandLine -match '(?i)\bstreamlit\b' -and
-        $Parent.CommandLine -match '(?i)webui[\\/]+Main\.py'
+        $Parent.CommandLine -match '(?i)webui[\\/]+(?:Centinela|Main)\.py'
     ) {
         return $true
     }
@@ -74,7 +74,7 @@ $AllProcesses = @(
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match '(?i)\bstreamlit\b' -and
-            $_.CommandLine -match '(?i)webui[\\/]+Main\.py'
+            $_.CommandLine -match '(?i)webui[\\/]+(?:Centinela|Main)\.py'
         }
 )
 

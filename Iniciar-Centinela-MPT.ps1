@@ -12,7 +12,7 @@ $ExistingMpt = @(
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match '(?i)\bstreamlit\b' -and
-            $_.CommandLine -match '(?i)webui[\\/]+Main\.py'
+            $_.CommandLine -match '(?i)webui[\\/]+(?:Centinela|Main)\.py'
         }
 )
 

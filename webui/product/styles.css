@@ -1,0 +1,19 @@
+:root {
+  --centinela-radius: 14px;
+}
+
+.block-container {
+  max-width: 1500px;
+  padding-top: 2rem;
+  padding-bottom: 4rem;
+}
+
+[data-testid="stMetric"] {
+  border: 1px solid rgba(128, 128, 128, 0.22);
+  border-radius: var(--centinela-radius);
+  padding: 0.9rem 1rem;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+  line-height: 1.35;
+}
