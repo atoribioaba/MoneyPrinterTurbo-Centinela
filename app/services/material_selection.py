@@ -38,10 +38,10 @@ RIGHTS_SCORE = {
 }
 
 
-# C2.11J: lexical aliases are deliberately secondary evidence only.
-# They never mutate ScenePlan.astronomy_objects and therefore do not create
-# artificial strong object overlap (e.g. "Luna" -> "moon").
-_LEXICAL_ALIASES = {
+# C2.11J body aliases are lexical evidence only. They deliberately do not
+# canonicalize ScenePlan.astronomy_objects, so "Luna" never manufactures a
+# strong object_overlap with catalog object "moon".
+_BODY_ALIASES = {
     "luna": "moon",
     "lunar": "moon",
     "moon": "moon",
@@ -64,15 +64,99 @@ _LEXICAL_ALIASES = {
     "pluto": "pluto",
 }
 
-# Composition and generic scene vocabulary must not turn an otherwise generic
-# astronomical view into a scene-specific scientific demand. Scientific
-# discriminators such as phase, magnitude, angular diameter, constellation,
-# coordinates, eclipse geometry, etc. intentionally remain outside this set.
+# Scientific aliases are used only for lexical/specificity evidence. This lets
+# Spanish Writer output match English scientific metadata without weakening the
+# strong-object contract.
+_SCIENTIFIC_ALIASES = {
+    "fase": "phase",
+    "fraccion": "fraction",
+    "iluminada": "illuminated",
+    "iluminado": "illuminated",
+    "magnitud": "magnitude",
+    "brillo": "brightness",
+    "diametro": "diameter",
+    "geometria": "geometry",
+    "distancia": "distance",
+    "constelacion": "constellation",
+    "mapa": "map",
+    "coordenada": "coordinate",
+    "coordenadas": "coordinates",
+    "posicion": "position",
+    "eclipse": "eclipse",
+    "ocultacion": "occultation",
+    "transito": "transit",
+    "conjuncion": "conjunction",
+    "separacion": "separation",
+    "altitud": "altitude",
+    "azimut": "azimuth",
+    "ascension": "ascension",
+    "declinacion": "declination",
+    "elongacion": "elongation",
+    "perihelio": "perihelion",
+    "afelio": "aphelion",
+    "terminador": "terminator",
+    "crater": "crater",
+    "latitud": "latitude",
+    "longitud": "longitude",
+    "libracion": "libration",
+    "orbita": "orbit",
+    "orbital": "orbital",
+    "inclinacion": "inclination",
+}
+
+_TOKEN_ALIASES = {**_BODY_ALIASES, **_SCIENTIFIC_ALIASES}
+
+# Specificity is activated by a positive scientific vocabulary, not by every
+# uncommon prose word. This prevents generic phrasing such as "de forma
+# astronomicamente pertinente" from becoming a fake scientific requirement.
+_SCIENTIFIC_SPECIFICITY_MARKERS = {
+    "phase",
+    "fraction",
+    "illuminated",
+    "magnitude",
+    "brightness",
+    "diameter",
+    "angular",
+    "geometry",
+    "distance",
+    "constellation",
+    "map",
+    "coordinate",
+    "coordinates",
+    "position",
+    "eclipse",
+    "occultation",
+    "transit",
+    "conjunction",
+    "separation",
+    "altitude",
+    "azimuth",
+    "ascension",
+    "declination",
+    "elongation",
+    "perihelion",
+    "aphelion",
+    "terminator",
+    "crater",
+    "sunspot",
+    "latitude",
+    "longitude",
+    "libration",
+    "albedo",
+    "velocity",
+    "orbit",
+    "orbital",
+    "inclination",
+}
+
 _GENERIC_SPECIFICITY_TOKENS = {
     "astronomia",
     "astronomical",
     "astronomico",
     "astronomica",
+    "astronomicamente",
+    "pertinente",
+    "forma",
     "cielo",
     "sky",
     "night",
@@ -125,6 +209,7 @@ _GENERIC_SPECIFICITY_TOKENS = {
     "desde",
     "hacia",
     "del",
+    "de",
     "las",
     "los",
     "una",
@@ -135,8 +220,8 @@ _GENERIC_SPECIFICITY_TOKENS = {
     "como",
     "por",
 }
-_GENERIC_SPECIFICITY_TOKENS.update(_LEXICAL_ALIASES)
-_GENERIC_SPECIFICITY_TOKENS.update(_LEXICAL_ALIASES.values())
+_GENERIC_SPECIFICITY_TOKENS.update(_BODY_ALIASES)
+_GENERIC_SPECIFICITY_TOKENS.update(_BODY_ALIASES.values())
 
 
 class MaterialSelectionError(RuntimeError):
@@ -152,9 +237,7 @@ def _tokens(value):
     raw = {
         token for token in re.findall(r"[a-z0-9_]+", _fold(value)) if len(token) >= 2
     }
-    # Add canonical body aliases as lexical evidence while preserving the
-    # original tokens. Strong astronomy-object overlap remains untouched.
-    return raw | {_LEXICAL_ALIASES[token] for token in raw if token in _LEXICAL_ALIASES}
+    return raw | {_TOKEN_ALIASES[token] for token in raw if token in _TOKEN_ALIASES}
 
 
 def _objects(values):
@@ -163,38 +246,36 @@ def _objects(values):
 
 def _scene_terms(scene):
     keywords = [
-        str(v).strip()
-        for v in (getattr(scene, "material_keywords", None) or [])
-        if str(v).strip()
+        str(value).strip()
+        for value in (getattr(scene, "material_keywords", None) or [])
+        if str(value).strip()
     ]
     objects = [
-        str(v).strip()
-        for v in (getattr(scene, "astronomy_objects", None) or [])
-        if str(v).strip()
+        str(value).strip()
+        for value in (getattr(scene, "astronomy_objects", None) or [])
+        if str(value).strip()
     ]
     visual = str(getattr(scene, "visual_requirement", "") or "").strip()
-    return (
-        (" ".join([*keywords, *objects]).strip() or visual),
-        keywords,
-        objects,
-        visual,
-    )
+    query = " ".join([*keywords, *objects]).strip() or visual
+    return query, keywords, objects, visual
 
 
 def _specificity_terms(keywords, objects, visual):
-    """Return scientific/semantic discriminators that generic media must prove.
+    """Return scene-specific evidence terms only for scientific requirements.
 
-    C2.11J keeps a genuinely generic single-object requirement permissive, but
-    when the scene asks for additional scientific semantics (phase, magnitude,
-    constellation, geometry, etc.) object identity alone is insufficient.
+    Generic single-object scenes remain permissive. Once a recognized
+    scientific discriminator is present, object identity alone is insufficient
+    and the asset must carry secondary evidence for the requested semantics.
     """
 
-    object_tokens = _tokens(" ".join(objects))
     all_terms = _tokens(" ".join([*keywords, visual]))
-    generic = _GENERIC_SPECIFICITY_TOKENS | object_tokens | {
-        _LEXICAL_ALIASES.get(token, token) for token in object_tokens
-    }
+    if not (all_terms & _SCIENTIFIC_SPECIFICITY_MARKERS):
+        return set()
 
+    object_tokens = _tokens(" ".join(objects))
+    generic = _GENERIC_SPECIFICITY_TOKENS | object_tokens | {
+        _BODY_ALIASES.get(token, token) for token in object_tokens
+    }
     return {
         token
         for token in all_terms - generic
@@ -221,7 +302,6 @@ def _specificity_evidence(item, keywords, objects, visual):
     required = _specificity_terms(keywords, objects, visual)
     if not required:
         return True, set(), set()
-
     overlap = required & _item_evidence_tokens(item)
     return bool(overlap), required, overlap
 
@@ -282,12 +362,10 @@ def _score(item, keywords, objects, visual, reuse_count):
         reasons.append("description_overlap:" + ",".join(sorted(description)))
     if filename:
         reasons.append("filename_overlap:" + ",".join(sorted(filename)))
-
     reasons += [
         "provider:" + item.provider.value,
         "rights:" + item.rights_status.value,
     ]
-
     if reuse_count:
         reasons.append("reuse_penalty:" + str(reuse_count))
 
@@ -328,27 +406,21 @@ class MaterialSelector:
 
     def _manual_override(self, scene_key):
         media_id = self.catalog.get_override(scene_key)
-
         if not media_id:
             return None
-
         item = self.catalog.get(media_id)
-
         if item is None:
             raise MaterialSelectionError(
                 "Manual override references unknown media_id: " + media_id
             )
-
         if not item.active:
             raise MaterialSelectionError(
                 "Manual override references inactive media: " + media_id
             )
-
         if not item.renderable:
             raise MaterialSelectionError(
                 "Manual override references non-renderable media: " + media_id
             )
-
         return item
 
     def _rank_candidates(
@@ -361,26 +433,17 @@ class MaterialSelector:
         request,
     ):
         ranked = []
-
         for item in self.catalog.list_items(True):
             if not item.active or not item.renderable or item.duplicate_of_media_id:
                 continue
-
             if item.rights_status == Rights.RESTRICTED:
                 continue
-
             if request.publication_eligible_only and not item.publication_eligible:
                 continue
 
             reuse_count = (
-                used_counts.get(
-                    item.media_id,
-                    0,
-                )
-                if request.avoid_reuse
-                else 0
+                used_counts.get(item.media_id, 0) if request.avoid_reuse else 0
             )
-
             candidate, anchor = _score(
                 item,
                 keywords,
@@ -388,30 +451,18 @@ class MaterialSelector:
                 visual,
                 reuse_count,
             )
-
             specificity_ok, required_specificity, specificity_overlap = (
-                _specificity_evidence(
-                    item,
-                    keywords,
-                    objects,
-                    visual,
-                )
+                _specificity_evidence(item, keywords, objects, visual)
             )
 
-            # C2.11J specificity guard: a generic object match is valid only for
-            # a genuinely generic visual requirement. Specific scientific
-            # scenes require secondary semantic evidence from the asset itself.
+            # C2.11J: generic object match is allowed only for a genuinely
+            # generic scene. Scientific requirements need secondary evidence.
             if anchor and specificity_ok:
                 if required_specificity:
                     candidate.reasons.append(
                         "specificity_overlap:" + ",".join(sorted(specificity_overlap))
                     )
-                ranked.append(
-                    (
-                        candidate,
-                        item,
-                    )
-                )
+                ranked.append((candidate, item))
 
         ranked.sort(
             key=lambda pair: (
@@ -420,53 +471,20 @@ class MaterialSelector:
                 pair[1].local_path.casefold(),
             )
         )
-
         return ranked
 
-    def select_scene(
-        self,
-        plan,
-        scene,
-        request,
-        used_counts,
-    ):
-        number = int(
-            getattr(
-                scene,
-                "scene_number",
-                0,
-            )
-        )
-
+    def select_scene(self, plan, scene, request, used_counts):
+        number = int(getattr(scene, "scene_number", 0))
         if number <= 0:
             raise MaterialSelectionError("scene_number must be positive")
 
         query, keywords, objects, visual = _scene_terms(scene)
-
-        scene_key = _scene_key(
-            plan,
-            number,
-        )
-
+        scene_key = _scene_key(plan, number)
         manual = self._manual_override(scene_key)
 
         if manual is not None:
-            candidate, _ = _score(
-                manual,
-                keywords,
-                objects,
-                visual,
-                0,
-            )
-
-            used_counts[manual.media_id] = (
-                used_counts.get(
-                    manual.media_id,
-                    0,
-                )
-                + 1
-            )
-
+            candidate, _ = _score(manual, keywords, objects, visual, 0)
+            used_counts[manual.media_id] = used_counts.get(manual.media_id, 0) + 1
             return SceneMaterialSelection(
                 scene_number=number,
                 scene_key=scene_key,
@@ -480,10 +498,7 @@ class MaterialSelector:
                     not manual.publication_eligible
                     or manual.rights_status == Rights.RESTRICTED
                 ),
-                reasons=[
-                    "manual_override_hard_priority",
-                    *candidate.reasons,
-                ],
+                reasons=["manual_override_hard_priority", *candidate.reasons],
                 alternatives=[],
                 **_selected_fields(manual),
             )
@@ -495,59 +510,35 @@ class MaterialSelector:
             used_counts=used_counts,
             request=request,
         )
-
         real = [
             pair
             for pair in ranked
-            if (
-                pair[0].relevance_score >= request.min_relevance_score
-                and pair[1].provider != Provider.AI_GENERATED
-            )
+            if pair[0].relevance_score >= request.min_relevance_score
+            and pair[1].provider != Provider.AI_GENERATED
         ]
-
         ai = [
             pair
             for pair in ranked
-            if (
-                pair[0].relevance_score >= request.min_relevance_score
-                and pair[1].provider == Provider.AI_GENERATED
-            )
+            if pair[0].relevance_score >= request.min_relevance_score
+            and pair[1].provider == Provider.AI_GENERATED
         ]
-
-        ai_allowed = bool(
-            getattr(
-                scene,
-                "ai_recreation_allowed",
-                False,
-            )
-        )
+        ai_allowed = bool(getattr(scene, "ai_recreation_allowed", False))
 
         selected = None
         status = None
-
         if real:
             selected = real[0]
             status = SelectionStatus.SELECTED
-
         elif request.allow_ai_last_resort and ai_allowed and ai:
             selected = ai[0]
             status = SelectionStatus.SELECTED_AI_RECREATION
 
         if selected is not None:
             candidate, item = selected
-
-            used_counts[item.media_id] = (
-                used_counts.get(
-                    item.media_id,
-                    0,
-                )
-                + 1
-            )
-
+            used_counts[item.media_id] = used_counts.get(item.media_id, 0) + 1
             alternatives = [
-                pair[0] for pair in ranked if (pair[1].media_id != item.media_id)
+                pair[0] for pair in ranked if pair[1].media_id != item.media_id
             ][: request.max_alternatives]
-
             return SceneMaterialSelection(
                 scene_number=number,
                 scene_key=scene_key,
@@ -561,30 +552,25 @@ class MaterialSelector:
                     not item.publication_eligible
                     or status == SelectionStatus.SELECTED_AI_RECREATION
                 ),
-                reasons=[
-                    "deterministic_material_selection",
-                    *candidate.reasons,
-                ],
+                reasons=["deterministic_material_selection", *candidate.reasons],
                 alternatives=alternatives,
                 **_selected_fields(item),
             )
 
         unresolved = (
             SelectionStatus.AI_RECREATION_REQUIRED
-            if (request.allow_ai_last_resort and ai_allowed)
+            if request.allow_ai_last_resort and ai_allowed
             else SelectionStatus.NO_ADEQUATE_MEDIA
         )
-
         reasons = [
             "no_candidate_reached_min_relevance",
-            ("min_relevance_score:" + str(request.min_relevance_score)),
+            "min_relevance_score:" + str(request.min_relevance_score),
             (
                 "scene_allows_ai_recreation"
-                if (unresolved == SelectionStatus.AI_RECREATION_REQUIRED)
+                if unresolved == SelectionStatus.AI_RECREATION_REQUIRED
                 else "ai_recreation_not_selected"
             ),
         ]
-
         return SceneMaterialSelection(
             scene_number=number,
             scene_key=scene_key,
@@ -596,51 +582,35 @@ class MaterialSelector:
             alternatives=[pair[0] for pair in ranked][: request.max_alternatives],
         )
 
-    def select_plan(
-        self,
-        request: MaterialSelectionRequest,
-    ):
+    def select_plan(self, request: MaterialSelectionRequest):
         scenes = list(request.plan.scenes)
-
         if not scenes:
             raise MaterialSelectionError("AstronomyVideoPlan has no scenes")
 
         used_counts = {}
-
         selections = [
-            self.select_scene(
-                request.plan,
-                scene,
-                request,
-                used_counts,
-            )
+            self.select_scene(request.plan, scene, request, used_counts)
             for scene in scenes
         ]
-
         selected_statuses = {
             SelectionStatus.SELECTED,
             SelectionStatus.MANUAL_OVERRIDE,
             SelectionStatus.SELECTED_AI_RECREATION,
         }
-
         unresolved_statuses = {
             SelectionStatus.NO_ADEQUATE_MEDIA,
             SelectionStatus.AI_RECREATION_REQUIRED,
         }
-
         selected_count = sum(
             selection.status in selected_statuses for selection in selections
         )
-
         manual_count = sum(
             selection.status == SelectionStatus.MANUAL_OVERRIDE
             for selection in selections
         )
-
         unresolved_count = sum(
             selection.status in unresolved_statuses for selection in selections
         )
-
         ai_count = sum(
             selection.status
             in {
@@ -649,9 +619,7 @@ class MaterialSelector:
             }
             for selection in selections
         )
-
         review_required = any(selection.review_required for selection in selections)
-
         publication_ready = (
             selected_count == len(scenes)
             and not review_required
@@ -660,32 +628,22 @@ class MaterialSelector:
                 for selection in selections
             )
         )
-
         context_hash = str(
-            getattr(
-                request.plan,
-                "context_hash",
-                "",
-            )
-            or getattr(
-                request.plan,
-                "astronomy_context_hash",
-                "",
-            )
+            getattr(request.plan, "context_hash", "")
+            or getattr(request.plan, "astronomy_context_hash", "")
             or ""
         )
-
         return MaterialSelectionPlan(
             subject=_plan_subject(request.plan),
-            source_plan_context_hash=(context_hash),
-            selector_version=(SELECTOR_VERSION),
-            scene_count=(len(scenes)),
-            selected_count=(selected_count),
-            manual_override_count=(manual_count),
-            unresolved_count=(unresolved_count),
-            ai_recreation_count=(ai_count),
-            selections=(selections),
-            review_required=(review_required),
-            publication_ready=(publication_ready),
-            generated_at_utc=(datetime.now(timezone.utc)),
+            source_plan_context_hash=context_hash,
+            selector_version=SELECTOR_VERSION,
+            scene_count=len(scenes),
+            selected_count=selected_count,
+            manual_override_count=manual_count,
+            unresolved_count=unresolved_count,
+            ai_recreation_count=ai_count,
+            selections=selections,
+            review_required=review_required,
+            publication_ready=publication_ready,
+            generated_at_utc=datetime.now(timezone.utc),
         )
