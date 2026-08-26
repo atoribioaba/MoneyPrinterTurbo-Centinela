@@ -135,6 +135,8 @@ _GENERIC_SPECIFICITY_TOKENS = {
     "como",
     "por",
 }
+_GENERIC_SPECIFICITY_TOKENS.update(_LEXICAL_ALIASES)
+_GENERIC_SPECIFICITY_TOKENS.update(_LEXICAL_ALIASES.values())
 
 
 class MaterialSelectionError(RuntimeError):
