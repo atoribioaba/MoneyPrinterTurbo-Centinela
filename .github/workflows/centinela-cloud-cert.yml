@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   media-linux:
-    name: MEDIA C2.11J / Linux / Python ${{ matrix.python-version }}
+    name: MEDIA C2.11J + Lunar 5/5 / Linux / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -48,32 +48,44 @@ jobs:
       - name: Install frozen dependencies
         run: uv sync --frozen --python ${{ matrix.python-version }}
 
-      - name: Compile C2.11J production and tests
+      - name: Verify ffprobe
+        shell: bash
+        run: ffprobe -version | head -n 1
+
+      - name: Compile certification surface
         run: >-
           uv run --no-sync python -m compileall
           app/services/material_selection.py
           app/services/centinela/media_resolver
           app/services/centinela/av_runtime/scenes.py
+          app/services/centinela/scientific_visuals.py
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_factlock_scientific_visuals.py
+          test/services/test_lunar_media_cloud_replay.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
 
-      - name: Ruff C2.11J changed surface
+      - name: Ruff changed certification surface
         if: matrix.python-version == '3.11'
         run: >-
           uv run --no-sync ruff check
           app/services/material_selection.py
+          app/services/centinela/scientific_visuals.py
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_factlock_scientific_visuals.py
+          test/services/test_lunar_media_cloud_replay.py
 
-      - name: Run MEDIA and Writer certification tests
+      - name: Run MEDIA, Writer and scientific-visual certification tests
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=centinela-cloud-cert-linux-${{ matrix.python-version }}.xml
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_factlock_scientific_visuals.py
+          test/services/test_lunar_media_cloud_replay.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
@@ -83,13 +95,17 @@ jobs:
         shell: bash
         run: |
           {
-            echo "CENTINELA_CLOUD_CERT_VERSION=C2.11J-mobile-v0.1"
+            echo "CENTINELA_CLOUD_CERT_VERSION=C2.11J-V33-mobile-v0.2"
             echo "CENTINELA_CERT_COMMIT=${GITHUB_SHA}"
             echo "OS=Linux"
             echo "PYTHON=${{ matrix.python-version }}"
+            echo "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
+            echo "SCIENTIFIC_VISUALS_DETERMINISTIC=TRUE"
+            echo "SCIENTIFIC_VISUALS_FACTLOCK_ONLY=TRUE"
+            echo "LUNAR_MEDIA_REPLAY_REQUIRED=5_OF_5"
+            echo "NO_IRRELEVANT_BROLL=TRUE"
             echo "NO_AUTO_PUBLICATION=TRUE"
             echo "NO_AI_GENERATION=TRUE"
-            echo "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
           } > centinela-cloud-cert-status-linux-${{ matrix.python-version }}.txt
 
       - name: Upload Linux certification evidence
@@ -104,7 +120,7 @@ jobs:
           retention-days: 14
 
   media-windows:
-    name: MEDIA C2.11J / Windows / Python 3.11
+    name: MEDIA C2.11J + Lunar 5/5 / Windows / Python 3.11
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -143,24 +159,35 @@ jobs:
       - name: Install frozen dependencies
         run: uv sync --frozen --python 3.11
 
-      - name: Compile C2.11J production and tests
+      - name: Verify ffprobe
+        shell: pwsh
+        run: |
+          ffprobe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffprobe unavailable' }
+
+      - name: Compile certification surface
         run: >-
           uv run --no-sync python -m compileall
           app/services/material_selection.py
           app/services/centinela/media_resolver
           app/services/centinela/av_runtime/scenes.py
+          app/services/centinela/scientific_visuals.py
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_factlock_scientific_visuals.py
+          test/services/test_lunar_media_cloud_replay.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
 
-      - name: Run MEDIA and Writer certification tests
+      - name: Run MEDIA, Writer and scientific-visual certification tests
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=centinela-cloud-cert-windows-3.11.xml
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_factlock_scientific_visuals.py
+          test/services/test_lunar_media_cloud_replay.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
@@ -170,13 +197,17 @@ jobs:
         shell: pwsh
         run: |
           @(
-            "CENTINELA_CLOUD_CERT_VERSION=C2.11J-mobile-v0.1"
+            "CENTINELA_CLOUD_CERT_VERSION=C2.11J-V33-mobile-v0.2"
             "CENTINELA_CERT_COMMIT=$env:GITHUB_SHA"
             "OS=Windows"
             "PYTHON=3.11"
+            "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
+            "SCIENTIFIC_VISUALS_DETERMINISTIC=TRUE"
+            "SCIENTIFIC_VISUALS_FACTLOCK_ONLY=TRUE"
+            "LUNAR_MEDIA_REPLAY_REQUIRED=5_OF_5"
+            "NO_IRRELEVANT_BROLL=TRUE"
             "NO_AUTO_PUBLICATION=TRUE"
             "NO_AI_GENERATION=TRUE"
-            "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
             "CANONICAL_E_DRIVE_IS_CI_TEMPORARY=TRUE"
           ) | Set-Content -Encoding UTF8 centinela-cloud-cert-status-windows-3.11.txt
 
