@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: centinela-cloud-cert-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   media-linux:
     name: MEDIA C2.11J / Linux / Python ${{ matrix.python-version }}
@@ -22,6 +26,14 @@ jobs:
     steps:
       - name: Check out certification branch
         uses: actions/checkout@v4
+
+      - name: Record exact certification commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "CENTINELA_CERT_COMMIT=${ACTUAL_SHA}" | tee centinela-cert-commit.txt
+          test "${ACTUAL_SHA}" = "${GITHUB_SHA}"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -66,12 +78,29 @@ jobs:
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
 
+      - name: Write Linux certification status
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "CENTINELA_CLOUD_CERT_VERSION=C2.11J-mobile-v0.1"
+            echo "CENTINELA_CERT_COMMIT=${GITHUB_SHA}"
+            echo "OS=Linux"
+            echo "PYTHON=${{ matrix.python-version }}"
+            echo "NO_AUTO_PUBLICATION=TRUE"
+            echo "NO_AI_GENERATION=TRUE"
+            echo "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
+          } > centinela-cloud-cert-status-linux-${{ matrix.python-version }}.txt
+
       - name: Upload Linux certification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: centinela-cloud-cert-linux-${{ matrix.python-version }}
-          path: centinela-cloud-cert-linux-${{ matrix.python-version }}.xml
+          name: centinela-cloud-cert-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: |
+            centinela-cloud-cert-linux-${{ matrix.python-version }}.xml
+            centinela-cert-commit.txt
+            centinela-cloud-cert-status-linux-${{ matrix.python-version }}.txt
           retention-days: 14
 
   media-windows:
@@ -82,6 +111,13 @@ jobs:
     steps:
       - name: Check out certification branch
         uses: actions/checkout@v4
+
+      - name: Record exact certification commit
+        shell: pwsh
+        run: |
+          $ActualSha = (git rev-parse HEAD).Trim()
+          "CENTINELA_CERT_COMMIT=$ActualSha" | Tee-Object -FilePath centinela-cert-commit.txt
+          if ($ActualSha -ne $env:GITHUB_SHA) { throw "checkout SHA mismatch" }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -118,10 +154,27 @@ jobs:
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
 
+      - name: Write Windows certification status
+        if: always()
+        shell: pwsh
+        run: |
+          @(
+            "CENTINELA_CLOUD_CERT_VERSION=C2.11J-mobile-v0.1"
+            "CENTINELA_CERT_COMMIT=$env:GITHUB_SHA"
+            "OS=Windows"
+            "PYTHON=3.11"
+            "NO_AUTO_PUBLICATION=TRUE"
+            "NO_AI_GENERATION=TRUE"
+            "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
+          ) | Set-Content -Encoding UTF8 centinela-cloud-cert-status-windows-3.11.txt
+
       - name: Upload Windows certification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: centinela-cloud-cert-windows-3.11
-          path: centinela-cloud-cert-windows-3.11.xml
+          name: centinela-cloud-cert-windows-3.11-${{ github.run_id }}
+          path: |
+            centinela-cloud-cert-windows-3.11.xml
+            centinela-cert-commit.txt
+            centinela-cloud-cert-status-windows-3.11.txt
           retention-days: 14
