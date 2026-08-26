@@ -442,3 +442,84 @@ def test_invalid_manual_override_raises():
 
     with pytest.raises(MaterialSelectionError):
         selector.select_plan(request(plan([scene()])))
+
+
+# C2.11J specificity contract. A generic one-object requirement may use generic
+# Moon media, but a scene-specific scientific requirement must not be satisfied
+# solely because both sides contain the Moon object label.
+def test_scientific_selector_keeps_generic_single_object_requirement():
+    generic_moon = item(
+        "generic-moon",
+        provider=Provider.NASA,
+        rights=Rights.VERIFIED_LICENSE,
+        title="Moon",
+        tags=["moon"],
+        objects=["moon"],
+    )
+
+    generic_scene = scene(
+        objects=["moon"],
+        keywords=["moon"],
+        visual="Vista centrada de la Luna.",
+    )
+
+    result = MaterialSelector(Catalog([generic_moon])).select_plan(
+        request(plan([generic_scene]), publication_only=True)
+    )
+
+    assert result.selections[0].status == SelectionStatus.SELECTED
+    assert result.selections[0].selected_media_id == "generic-moon"
+
+
+def test_scientific_selector_rejects_generic_object_only_for_specific_scene():
+    generic_moon = item(
+        "generic-moon",
+        provider=Provider.NASA,
+        rights=Rights.VERIFIED_LICENSE,
+        title="Moon",
+        tags=["moon"],
+        objects=["moon"],
+    )
+
+    specific_scene = scene(
+        objects=["moon"],
+        keywords=["moon", "capricornus", "mapa estelar"],
+        visual=(
+            "Mapa estelar mostrando a la Luna posicionada dentro de "
+            "la constelacion de Capricornus."
+        ),
+    )
+
+    result = MaterialSelector(Catalog([generic_moon])).select_plan(
+        request(plan([specific_scene]), publication_only=True)
+    )
+
+    assert result.selections[0].status == SelectionStatus.NO_ADEQUATE_MEDIA
+    assert result.selections[0].selected_media_id is None
+
+
+def test_scientific_selector_accepts_specific_secondary_visual_evidence():
+    specific_map = item(
+        "moon-capricornus-map",
+        provider=Provider.NASA,
+        rights=Rights.VERIFIED_LICENSE,
+        title="Moon in Capricornus star map",
+        tags=["moon", "capricornus", "star map"],
+        objects=["moon", "capricornus"],
+    )
+
+    specific_scene = scene(
+        objects=["moon"],
+        keywords=["moon", "capricornus", "mapa estelar"],
+        visual=(
+            "Mapa estelar mostrando a la Luna posicionada dentro de "
+            "la constelacion de Capricornus."
+        ),
+    )
+
+    result = MaterialSelector(Catalog([specific_map])).select_plan(
+        request(plan([specific_scene]), publication_only=True)
+    )
+
+    assert result.selections[0].status == SelectionStatus.SELECTED
+    assert result.selections[0].selected_media_id == "moon-capricornus-map"
