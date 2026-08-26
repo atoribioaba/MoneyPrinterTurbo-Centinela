@@ -5,22 +5,21 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-# This script is intentionally executable both as `python scripts/...py` and as a
-# module. Direct-file execution normally puts only `scripts/` on sys.path, which
-# would make the repository `app` package unreachable. Keep the fix local to the
-# certification script rather than requiring a persistent PYTHONPATH setting.
+# Direct execution (`python scripts/...py`) normally exposes only `scripts/` as
+# sys.path[0]. Add the repository root process-locally before loading app modules.
+# App imports remain inside functions so Ruff E402 is not suppressed or weakened.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from app.models.astronomy import ScientificStatus
-from app.models.astronomy_director import GroundingFact
-from app.services.centinela.scientific_visuals import render_factlock_scientific_visual
-from app.services.centinela.writer_room import FactLock
 
+def build_fixture_fact_lock() -> Any:
+    from app.models.astronomy import ScientificStatus
+    from app.models.astronomy_director import GroundingFact
+    from app.services.centinela.writer_room import FactLock
 
-def build_fixture_fact_lock() -> FactLock:
     return FactLock(
         subject="La Luna",
         research_mode="GENERIC_GEOCENTRIC",
@@ -57,6 +56,10 @@ def build_fixture_fact_lock() -> FactLock:
 
 
 def main() -> int:
+    from app.services.centinela.scientific_visuals import (
+        render_factlock_scientific_visual,
+    )
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="cloud-cert-artifacts")
     args = parser.parse_args()
