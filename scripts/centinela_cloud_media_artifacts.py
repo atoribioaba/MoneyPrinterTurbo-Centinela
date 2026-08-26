@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# This script is intentionally executable both as `python scripts/...py` and as a
+# module. Direct-file execution normally puts only `scripts/` on sys.path, which
+# would make the repository `app` package unreachable. Keep the fix local to the
+# certification script rather than requiring a persistent PYTHONPATH setting.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from app.models.astronomy import ScientificStatus
 from app.models.astronomy_director import GroundingFact
@@ -70,7 +79,7 @@ def main() -> int:
     ]
 
     report = {
-        "certification": "C2.11J-V33-mobile-v0.2",
+        "certification": "C2.11J-V33-mobile-v0.3",
         "fixture_only": True,
         "fact_lock_hash": fact_lock.context_hash,
         "scientific_visuals_deterministic": True,
