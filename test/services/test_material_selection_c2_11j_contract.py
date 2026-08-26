@@ -207,3 +207,29 @@ def test_c2_11j_generic_epilogue_can_use_lexically_anchored_moon_without_object(
     assert selection.status == SelectionStatus.SELECTED
     assert selection.selected_media_id == "generic-moon"
     assert not any(reason.startswith("object_overlap:") for reason in selection.reasons)
+
+
+def test_c2_11j_missing_structured_object_does_not_bypass_specificity():
+    """V31 scene-5 class guard: lexical Luna cannot satisfy a specific demand alone."""
+
+    generic_moon = _item(
+        "generic-moon",
+        title="Moon",
+        tags=["moon"],
+        objects=["moon"],
+    )
+    ungrounded_specific_scene = _scene(
+        objects=[],
+        keywords=["Luna", "magnitud visual", "brillo comparativo"],
+        visual=(
+            "Diagrama de brillo comparativo de la Luna para una magnitud "
+            "visual de -12,14."
+        ),
+    )
+
+    result = _select(generic_moon, ungrounded_specific_scene)
+    selection = result.selections[0]
+
+    assert selection.status == SelectionStatus.NO_ADEQUATE_MEDIA
+    assert selection.selected_media_id is None
+    assert not any(reason.startswith("object_overlap:") for reason in selection.reasons)
