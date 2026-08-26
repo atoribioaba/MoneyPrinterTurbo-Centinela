@@ -15,7 +15,7 @@ from app.models.material_selection import (
 from app.services.astromedia import AstroMediaCatalog
 
 
-SELECTOR_VERSION = "material-selection-v0.1"
+SELECTOR_VERSION = "material-selection-v0.1-c2.11j"
 
 PROVIDER_SCORE = {
     Provider.OWN_MEDIA: 8.0,
@@ -38,6 +38,105 @@ RIGHTS_SCORE = {
 }
 
 
+# C2.11J: lexical aliases are deliberately secondary evidence only.
+# They never mutate ScenePlan.astronomy_objects and therefore do not create
+# artificial strong object overlap (e.g. "Luna" -> "moon").
+_LEXICAL_ALIASES = {
+    "luna": "moon",
+    "lunar": "moon",
+    "moon": "moon",
+    "sol": "sun",
+    "solar": "sun",
+    "sun": "sun",
+    "mercurio": "mercury",
+    "mercury": "mercury",
+    "venus": "venus",
+    "marte": "mars",
+    "mars": "mars",
+    "jupiter": "jupiter",
+    "saturno": "saturn",
+    "saturn": "saturn",
+    "urano": "uranus",
+    "uranus": "uranus",
+    "neptuno": "neptune",
+    "neptune": "neptune",
+    "pluton": "pluto",
+    "pluto": "pluto",
+}
+
+# Composition and generic scene vocabulary must not turn an otherwise generic
+# astronomical view into a scene-specific scientific demand. Scientific
+# discriminators such as phase, magnitude, angular diameter, constellation,
+# coordinates, eclipse geometry, etc. intentionally remain outside this set.
+_GENERIC_SPECIFICITY_TOKENS = {
+    "astronomia",
+    "astronomical",
+    "astronomico",
+    "astronomica",
+    "cielo",
+    "sky",
+    "night",
+    "noche",
+    "nocturno",
+    "imagen",
+    "image",
+    "video",
+    "vista",
+    "view",
+    "plano",
+    "scene",
+    "escena",
+    "centrada",
+    "centrado",
+    "centered",
+    "cenital",
+    "satelite",
+    "satellite",
+    "lunar",
+    "solar",
+    "mostrando",
+    "mostrar",
+    "showing",
+    "show",
+    "punto",
+    "point",
+    "referencia",
+    "reference",
+    "estelar",
+    "stellar",
+    "superficie",
+    "surface",
+    "disco",
+    "disc",
+    "representacion",
+    "representation",
+    "visual",
+    "real",
+    "sobre",
+    "over",
+    "dentro",
+    "inside",
+    "con",
+    "with",
+    "sin",
+    "without",
+    "para",
+    "from",
+    "desde",
+    "hacia",
+    "del",
+    "las",
+    "los",
+    "una",
+    "uno",
+    "the",
+    "and",
+    "que",
+    "como",
+    "por",
+}
+
+
 class MaterialSelectionError(RuntimeError):
     pass
 
@@ -48,9 +147,12 @@ def _fold(value):
 
 
 def _tokens(value):
-    return {
+    raw = {
         token for token in re.findall(r"[a-z0-9_]+", _fold(value)) if len(token) >= 2
     }
+    # Add canonical body aliases as lexical evidence while preserving the
+    # original tokens. Strong astronomy-object overlap remains untouched.
+    return raw | {_LEXICAL_ALIASES[token] for token in raw if token in _LEXICAL_ALIASES}
 
 
 def _objects(values):
@@ -75,6 +177,51 @@ def _scene_terms(scene):
         objects,
         visual,
     )
+
+
+def _specificity_terms(keywords, objects, visual):
+    """Return scientific/semantic discriminators that generic media must prove.
+
+    C2.11J keeps a genuinely generic single-object requirement permissive, but
+    when the scene asks for additional scientific semantics (phase, magnitude,
+    constellation, geometry, etc.) object identity alone is insufficient.
+    """
+
+    object_tokens = _tokens(" ".join(objects))
+    all_terms = _tokens(" ".join([*keywords, visual]))
+    generic = _GENERIC_SPECIFICITY_TOKENS | object_tokens | {
+        _LEXICAL_ALIASES.get(token, token) for token in object_tokens
+    }
+
+    return {
+        token
+        for token in all_terms - generic
+        if len(token) >= 4 or token.isdigit()
+    }
+
+
+def _item_evidence_tokens(item):
+    return _tokens(
+        " ".join(
+            [
+                str(item.title or ""),
+                " ".join(item.tags or []),
+                str(item.search_term or ""),
+                str(item.description or ""),
+                str(item.filename or ""),
+                " ".join(item.astronomy_objects or []),
+            ]
+        )
+    )
+
+
+def _specificity_evidence(item, keywords, objects, visual):
+    required = _specificity_terms(keywords, objects, visual)
+    if not required:
+        return True, set(), set()
+
+    overlap = required & _item_evidence_tokens(item)
+    return bool(overlap), required, overlap
 
 
 def _plan_subject(plan):
@@ -240,7 +387,23 @@ class MaterialSelector:
                 reuse_count,
             )
 
-            if anchor:
+            specificity_ok, required_specificity, specificity_overlap = (
+                _specificity_evidence(
+                    item,
+                    keywords,
+                    objects,
+                    visual,
+                )
+            )
+
+            # C2.11J specificity guard: a generic object match is valid only for
+            # a genuinely generic visual requirement. Specific scientific
+            # scenes require secondary semantic evidence from the asset itself.
+            if anchor and specificity_ok:
+                if required_specificity:
+                    candidate.reasons.append(
+                        "specificity_overlap:" + ",".join(sorted(specificity_overlap))
+                    )
                 ranked.append(
                     (
                         candidate,
