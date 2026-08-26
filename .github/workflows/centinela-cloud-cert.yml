@@ -1,0 +1,127 @@
+name: Centinela Cloud Certification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: read
+
+jobs:
+  media-linux:
+    name: MEDIA C2.11J / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - name: Check out certification branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Compile C2.11J production and tests
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          app/services/centinela/media_resolver
+          app/services/centinela/av_runtime/scenes.py
+          test/services/test_material_selection.py
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_media_resolver.py
+          test/services/test_av_runtime.py
+          test/services/test_writer_room.py
+
+      - name: Ruff C2.11J changed surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          app/services/material_selection.py
+          test/services/test_material_selection.py
+          test/services/test_material_selection_c2_11j_contract.py
+
+      - name: Run MEDIA and Writer certification tests
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=centinela-cloud-cert-linux-${{ matrix.python-version }}.xml
+          test/services/test_material_selection.py
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_media_resolver.py
+          test/services/test_av_runtime.py
+          test/services/test_writer_room.py
+
+      - name: Upload Linux certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-cloud-cert-linux-${{ matrix.python-version }}
+          path: centinela-cloud-cert-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+
+  media-windows:
+    name: MEDIA C2.11J / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out certification branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --python 3.11
+
+      - name: Compile C2.11J production and tests
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          app/services/centinela/media_resolver
+          app/services/centinela/av_runtime/scenes.py
+          test/services/test_material_selection.py
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_media_resolver.py
+          test/services/test_av_runtime.py
+          test/services/test_writer_room.py
+
+      - name: Run MEDIA and Writer certification tests
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=centinela-cloud-cert-windows-3.11.xml
+          test/services/test_material_selection.py
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_media_resolver.py
+          test/services/test_av_runtime.py
+          test/services/test_writer_room.py
+
+      - name: Upload Windows certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-cloud-cert-windows-3.11
+          path: centinela-cloud-cert-windows-3.11.xml
+          retention-days: 14
