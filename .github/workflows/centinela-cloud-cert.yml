@@ -119,6 +119,17 @@ jobs:
           "CENTINELA_CERT_COMMIT=$ActualSha" | Tee-Object -FilePath centinela-cert-commit.txt
           if ($ActualSha -ne $env:GITHUB_SHA) { throw "checkout SHA mismatch" }
 
+      - name: Prepare hermetic canonical E drive
+        shell: pwsh
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'centinela-e-drive'
+          New-Item -ItemType Directory -Force -Path $Root | Out-Null
+          subst E: $Root
+          if ($LASTEXITCODE -ne 0) { throw 'subst E: failed' }
+          New-Item -ItemType Directory -Force -Path 'E:\IA\AstroMedia' | Out-Null
+          "CENTINELA_CI_E_DRIVE=$Root" | Tee-Object -FilePath centinela-ci-windows-drive.txt
+          if (-not (Test-Path 'E:\IA\AstroMedia')) { throw 'canonical AstroMedia CI path unavailable' }
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -166,6 +177,7 @@ jobs:
             "NO_AUTO_PUBLICATION=TRUE"
             "NO_AI_GENERATION=TRUE"
             "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
+            "CANONICAL_E_DRIVE_IS_CI_TEMPORARY=TRUE"
           ) | Set-Content -Encoding UTF8 centinela-cloud-cert-status-windows-3.11.txt
 
       - name: Upload Windows certification evidence
@@ -176,5 +188,13 @@ jobs:
           path: |
             centinela-cloud-cert-windows-3.11.xml
             centinela-cert-commit.txt
+            centinela-ci-windows-drive.txt
             centinela-cloud-cert-status-windows-3.11.txt
           retention-days: 14
+
+      - name: Remove hermetic E drive
+        if: always()
+        shell: pwsh
+        run: |
+          subst E: /D
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'subst E: /D returned non-zero' }
