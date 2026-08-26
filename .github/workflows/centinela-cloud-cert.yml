@@ -64,10 +64,12 @@ jobs:
           app/services/centinela/media_resolver
           app/services/centinela/av_runtime/scenes.py
           app/services/centinela/scientific_visuals.py
+          scripts/centinela_cloud_media_artifacts.py
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
           test/services/test_factlock_scientific_visuals.py
           test/services/test_lunar_media_cloud_replay.py
+          test/services/test_scene_grounding_cloud.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
@@ -78,10 +80,12 @@ jobs:
           uv run --no-sync ruff check
           app/services/material_selection.py
           app/services/centinela/scientific_visuals.py
+          scripts/centinela_cloud_media_artifacts.py
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
           test/services/test_factlock_scientific_visuals.py
           test/services/test_lunar_media_cloud_replay.py
+          test/services/test_scene_grounding_cloud.py
 
       - name: Run MEDIA, Writer and scientific-visual certification tests
         run: >-
@@ -91,22 +95,60 @@ jobs:
           test/services/test_material_selection_c2_11j_contract.py
           test/services/test_factlock_scientific_visuals.py
           test/services/test_lunar_media_cloud_replay.py
+          test/services/test_scene_grounding_cloud.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
+
+      - name: Generate reviewable scientific visual artifacts
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_cloud_media_artifacts.py
+          --output cloud-cert-artifacts
+
+      - name: Verify review artifacts
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f cloud-cert-artifacts/scientific-visuals-review.json
+          PNG_COUNT="$(find cloud-cert-artifacts -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ')"
+          test "${PNG_COUNT}" = "2"
+          uv run --no-sync python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path('cloud-cert-artifacts')
+          report = json.loads((root / 'scientific-visuals-review.json').read_text(encoding='utf-8'))
+          assert report['scientific_visuals_deterministic'] is True
+          assert report['scientific_visuals_factlock_only'] is True
+          assert report['network_calls'] == 0
+          assert report['ai_generation'] is False
+          assert report['auto_publication'] is False
+          assert len(report['artifacts']) == 2
+          for row in report['artifacts']:
+              path = root / row['image']
+              with Image.open(path) as image:
+                  assert image.size == (1080, 1920)
+          print('CLOUD_REVIEW_ARTIFACTS=PASS')
+          PY
 
       - name: Write Linux certification status
         if: always()
         shell: bash
         run: |
           {
-            echo "CENTINELA_CLOUD_CERT_VERSION=C2.11J-V33-mobile-v0.2"
+            echo "CENTINELA_CLOUD_CERT_VERSION=C2.11J-V33-mobile-v0.3"
             echo "CENTINELA_CERT_COMMIT=${GITHUB_SHA}"
             echo "OS=Linux"
             echo "PYTHON=${{ matrix.python-version }}"
             echo "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
             echo "SCIENTIFIC_VISUALS_DETERMINISTIC=TRUE"
             echo "SCIENTIFIC_VISUALS_FACTLOCK_ONLY=TRUE"
+            echo "SCENE5_STRONG_OBJECT_NOT_INVENTED=TRUE"
+            echo "SCENE5_WEAK_LEXICAL_HINT_ALLOWED=TRUE"
             echo "LUNAR_MEDIA_REPLAY_REQUIRED=5_OF_5"
             echo "ASTROMEDIA_REAL_INDEXING=TRUE"
             echo "NO_IRRELEVANT_BROLL=TRUE"
@@ -124,6 +166,15 @@ jobs:
             centinela-cert-commit.txt
             centinela-cloud-cert-status-linux-${{ matrix.python-version }}.txt
           retention-days: 14
+
+      - name: Upload scientific visual review package
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-scientific-visuals-review-${{ github.run_id }}
+          path: cloud-cert-artifacts/
+          retention-days: 14
+          if-no-files-found: error
 
   media-windows:
     name: MEDIA C2.11J + Lunar 5/5 / Windows / Python 3.11
@@ -186,10 +237,12 @@ jobs:
           app/services/centinela/media_resolver
           app/services/centinela/av_runtime/scenes.py
           app/services/centinela/scientific_visuals.py
+          scripts/centinela_cloud_media_artifacts.py
           test/services/test_material_selection.py
           test/services/test_material_selection_c2_11j_contract.py
           test/services/test_factlock_scientific_visuals.py
           test/services/test_lunar_media_cloud_replay.py
+          test/services/test_scene_grounding_cloud.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
@@ -202,6 +255,7 @@ jobs:
           test/services/test_material_selection_c2_11j_contract.py
           test/services/test_factlock_scientific_visuals.py
           test/services/test_lunar_media_cloud_replay.py
+          test/services/test_scene_grounding_cloud.py
           test/services/test_media_resolver.py
           test/services/test_av_runtime.py
           test/services/test_writer_room.py
@@ -211,13 +265,15 @@ jobs:
         shell: pwsh
         run: |
           @(
-            "CENTINELA_CLOUD_CERT_VERSION=C2.11J-V33-mobile-v0.2"
+            "CENTINELA_CLOUD_CERT_VERSION=C2.11J-V33-mobile-v0.3"
             "CENTINELA_CERT_COMMIT=$env:GITHUB_SHA"
             "OS=Windows"
             "PYTHON=3.11"
             "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
             "SCIENTIFIC_VISUALS_DETERMINISTIC=TRUE"
             "SCIENTIFIC_VISUALS_FACTLOCK_ONLY=TRUE"
+            "SCENE5_STRONG_OBJECT_NOT_INVENTED=TRUE"
+            "SCENE5_WEAK_LEXICAL_HINT_ALLOWED=TRUE"
             "LUNAR_MEDIA_REPLAY_REQUIRED=5_OF_5"
             "ASTROMEDIA_REAL_INDEXING=TRUE"
             "NO_IRRELEVANT_BROLL=TRUE"
@@ -244,3 +300,85 @@ jobs:
         run: |
           subst E: /D
           if ($LASTEXITCODE -ne 0) { Write-Warning 'subst E: /D returned non-zero' }
+
+  full-regression-linux:
+    name: Full regression / Linux / Python ${{ matrix.python-version }}
+    needs: media-linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MPT_TEST_REDIS_HOST: 127.0.0.1
+      MPT_TEST_REDIS_PORT: 6379
+      MPT_TEST_REDIS_DB: 15
+
+    steps:
+      - name: Check out certification branch
+        uses: actions/checkout@v4
+
+      - name: Record exact regression commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "CENTINELA_FULL_REGRESSION_COMMIT=${ACTUAL_SHA}" | tee centinela-full-regression-commit.txt
+          test "${ACTUAL_SHA}" = "${GITHUB_SHA}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install frozen dependencies
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Provision FFmpeg and ffprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffprobe -version | head -n 1
+
+      - name: Compile entire repository
+        run: uv run --no-sync python -m compileall app cli.py main.py webui test scripts
+
+      - name: Ruff entire repository
+        if: matrix.python-version == '3.11'
+        run: uv run --no-sync ruff check app cli.py main.py webui test scripts
+
+      - name: Run full pytest regression
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=centinela-full-regression-linux-${{ matrix.python-version }}.xml
+          test
+
+      - name: Upload full regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-full-regression-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: |
+            centinela-full-regression-linux-${{ matrix.python-version }}.xml
+            centinela-full-regression-commit.txt
+          retention-days: 14
