@@ -1,0 +1,90 @@
+name: Centinela Coordinate Evidence One-Shot Hardening
+
+on:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+      - name: Provision FFmpeg and ffprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Patch only false coordinate-as-positive-evidence gap
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/services/material_selection.py')
+          text = path.read_text(encoding='utf-8')
+          anchor = '    "galaxy",\n    "nebula",\n    "cluster",\n    "mostrando",\n'
+          replacement = (
+              '    "galaxy",\n'
+              '    "nebula",\n'
+              '    "cluster",\n'
+              '    "coordinate",\n'
+              '    "coordinates",\n'
+              '    "mostrando",\n'
+          )
+          assert text.count(anchor) == 1, 'generic specificity anchor changed'
+          text = text.replace(anchor, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Verify exact diff shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- app/services/material_selection.py
+          test "$(git diff --numstat -- app/services/material_selection.py | awk '{print $1 ":" $2}')" = "2:0"
+      - name: Run selector and all closed/current F57 media contracts
+        shell: bash
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_lunar_media_cloud_replay.py
+          test/services/test_lunar_recovery_cloud.py
+          test/services/test_sol_to_moon_media_cloud_replay.py
+          test/services/test_sol_to_moon_recovery_cloud.py
+          test/services/test_planetary_media_cloud_replay.py
+          test/services/test_planetary_recovery_cloud.py
+          test/services/test_eclipse_media_cloud_replay.py
+          test/services/test_eclipse_recovery_cloud.py
+          test/services/test_constellation_media_cloud_replay.py
+          test/services/test_constellation_recovery_cloud.py
+          test/services/test_deep_sky_media_cloud_replay.py
+          test/services/test_deep_sky_recovery_cloud.py
+      - name: Commit only after focused regression passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/services/material_selection.py
+          git diff --cached --quiet && { echo 'No patch produced'; exit 1; }
+          git commit -m 'Harden coordinate specificity evidence'
+          git push origin HEAD:centinela-cert/cloud-mobile-v0.1
