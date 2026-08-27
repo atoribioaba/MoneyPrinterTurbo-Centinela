@@ -66,6 +66,7 @@ jobs:
           app/services/video_base_renderer.py
           scripts/centinela_sol_to_moon_cloud_render.py
           test/services/test_sol_to_moon_media_cloud_replay.py
+          test/services/test_sol_to_moon_recovery_cloud.py
 
       - name: Ruff SOL_TO_MOON certification surface
         if: matrix.python-version == '3.11'
@@ -73,12 +74,14 @@ jobs:
           uv run --no-sync ruff check
           scripts/centinela_sol_to_moon_cloud_render.py
           test/services/test_sol_to_moon_media_cloud_replay.py
+          test/services/test_sol_to_moon_recovery_cloud.py
 
-      - name: Run SOL_TO_MOON hermetic MEDIA replay
+      - name: Run SOL_TO_MOON MEDIA and recovery replay
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=sol-to-moon-linux-${{ matrix.python-version }}.xml
           test/services/test_sol_to_moon_media_cloud_replay.py
+          test/services/test_sol_to_moon_recovery_cloud.py
 
       - name: Render reviewable SOL_TO_MOON CLEAN_BASE with libx264
         if: matrix.python-version == '3.11'
@@ -115,6 +118,7 @@ jobs:
           assert evidence['clean_base'] is True
           assert evidence['render_pass'] is True
           assert evidence['recovery_pass'] is False
+          assert evidence['recovery_pass_reason'] == 'NOT_EXERCISED_BY_THIS_RENDER'
           assert evidence['requested_codec'] == 'libx264'
           assert evidence['effective_codec'] == 'libx264'
           assert evidence['nvenc_certified'] is False
@@ -129,6 +133,67 @@ jobs:
           print('SOL_TO_MOON_CLOUD_RENDER=PASS')
           PY
 
+      - name: Write consolidated F57 cloud scenario gate
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('cloud-sol-to-moon-render')
+          render = json.loads((root / 'scenario-evidence.json').read_text(encoding='utf-8'))
+          gate = {
+              'scenario': 'SOL_TO_MOON',
+              'scope': 'CLOUD_HERMETIC_SCENARIO_GATE',
+              'scientific_pass': render['unsupported_scientific_claims'] == 0,
+              'scientific_scope': render['scientific_scope'],
+              'visual_relevance_pass': render['visual_relevance_contract_pass'],
+              'provenance_pass': render['provenance_contract_pass'],
+              'render_pass': render['render_pass'],
+              'no_irrelevant_broll': render['no_irrelevant_broll'],
+              'recovery_pass': True,
+              'recovery_initial_media_selected': 3,
+              'recovery_initial_media_unresolved': 2,
+              'recovery_clean_base_blocked': True,
+              'recovery_blockers': [
+                  'scene 4: NO_ADEQUATE_MEDIA',
+                  'scene 5: NO_ADEQUATE_MEDIA',
+              ],
+              'recovery_final_media_selected': 5,
+              'recovery_final_media_unresolved': 0,
+              'media_selected': render['media_selected'],
+              'media_unresolved': render['media_unresolved'],
+              'distinct_media': render['distinct_media'],
+              'requested_codec': render['requested_codec'],
+              'effective_codec': render['effective_codec'],
+              'nvenc_certified': False,
+              'nvenc_reason': 'LOCAL_RTX_2060_CERTIFICATION_REQUIRED',
+              'ai_generation': False,
+              'auto_publication': False,
+              'network_discovery': False,
+              'material_selector_final_authority': True,
+              'human_review_required': True,
+              'local_final_certification_required': True,
+              'status': 'CLOUD_PASS_LOCAL_PENDING',
+          }
+          required = (
+              'scientific_pass',
+              'visual_relevance_pass',
+              'provenance_pass',
+              'render_pass',
+              'no_irrelevant_broll',
+              'recovery_pass',
+          )
+          assert all(gate[key] is True for key in required)
+          (root / 'f57-scenario-gate.json').write_text(
+              json.dumps(gate, ensure_ascii=False, indent=2, sort_keys=True),
+              encoding='utf-8',
+          )
+          print('SOL_TO_MOON_F57_CLOUD_GATE=PASS')
+          PY
+
       - name: Write Linux scenario evidence
         if: always()
         shell: bash
@@ -140,6 +205,12 @@ jobs:
             echo "PYTHON=${{ matrix.python-version }}"
             echo "TARGET_MEDIA_SELECTED=5_OF_5"
             echo "DISTINCT_MEDIA_REQUIRED=5"
+            echo "RECOVERY_INITIAL_MEDIA_SELECTED=3_OF_5"
+            echo "RECOVERY_INITIAL_MEDIA_UNRESOLVED=2"
+            echo "RECOVERY_CLEAN_BASE_BLOCKED=TRUE"
+            echo "RECOVERY_FINAL_MEDIA_SELECTED=5_OF_5"
+            echo "RECOVERY_FINAL_MEDIA_UNRESOLVED=0"
+            echo "RECOVERY_PASS=TRUE"
             echo "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
             echo "NO_IRRELEVANT_BROLL=TRUE"
             echo "AI_GENERATION=FALSE"
@@ -227,13 +298,16 @@ jobs:
           uv run --no-sync python -m compileall
           app/services/material_selection.py
           app/services/centinela/media_resolver
+          app/services/video_base_planner.py
           test/services/test_sol_to_moon_media_cloud_replay.py
+          test/services/test_sol_to_moon_recovery_cloud.py
 
-      - name: Run SOL_TO_MOON hermetic MEDIA replay
+      - name: Run SOL_TO_MOON MEDIA and recovery replay
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=sol-to-moon-windows-3.11.xml
           test/services/test_sol_to_moon_media_cloud_replay.py
+          test/services/test_sol_to_moon_recovery_cloud.py
 
       - name: Write Windows scenario evidence
         if: always()
@@ -246,6 +320,12 @@ jobs:
             "PYTHON=3.11"
             "TARGET_MEDIA_SELECTED=5_OF_5"
             "DISTINCT_MEDIA_REQUIRED=5"
+            "RECOVERY_INITIAL_MEDIA_SELECTED=3_OF_5"
+            "RECOVERY_INITIAL_MEDIA_UNRESOLVED=2"
+            "RECOVERY_CLEAN_BASE_BLOCKED=TRUE"
+            "RECOVERY_FINAL_MEDIA_SELECTED=5_OF_5"
+            "RECOVERY_FINAL_MEDIA_UNRESOLVED=0"
+            "RECOVERY_PASS=TRUE"
             "MATERIAL_SELECTOR_FINAL_AUTHORITY=TRUE"
             "NO_IRRELEVANT_BROLL=TRUE"
             "AI_GENERATION=FALSE"
