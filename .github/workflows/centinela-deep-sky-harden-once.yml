@@ -1,0 +1,107 @@
+name: Centinela DEEP_SKY One-Shot Hardening
+
+on:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch only the demonstrated DEEP_SKY specificity gap
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          selector = Path('app/services/material_selection.py')
+          text = selector.read_text(encoding='utf-8')
+
+          alias_anchor = '    "distancia": "distance",\n    "constelacion": "constellation",\n'
+          alias_replacement = (
+              '    "distancia": "distance",\n'
+              '    "galaxia": "galaxy",\n'
+              '    "galaxias": "galaxy",\n'
+              '    "nebulosa": "nebula",\n'
+              '    "nebulosas": "nebula",\n'
+              '    "cumulo": "cluster",\n'
+              '    "cumulos": "cluster",\n'
+              '    "constelacion": "constellation",\n'
+          )
+          assert text.count(alias_anchor) == 1
+          text = text.replace(alias_anchor, alias_replacement, 1)
+
+          marker_anchor = '    "distance",\n    "constellation",\n    "map",\n'
+          marker_replacement = (
+              '    "distance",\n'
+              '    "galaxy",\n'
+              '    "nebula",\n'
+              '    "cluster",\n'
+              '    "constellation",\n'
+              '    "map",\n'
+          )
+          assert text.count(marker_anchor) == 1
+          text = text.replace(marker_anchor, marker_replacement, 1)
+
+          generic_anchor = '    "eclipse",\n    "constellation",\n    "mostrando",\n'
+          generic_replacement = (
+              '    "eclipse",\n'
+              '    "constellation",\n'
+              '    "galaxy",\n'
+              '    "nebula",\n'
+              '    "cluster",\n'
+              '    "mostrando",\n'
+          )
+          assert text.count(generic_anchor) == 1
+          text = text.replace(generic_anchor, generic_replacement, 1)
+          selector.write_text(text, encoding='utf-8')
+
+          test_path = Path('test/services/test_deep_sky_media_cloud_replay.py')
+          test_text = test_path.read_text(encoding='utf-8')
+          old = '''    expected_specificity = {
+              2: "m31",
+              3: "m42",
+              4: "m45",
+              5: "m57",
+          }
+          '''
+          # Be indentation-agnostic while still fail-closing on the exact dictionary.
+          old = old.replace('          ', '    ')
+          new = '''    expected_specificity = {
+              2: "andromeda_galaxy",
+              3: "orion_nebula",
+              4: "open_cluster",
+              5: "ring_nebula",
+          }
+          '''.replace('          ', '    ')
+          assert test_text.count(old) == 1, 'DEEP_SKY expected_specificity anchor changed'
+          test_text = test_text.replace(old, new, 1)
+          test_path.write_text(test_text, encoding='utf-8')
+          PY
+      - name: Verify patch surface compiles
+        run: python -m compileall app/services/material_selection.py test/services/test_deep_sky_media_cloud_replay.py test/services/test_deep_sky_recovery_cloud.py
+      - name: Show exact diff
+        run: git diff --check && git diff -- app/services/material_selection.py test/services/test_deep_sky_media_cloud_replay.py
+      - name: Commit hardening to Draft branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/services/material_selection.py test/services/test_deep_sky_media_cloud_replay.py
+          git diff --cached --quiet && { echo 'No patch produced'; exit 1; }
+          git commit -m 'Harden deep-sky subtype specificity'
+          git push origin HEAD:centinela-cert/cloud-mobile-v0.1
