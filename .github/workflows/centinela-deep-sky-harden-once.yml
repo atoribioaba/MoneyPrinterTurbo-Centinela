@@ -78,15 +78,8 @@ jobs:
               5: "m57",
           }
           '''
-          # Be indentation-agnostic while still fail-closing on the exact dictionary.
-          old = old.replace('          ', '    ')
-          new = '''    expected_specificity = {
-              2: "andromeda_galaxy",
-              3: "orion_nebula",
-              4: "open_cluster",
-              5: "ring_nebula",
-          }
-          '''.replace('          ', '    ')
+          old = "    expected_specificity = {\n        2: \"m31\",\n        3: \"m42\",\n        4: \"m45\",\n        5: \"m57\",\n    }\n"
+          new = "    expected_specificity = {\n        2: \"andromeda_galaxy\",\n        3: \"orion_nebula\",\n        4: \"open_cluster\",\n        5: \"ring_nebula\",\n    }\n"
           assert test_text.count(old) == 1, 'DEEP_SKY expected_specificity anchor changed'
           test_text = test_text.replace(old, new, 1)
           test_path.write_text(test_text, encoding='utf-8')
