@@ -1,0 +1,245 @@
+name: Centinela Lunar Regression Compare
+
+on:
+  push:
+    branches:
+      - diagnostic/lunar-regression-compare-20260827
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  UV_FROZEN: "true"
+
+jobs:
+  linux311:
+    name: Compare Ruff Linux 3.11 (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: BASE
+            sha: ad28ca201fc7fc444879c823ab68dbd166d03f2b
+          - target: HEAD
+            sha: c5d2dcbc3b30b4032c157d6198cb2bd5fa1c4f3e
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+      - name: Compile package
+        run: uv run python -m compileall -q app cli.py main.py webui
+      - name: Run exact Ruff control and preserve evidence
+        shell: bash
+        run: |
+          set +e
+          mkdir -p evidence
+          {
+            echo "target=${{ matrix.target }}"
+            echo "expected_sha=${{ matrix.sha }}"
+            echo "actual_sha=$(git rev-parse HEAD)"
+            echo "command=uv run ruff check app cli.py main.py webui test scripts"
+            echo "runner_os=${RUNNER_OS}"
+            echo "python=$(python --version 2>&1)"
+            echo "uv=$(uv --version 2>&1)"
+            echo "ruff=$(uv run ruff --version 2>&1)"
+            echo "ffmpeg=$(ffmpeg -version 2>&1 | head -n 1)"
+            echo "git_status_begin"
+            git status --porcelain
+            echo "git_status_end"
+          } > evidence/metadata.txt
+          uv run ruff check app cli.py main.py webui test scripts > evidence/stdout-stderr.log 2>&1
+          code=$?
+          printf '%s\n' "$code" > evidence/exit-code.txt
+          cat evidence/stdout-stderr.log
+          echo "DIAGNOSTIC_EXIT_CODE=$code"
+          exit 0
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lunar-regression-ruff-linux311-${{ matrix.target }}
+          path: evidence
+          if-no-files-found: error
+
+  linux313:
+    name: Compare Pytest Linux 3.13 (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: BASE
+            sha: ad28ca201fc7fc444879c823ab68dbd166d03f2b
+          - target: HEAD
+            sha: c5d2dcbc3b30b4032c157d6198cb2bd5fa1c4f3e
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+      - name: Compile package
+        run: uv run python -m compileall -q app cli.py main.py webui
+      - name: Run exact full pytest and preserve evidence
+        shell: bash
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
+        run: |
+          set +e
+          mkdir -p evidence
+          {
+            echo "target=${{ matrix.target }}"
+            echo "expected_sha=${{ matrix.sha }}"
+            echo "actual_sha=$(git rev-parse HEAD)"
+            echo "command=uv run pytest test"
+            echo "runner_os=${RUNNER_OS}"
+            echo "python=$(python --version 2>&1)"
+            echo "uv=$(uv --version 2>&1)"
+            echo "pytest=$(uv run pytest --version 2>&1 | head -n 1)"
+            echo "ffmpeg=$(ffmpeg -version 2>&1 | head -n 1)"
+            echo "REDIS_HOST=${REDIS_HOST}"
+            echo "REDIS_PORT=${REDIS_PORT}"
+            echo "git_status_begin"
+            git status --porcelain
+            echo "git_status_end"
+          } > evidence/metadata.txt
+          uv run pytest test > evidence/stdout-stderr.log 2>&1
+          code=$?
+          printf '%s\n' "$code" > evidence/exit-code.txt
+          cat evidence/stdout-stderr.log
+          echo "DIAGNOSTIC_EXIT_CODE=$code"
+          exit 0
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lunar-regression-pytest-linux313-${{ matrix.target }}
+          path: evidence
+          if-no-files-found: error
+
+  windows311:
+    name: Compare Core Windows 3.11 (${{ matrix.target }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: BASE
+            sha: ad28ca201fc7fc444879c823ab68dbd166d03f2b
+          - target: HEAD
+            sha: c5d2dcbc3b30b4032c157d6198cb2bd5fa1c4f3e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+      - name: Compile package
+        run: uv run python -m compileall -q app cli.py main.py webui
+      - name: Run exact Windows core tests and preserve evidence
+        shell: pwsh
+        env:
+          CENTINELA_ASTRONOMY_MEDIA_DIR: ${{ runner.temp }}\AstroMedia
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          $tests = @(
+            "test\services\test_astromedia.py",
+            "test\services\test_material_selection.py",
+            "test\services\test_media_resolver.py",
+            "test\services\test_media_mining.py",
+            "test\services\test_writer_room.py",
+            "test\services\test_centinala_control_center.py",
+            "test\services\test_centinala_review_studio.py"
+          )
+          $existing = $tests | Where-Object { Test-Path $_ }
+          if (-not $existing) {
+            throw "No Centinela core tests were found."
+          }
+          $metadata = @(
+            "target=${{ matrix.target }}",
+            "expected_sha=${{ matrix.sha }}",
+            "actual_sha=$(git rev-parse HEAD)",
+            "command=uv run pytest <same seven existing Centinela core tests from ci.yml>",
+            "runner_os=$env:RUNNER_OS",
+            "python=$(python --version 2>&1)",
+            "uv=$(uv --version 2>&1)",
+            "pytest=$(uv run pytest --version 2>&1 | Select-Object -First 1)",
+            "CENTINELA_ASTRONOMY_MEDIA_DIR=$env:CENTINELA_ASTRONOMY_MEDIA_DIR",
+            "git_status_begin",
+            "$(git status --porcelain)",
+            "git_status_end"
+          )
+          $metadata | Set-Content -Path evidence\metadata.txt -Encoding utf8
+          & uv run pytest @existing *>&1 | Tee-Object -FilePath evidence\stdout-stderr.log
+          $code = $LASTEXITCODE
+          "$code" | Set-Content -Path evidence\exit-code.txt -Encoding ascii
+          Write-Host "DIAGNOSTIC_EXIT_CODE=$code"
+          exit 0
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lunar-regression-core-windows311-${{ matrix.target }}
+          path: evidence
+          if-no-files-found: error
