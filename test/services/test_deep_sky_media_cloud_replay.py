@@ -243,10 +243,10 @@ def test_deep_sky_media_replay_reaches_specific_5_of_5(tmp_path):
     assert all(row["selected_publication_eligible"] is True for row in selections)
 
     expected_specificity = {
-        2: "m31",
-        3: "m42",
-        4: "m45",
-        5: "m57",
+        2: "andromeda_galaxy",
+        3: "orion_nebula",
+        4: "open_cluster",
+        5: "ring_nebula",
     }
     for scene_number, required_token in expected_specificity.items():
         reasons = list(selections[scene_number - 1]["reasons"])
