@@ -1,20 +1,17 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from app.models.astromedia import HashMode, IndexRequest
+from app.models.astromedia import HashMode, IndexRequest, Sidecar
 from app.models.material_selection import MaterialSelectionPlan
 from app.models.video_base import VideoBasePlanRequest, VideoBaseRenderMode
 from app.services.astromedia import AstroMediaCatalog
 from app.services.centinela.media_resolver import MediaResolver, MediaResolverRequest
 from app.services.video_base_planner import VideoBasePlanBlockedError, VideoBasePlanner
-from test.services.test_sol_to_moon_media_cloud_replay import (
-    _fixture_image,
-    _plan,
-    _write_sidecar,
-)
+from test.services.test_sol_to_moon_media_cloud_replay import _fixture_image, _plan
 
 
 _SOLAR_FIXTURES = [
@@ -59,11 +56,41 @@ _LUNAR_FIXTURES = [
 ]
 
 
+def _write_recovery_sidecar(
+    path: Path,
+    *,
+    title: str,
+    tags: list[str],
+    objects: list[str],
+) -> None:
+    sidecar = Sidecar(
+        title=title,
+        description=(
+            "Owned hermetic F57 recovery fixture; visual classification only; "
+            "no ephemeris claim; no network; no generative AI."
+        ),
+        tags=tags,
+        astronomy_objects=objects,
+        ownership_confirmed=True,
+        author_name="EL CENTINELA DEL UNIVERSO",
+        attribution_required=False,
+    )
+    path.with_name(path.name + ".astromedia.json").write_text(
+        json.dumps(
+            sidecar.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _add_fixtures(media_root: Path, fixtures: list[tuple]) -> None:
     for filename, marker, title, tags, objects in fixtures:
         path = media_root / filename
         _fixture_image(path, marker)
-        _write_sidecar(path, title=title, tags=tags, objects=objects)
+        _write_recovery_sidecar(path, title=title, tags=tags, objects=objects)
 
 
 def _index(catalog: AstroMediaCatalog, media_root: Path) -> None:
