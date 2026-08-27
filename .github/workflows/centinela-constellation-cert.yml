@@ -1,0 +1,102 @@
+name: Centinela CONSTELLATION Cloud Replay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-constellation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  constellation-linux:
+    name: CONSTELLATION contract / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+      - name: Compile CONSTELLATION surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          test/services/test_constellation_media_cloud_replay.py
+          test/services/test_constellation_recovery_cloud.py
+      - name: Ruff CONSTELLATION surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          test/services/test_constellation_media_cloud_replay.py
+          test/services/test_constellation_recovery_cloud.py
+      - name: Run CONSTELLATION 5/5 and recovery
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=constellation-linux-${{ matrix.python-version }}.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_constellation_media_cloud_replay.py
+          test/services/test_constellation_recovery_cloud.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: constellation-contract-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: constellation-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+
+  constellation-windows:
+    name: CONSTELLATION contract / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare hermetic canonical E drive
+        shell: pwsh
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'centinela-constellation-e-drive'
+          New-Item -ItemType Directory -Force -Path $Root | Out-Null
+          subst E: $Root
+          if ($LASTEXITCODE -ne 0) { throw 'subst E: failed' }
+          New-Item -ItemType Directory -Force -Path 'E:\IA\AstroMedia' | Out-Null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+      - name: Compile CONSTELLATION surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          test/services/test_constellation_media_cloud_replay.py
+          test/services/test_constellation_recovery_cloud.py
+      - name: Run CONSTELLATION 5/5 and recovery
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=constellation-windows-3.11.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_constellation_media_cloud_replay.py
+          test/services/test_constellation_recovery_cloud.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: constellation-contract-windows-3.11-${{ github.run_id }}
+          path: constellation-windows-3.11.xml
+          retention-days: 14
+      - if: always()
+        shell: pwsh
+        run: subst E: /D
