@@ -178,6 +178,9 @@ _GENERIC_SPECIFICITY_TOKENS = {
     "satellite",
     "lunar",
     "solar",
+    # "eclipse" activates specificity, but the generic event class is not
+    # sufficient evidence for a requested subtype such as partial/total/diamond-ring.
+    "eclipse",
     "mostrando",
     "mostrar",
     "showing",
