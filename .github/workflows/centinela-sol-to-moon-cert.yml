@@ -17,7 +17,7 @@ jobs:
   sol-to-moon-linux:
     name: SOL_TO_MOON MEDIA 5/5 / Linux / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +48,7 @@ jobs:
       - name: Install frozen dependencies
         run: uv sync --frozen --python ${{ matrix.python-version }}
 
-      - name: Provision FFmpeg and ffprobe for AstroMedia
+      - name: Provision FFmpeg and ffprobe
         shell: bash
         run: |
           set -euo pipefail
@@ -62,12 +62,16 @@ jobs:
           uv run --no-sync python -m compileall
           app/services/material_selection.py
           app/services/centinela/media_resolver
+          app/services/video_base_planner.py
+          app/services/video_base_renderer.py
+          scripts/centinela_sol_to_moon_cloud_render.py
           test/services/test_sol_to_moon_media_cloud_replay.py
 
       - name: Ruff SOL_TO_MOON certification surface
         if: matrix.python-version == '3.11'
         run: >-
           uv run --no-sync ruff check
+          scripts/centinela_sol_to_moon_cloud_render.py
           test/services/test_sol_to_moon_media_cloud_replay.py
 
       - name: Run SOL_TO_MOON hermetic MEDIA replay
@@ -75,6 +79,55 @@ jobs:
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=sol-to-moon-linux-${{ matrix.python-version }}.xml
           test/services/test_sol_to_moon_media_cloud_replay.py
+
+      - name: Render reviewable SOL_TO_MOON CLEAN_BASE with libx264
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_sol_to_moon_cloud_render.py
+          --output cloud-sol-to-moon-render
+
+      - name: Verify SOL_TO_MOON render evidence
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s cloud-sol-to-moon-render/sol-to-moon-preview.mp4
+          test -s cloud-sol-to-moon-render/render-manifest.json
+          test -s cloud-sol-to-moon-render/ffprobe.json
+          test -s cloud-sol-to-moon-render/media-selection.json
+          test -s cloud-sol-to-moon-render/media-resolution-report.json
+          test -s cloud-sol-to-moon-render/scenario-evidence.json
+          uv run --no-sync python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('cloud-sol-to-moon-render')
+          evidence = json.loads((root / 'scenario-evidence.json').read_text(encoding='utf-8'))
+          manifest = json.loads((root / 'render-manifest.json').read_text(encoding='utf-8'))
+          video = root / 'sol-to-moon-preview.mp4'
+          digest = hashlib.sha256(video.read_bytes()).hexdigest()
+          assert evidence['scenario'] == 'SOL_TO_MOON'
+          assert evidence['media_selected'] == 5
+          assert evidence['media_unresolved'] == 0
+          assert evidence['distinct_media'] == 5
+          assert evidence['clean_base'] is True
+          assert evidence['render_pass'] is True
+          assert evidence['recovery_pass'] is False
+          assert evidence['requested_codec'] == 'libx264'
+          assert evidence['effective_codec'] == 'libx264'
+          assert evidence['nvenc_certified'] is False
+          assert evidence['width'] == 1080
+          assert evidence['height'] == 1920
+          assert abs(evidence['fps'] - 30.0) <= 0.01
+          assert evidence['audio_stream_count'] == 0
+          assert evidence['video_sha256'] == digest
+          assert manifest['final_video_sha256'] == digest
+          assert manifest['placeholder_count'] == 0
+          assert manifest['scene_count'] == 5
+          print('SOL_TO_MOON_CLOUD_RENDER=PASS')
+          PY
 
       - name: Write Linux scenario evidence
         if: always()
@@ -96,7 +149,7 @@ jobs:
             echo "HUMAN_REVIEW_REQUIRED=TRUE"
           } > sol-to-moon-status-linux-${{ matrix.python-version }}.txt
 
-      - name: Upload Linux scenario evidence
+      - name: Upload Linux MEDIA evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -106,6 +159,15 @@ jobs:
             sol-to-moon-commit.txt
             sol-to-moon-status-linux-${{ matrix.python-version }}.txt
           retention-days: 14
+
+      - name: Upload SOL_TO_MOON reviewable render
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sol-to-moon-render-linux-3.11-${{ github.run_id }}
+          path: cloud-sol-to-moon-render/
+          retention-days: 14
+          if-no-files-found: error
 
   sol-to-moon-windows:
     name: SOL_TO_MOON MEDIA 5/5 / Windows / Python 3.11
@@ -146,7 +208,7 @@ jobs:
       - name: Install frozen dependencies
         run: uv sync --frozen --python 3.11
 
-      - name: Provision FFmpeg and ffprobe for AstroMedia
+      - name: Provision FFmpeg and ffprobe
         shell: pwsh
         run: |
           choco install ffmpeg -y --no-progress
