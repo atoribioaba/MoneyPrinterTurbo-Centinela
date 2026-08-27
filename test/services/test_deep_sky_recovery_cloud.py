@@ -55,7 +55,15 @@ def test_deep_sky_recovery_blocks_then_recovers_without_generic_nebula_broll(tmp
     initial = _resolve(catalog, media_root)
     assert initial.report.scene_count == 5
     scene5 = initial.selection["selections"][4]
-    assert initial.report.selected_count == 4, scene5
+    diagnostic = (
+        f"media_id={scene5.get('selected_media_id')} | "
+        f"path={scene5.get('selected_local_path')} | "
+        f"status={scene5.get('status')} | "
+        f"selected_score={scene5.get('selected_score')} | "
+        f"relevance_score={scene5.get('relevance_score')} | "
+        f"reasons={scene5.get('reasons')}"
+    )
+    assert initial.report.selected_count == 4, diagnostic
     assert initial.report.unresolved_count == 1
     assert initial.report.publication_ready is False
     assert scene5["status"] == SelectionStatus.NO_ADEQUATE_MEDIA.value
