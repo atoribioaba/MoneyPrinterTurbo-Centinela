@@ -5,22 +5,16 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
-from app.models.astromedia import HashMode, IndexRequest
-from app.models.material_selection import MaterialSelectionPlan
-from app.models.video_base import VideoBasePlanRequest, VideoBaseRenderMode
-from app.services.astromedia import AstroMediaCatalog
-from app.services.centinela.media_resolver import MediaResolver, MediaResolverRequest
-from app.services.video_base_planner import VideoBasePlanner
-from app.services.video_base_renderer import FFmpegSceneRenderer
-from app.utils import utils
-from test.services.test_sol_to_moon_media_cloud_replay import (
-    _fixture_image,
-    _plan,
-    _write_sidecar,
-)
+# Direct execution (`python scripts/...py`) normally exposes only `scripts/` as
+# sys.path[0]. Add the repository root process-locally before loading app modules.
+# App/test imports remain inside functions so Ruff E402 is not suppressed.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 
 _FIXTURES = [
@@ -126,6 +120,11 @@ def _video_summary(probe: dict) -> dict:
 
 
 def _build_media(media_root: Path) -> None:
+    from test.services.test_sol_to_moon_media_cloud_replay import (
+        _fixture_image,
+        _write_sidecar,
+    )
+
     media_root.mkdir(parents=True, exist_ok=True)
     for filename, marker, title, tags, objects in _FIXTURES:
         path = media_root / filename
@@ -134,6 +133,16 @@ def _build_media(media_root: Path) -> None:
 
 
 def generate(output_dir: Path) -> dict:
+    from app.models.astromedia import HashMode, IndexRequest
+    from app.models.material_selection import MaterialSelectionPlan
+    from app.models.video_base import VideoBasePlanRequest, VideoBaseRenderMode
+    from app.services.astromedia import AstroMediaCatalog
+    from app.services.centinela.media_resolver import MediaResolver, MediaResolverRequest
+    from app.services.video_base_planner import VideoBasePlanner
+    from app.services.video_base_renderer import FFmpegSceneRenderer
+    from app.utils import utils
+    from test.services.test_sol_to_moon_media_cloud_replay import _plan
+
     ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
