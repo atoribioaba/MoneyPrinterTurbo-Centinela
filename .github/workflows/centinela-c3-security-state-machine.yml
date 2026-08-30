@@ -1,0 +1,109 @@
+name: Centinela C3 Security + State Machine
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/centinela-c3-security-state-machine.yml
+      - app/router.py
+      - app/models/production_orchestrator.py
+      - app/services/production_orchestrator.py
+      - app/controllers/v1/production_orchestrator.py
+      - app/models/video_base_e2e.py
+      - app/services/video_base_e2e.py
+      - app/controllers/v1/video_base_e2e.py
+      - app/models/finalization_e2e.py
+      - app/services/finalization_e2e.py
+      - app/controllers/v1/finalization_e2e.py
+      - app/models/publication_package.py
+      - app/services/publication_package.py
+      - app/controllers/v1/publication_package.py
+      - test/services/test_production_orchestrator.py
+      - test/services/test_video_base_e2e.py
+      - test/services/test_finalization_e2e.py
+      - test/services/test_publication_package.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-c3-security-state-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-state:
+    name: Security/state / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Compile security/state surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/production_orchestrator.py
+          app/services/production_orchestrator.py
+          app/controllers/v1/production_orchestrator.py
+          app/models/video_base_e2e.py
+          app/services/video_base_e2e.py
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/models/publication_package.py
+          app/services/publication_package.py
+          test/services/test_production_orchestrator.py
+          test/services/test_video_base_e2e.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+
+      - name: Ruff security/state surface
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          app/models/production_orchestrator.py
+          app/services/production_orchestrator.py
+          app/controllers/v1/production_orchestrator.py
+          app/models/video_base_e2e.py
+          app/services/video_base_e2e.py
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/models/publication_package.py
+          app/services/publication_package.py
+          test/services/test_production_orchestrator.py
+          test/services/test_video_base_e2e.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+
+      - name: Run security/state contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=security-state-${{ matrix.os }}-${{ matrix.python-version }}.xml
+          test/services/test_production_orchestrator.py
+          test/services/test_video_base_e2e.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-state-${{ matrix.os }}-${{ matrix.python-version }}-${{ github.run_id }}
+          path: security-state-${{ matrix.os }}-${{ matrix.python-version }}.xml
+          retention-days: 14
