@@ -13,7 +13,7 @@ permissions:
 
 env:
   TARGET_BRANCH: centinela-cert/cloud-mobile-v0.1
-  EXPECTED_PARENT: 9e1d50c2466de4383bffe54d83741a841e299ce8
+  EXPECTED_PARENT: 4a4e38673c69a60f1c3a57eaf168e23cd6c1fdec
   TARGET_FILE: app/services/material_selection.py
 
 jobs:
@@ -101,8 +101,7 @@ jobs:
               '    "mostrando",\n'
           )
           assert text.count(anchor) == 1, 'generic specificity anchor changed'
-          assert '    "coordinate",\n' not in text, 'coordinate already present'
-          assert '    "coordinates",\n' not in text, 'coordinates already present'
+          assert replacement not in text, 'target generic specificity block already hardened'
           text = text.replace(anchor, replacement, 1)
           path.write_text(text, encoding='utf-8')
           PY
