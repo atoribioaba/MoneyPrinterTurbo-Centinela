@@ -117,7 +117,9 @@ def technically_ready_request(*, human_freeze_approval=False):
     publication = publication.model_copy(
         update={"status": PublicationPackageStatus.READY_FOR_MANUAL_PACKAGE}
     )
-    golden = golden.model_copy(update={"status": GoldenCertificationStatus.CERTIFICATION_PASS})
+    golden = golden.model_copy(
+        update={"status": GoldenCertificationStatus.CERTIFICATION_PASS}
+    )
     return V1ReadinessRequest(
         orchestrator=orchestrator,
         publication=publication,
@@ -197,9 +199,43 @@ def test_publication_package_not_ready_fails_closed():
 
     assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
     check = next(
-        item for item in result.checks if item.check_id == "manual_publication_package_ready"
+        item
+        for item in result.checks
+        if item.check_id == "manual_publication_package_ready"
     )
     assert check.passed is False
+    assert result.freeze_authorized is False
+
+
+def test_waiting_for_real_channel_analytics_does_not_block_mechanism_gate():
+    request = technically_ready_request()
+    assert request.analytics_import.status == AnalyticsImportStatus.WAITING_FOR_IMPORT_DATA
+
+    result = build_v1_readiness_audit(request)
+    check = next(
+        item for item in result.checks if item.check_id == "analytics_adapter_operational"
+    )
+
+    assert check.passed is True
+    assert "real_channel_data_required=false" in check.detail
+    assert result.status == V1ReadinessStatus.READY_FOR_HUMAN_FREEZE_APPROVAL
+
+
+def test_broken_analytics_mechanism_evidence_fails_closed():
+    request = technically_ready_request()
+    broken_analytics = request.analytics_import.model_copy(
+        update={"analytics_import_hash": ""}
+    )
+    request = request.model_copy(update={"analytics_import": broken_analytics})
+
+    result = build_v1_readiness_audit(request)
+    check = next(
+        item for item in result.checks if item.check_id == "analytics_adapter_operational"
+    )
+
+    assert check.passed is False
+    assert "mechanism_guardrails=fail" in check.detail
+    assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
     assert result.freeze_authorized is False
 
 
