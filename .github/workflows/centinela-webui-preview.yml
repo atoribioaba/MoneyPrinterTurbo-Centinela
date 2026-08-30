@@ -1,0 +1,169 @@
+name: Centinela WebUI Interactive Preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-preview/webui-mobile-v0.1
+    paths:
+      - webui/CloudPreview.py
+      - .github/workflows/centinela-webui-preview.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-webui-preview
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Interactive Streamlit preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+
+    steps:
+      - name: Check out preview branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install preview runtime
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir "streamlit==1.59.1"
+
+      - name: Compile preview app
+        run: python -m py_compile webui/CloudPreview.py
+
+      - name: Start Streamlit
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup python -m streamlit run webui/CloudPreview.py \
+            --server.address 0.0.0.0 \
+            --server.port 8501 \
+            --server.headless true \
+            --browser.gatherUsageStats false \
+            > streamlit-preview.log 2>&1 &
+          echo $! > streamlit-preview.pid
+
+          for i in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:8501/_stcore/health >/dev/null; then
+              echo "STREAMLIT_PREVIEW_HEALTH=PASS"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat streamlit-preview.log
+          echo "STREAMLIT_PREVIEW_HEALTH=FAIL"
+          exit 1
+
+      - name: Install Cloudflare quick tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output cloudflared \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          ./cloudflared --version
+
+      - name: Open temporary public preview
+        id: tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup ./cloudflared tunnel \
+            --no-autoupdate \
+            --url http://127.0.0.1:8501 \
+            --logfile cloudflared-preview.log \
+            --loglevel info \
+            > cloudflared-console.log 2>&1 &
+          echo $! > cloudflared-preview.pid
+
+          PREVIEW_URL=""
+          for i in $(seq 1 60); do
+            PREVIEW_URL="$(grep -hEo 'https://[-a-zA-Z0-9]+\.trycloudflare\.com' cloudflared-preview.log cloudflared-console.log 2>/dev/null | head -n 1 || true)"
+            if [ -n "$PREVIEW_URL" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "Unable to obtain trycloudflare URL"
+            cat cloudflared-preview.log || true
+            cat cloudflared-console.log || true
+            exit 1
+          fi
+
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error "$PREVIEW_URL" >/dev/null; then
+              echo "PUBLIC_PREVIEW_HEALTH=PASS"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "PUBLIC_PREVIEW_HEALTH=FAIL"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "$PREVIEW_URL" | tee centinela-webui-preview-url.txt
+          {
+            echo "## 🌌 El Centinela del Universo — WebUI Preview"
+            echo ""
+            echo "**Preview interactiva:** $PREVIEW_URL"
+            echo ""
+            echo "> Demo segura: sin PC local, claves, render ni publicación."
+            echo ""
+            echo "La URL permanece activa mientras este job siga ejecutándose (máximo aproximado: 2 horas)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload live preview URL
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-webui-live-url-${{ github.run_id }}
+          path: centinela-webui-preview-url.txt
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Keep preview alive for mobile review
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Preview alive: ${{ steps.tunnel.outputs.url }}"
+          for minute in $(seq 1 120); do
+            if ! kill -0 "$(cat streamlit-preview.pid)" 2>/dev/null; then
+              echo "Streamlit process stopped unexpectedly"
+              cat streamlit-preview.log || true
+              exit 1
+            fi
+            if ! kill -0 "$(cat cloudflared-preview.pid)" 2>/dev/null; then
+              echo "Cloudflared process stopped unexpectedly"
+              cat cloudflared-preview.log || true
+              cat cloudflared-console.log || true
+              exit 1
+            fi
+            curl --fail --silent http://127.0.0.1:8501/_stcore/health >/dev/null
+            echo "PREVIEW_ALIVE_MINUTE=${minute}"
+            sleep 60
+          done
+
+      - name: Upload preview evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-webui-preview-${{ github.run_id }}
+          path: |
+            centinela-webui-preview-url.txt
+            streamlit-preview.log
+            cloudflared-preview.log
+            cloudflared-console.log
+          retention-days: 7
+          if-no-files-found: warn
