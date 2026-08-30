@@ -5,7 +5,10 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from app.models.finalization_e2e import FinalizationE2EStatus
+from app.models.finalization_e2e import (
+    REQUIRED_HUMAN_REVIEW_CHECK_IDS,
+    FinalizationE2EStatus,
+)
 from app.models.publication_package import (
     PUBLICATION_PACKAGE_VERSION,
     PackageAsset,
@@ -59,13 +62,25 @@ def _support_asset(
 
 def _finalization_evidence_valid(request: PublicationPackageRequest) -> bool:
     finalization = request.finalization
+    check_by_id = {check.check_id: check for check in finalization.checks}
+    human_review_evidence_valid = all(
+        check_id in check_by_id and check_by_id[check_id].passed
+        for check_id in REQUIRED_HUMAN_REVIEW_CHECK_IDS
+    )
     return bool(
         finalization.status == FinalizationE2EStatus.FINALIZATION_E2E_PASS
         and finalization.human_review_recorded
+        and human_review_evidence_valid
         and finalization.check_count > 0
         and finalization.failed_count == 0
         and finalization.passed_count == finalization.check_count
         and finalization.artifact_count >= 2
+        and finalization.human_review_required
+        and finalization.authorization_to_publish is False
+        and finalization.uploads_files is False
+        and finalization.webhook_calls == 0
+        and finalization.marks_published is False
+        and finalization.auto_publication is False
     )
 
 
