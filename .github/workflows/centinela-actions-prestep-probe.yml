@@ -1,0 +1,22 @@
+name: Centinela Actions Pre-step Probe
+
+on:
+  push:
+    branches:
+      - centinela-diagnostics/actions-prestep-probe-20260830
+
+permissions:
+  contents: read
+
+jobs:
+  probe-ubuntu:
+    name: Probe / Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner entered step execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'CENTINELA_ACTIONS_STEP_EXECUTION=PASS'
+          uname -a
