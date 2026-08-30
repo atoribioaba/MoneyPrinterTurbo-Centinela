@@ -174,7 +174,12 @@ def generate(output_dir: Path) -> dict:
         )
 
         selections = outcome.selection["selections"]
-        required = {"2": "m31", "3": "m42", "4": "m45", "5": "m57"}
+        required = {
+            "2": "andromeda_galaxy",
+            "3": "orion_nebula",
+            "4": "open_cluster",
+            "5": "ring_nebula",
+        }
         specificity_pass = all(
             any(
                 reason.startswith("specificity_overlap:") and token in reason
