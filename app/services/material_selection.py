@@ -194,6 +194,8 @@ _GENERIC_SPECIFICITY_TOKENS = {
     "galaxy",
     "nebula",
     "cluster",
+    "coordinate",
+    "coordinates",
     "mostrando",
     "mostrar",
     "showing",
