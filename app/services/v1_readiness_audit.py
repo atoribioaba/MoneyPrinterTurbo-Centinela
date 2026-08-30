@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from app.models.analytics_import_adapter import AnalyticsImportStatus
 from app.models.golden_e2e_certification import GoldenCertificationStatus
 from app.models.operational_hardening import OperationalHardeningStatus
 from app.models.publication_package import PublicationPackageStatus
@@ -28,10 +29,32 @@ def _hash(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest().upper()
 
 
+def _analytics_adapter_operational(request: V1ReadinessRequest) -> bool:
+    plan = request.analytics_import
+    return (
+        plan.deterministic
+        and plan.adapter_only
+        and plan.resource_class == "LIGHT"
+        and plan.network_calls == 0
+        and plan.api_calls == 0
+        and plan.database_writes == 0
+        and not plan.credentials_required
+        and not plan.uses_llm
+        and not plan.auto_publication
+        and bool(plan.analytics_import_hash.strip())
+        and plan.status
+        in {
+            AnalyticsImportStatus.WAITING_FOR_IMPORT_DATA,
+            AnalyticsImportStatus.IMPORT_READY,
+        }
+    )
+
+
 def build_v1_readiness_audit(request: V1ReadinessRequest) -> V1ReadinessAuditPlan:
     oss_complete = bool(request.oss_audit) and all(
         item.verified for item in request.oss_audit
     )
+    analytics_operational = _analytics_adapter_operational(request)
     checks = [
         V1ReadinessCheck(
             check_id="operational_hardening_not_blocked",
@@ -59,8 +82,12 @@ def build_v1_readiness_audit(request: V1ReadinessRequest) -> V1ReadinessAuditPla
         ),
         V1ReadinessCheck(
             check_id="analytics_adapter_operational",
-            passed=True,
-            detail=request.analytics_import.status.value,
+            passed=analytics_operational,
+            detail=(
+                f"status={request.analytics_import.status.value};"
+                f"real_channel_data_required=false;"
+                f"mechanism_guardrails={'pass' if analytics_operational else 'fail'}"
+            ),
         ),
         V1ReadinessCheck(
             check_id="oss_audit_complete",
