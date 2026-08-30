@@ -8,7 +8,7 @@ Scope: cloud/static evidence only. This document does **not** replace the final 
 
 - `C3_DIRECT_DEPENDENCY_MANIFEST=CAPTURED`
 - `C3_TRANSITIVE_SBOM=PENDING_RUNNER_EXECUTION`
-- `C3_LICENSE_AUDIT=IN_PROGRESS`
+- `C3_ACTIVE_PIPELINE_LICENSE_AUDIT=SUBSTANTIALLY_VERIFIED_CLOUD_SIDE`
 - `F58_OSS_AUDIT_COMPLETE=FALSE`
 - `LOCAL_RUNTIME_LICENSE_CONFIRMATION_REQUIRED=TRUE`
 - `AUTO_PUBLICATION=FALSE`
@@ -26,18 +26,18 @@ Scope: cloud/static evidence only. This document does **not** replace the final 
 
 | Dependency | Requested version/spec | Role / note | License audit status |
 |---|---:|---|---|
-| moviepy | 2.2.1 | video composition | primary-source verification in progress |
-| streamlit | 1.59.1 | WebUI | primary-source verification in progress |
+| moviepy | 2.2.1 | video composition | MIT verified upstream |
+| streamlit | 1.59.1 | WebUI | Apache-2.0 verified upstream |
 | streamlit-tour | 1.1.0 | WebUI tour | primary-source verification pending |
-| edge-tts | 7.2.7 | optional/network TTS path | primary-source verification in progress |
-| fastapi | 0.136.3 | API | primary-source verification in progress |
-| uvicorn | 0.32.1 | ASGI runtime | primary-source verification pending |
-| openai | 2.24.0 | API compatibility/client | primary-source verification pending |
-| faster-whisper | 1.1.0 | subtitle/alignment fallback | primary-source verification pending |
+| edge-tts | 7.2.7 | optional/network TTS path | client LGPLv3 verified upstream; service terms separate |
+| fastapi | 0.136.3 | API | MIT verified upstream |
+| uvicorn | 0.32.1 | ASGI runtime | BSD-3-Clause corroborated; exact package source to capture in final SBOM |
+| openai | 2.24.0 | API compatibility/client | optional provider client; final service/SDK classification pending |
+| faster-whisper | 1.1.0 | subtitle/alignment fallback | MIT verified project family; exact installed dependency graph pending |
 | loguru | 0.7.3 | logging | primary-source verification pending |
-| dashscope | 1.20.14 | optional provider client | primary-source verification pending |
-| azure-cognitiveservices-speech | 1.41.1 | optional cloud speech | primary-source verification pending |
-| redis | 5.2.0 | state/runtime integration | primary-source verification in progress |
+| dashscope | 1.20.14 | optional provider client | service/SDK audit pending |
+| azure-cognitiveservices-speech | 1.41.1 | optional cloud speech | service/SDK audit pending |
+| redis | 5.2.0 | state/runtime integration | MIT verified upstream |
 | python-multipart | 0.0.27 | multipart API support | primary-source verification pending |
 | pyyaml | 6.0.3 | YAML parsing | primary-source verification pending |
 | requests | 2.33.1 | HTTP client | primary-source verification pending |
@@ -45,9 +45,9 @@ Scope: cloud/static evidence only. This document does **not** replace the final 
 | socksio | 1.0.0 | SOCKS transport | primary-source verification pending |
 | pydub | 0.25.1 | audio utilities | primary-source verification pending |
 | audioop-lts | 0.2.2; Python >=3.13 | Python 3.13 audioop compatibility | primary-source verification pending |
-| litellm | 1.86.2 | multi-provider LLM abstraction | mixed OSS/enterprise surfaces; exact used surface must be verified |
-| google-genai | 2.11.0 | optional Google GenAI client | primary-source verification pending |
-| astronomy-engine | 2.1.19 | astronomy calculations | primary-source verification pending |
+| litellm | 1.86.2 | multi-provider LLM abstraction | OSS core + enterprise/commercial surfaces; used surface must stay OSS-verified |
+| google-genai | 2.11.0 | optional Google GenAI client | service/SDK audit pending |
+| astronomy-engine | 2.1.19 | astronomy calculations | MIT verified upstream |
 | tzdata | >=2025.3 | timezone database | primary-source verification pending |
 
 ### Optional dependency
@@ -64,17 +64,44 @@ Scope: cloud/static evidence only. This document does **not** replace the final 
 | pytest | 9.1.1 | tests | audit pending |
 | ruff | 0.15.21 | lint | audit pending |
 
-## Preliminary license evidence captured on 2026-08-30
+## Verified active-pipeline OSS evidence — cloud side
 
-This section is intentionally conservative. A component is not marked `verified=true` for F58 until its exact package/repository/license mapping is recorded.
+The following entries are based on upstream project/model license declarations checked on 2026-08-30. `cloud verified` means the upstream license identity is verified; exact local binary/model/version provenance can still remain pending.
 
-| Function | Current component | Classification | Free | License evidence | Decision | F58 verified |
-|---|---|---|---:|---|---|---:|
-| application core | MoneyPrinterTurbo-Centinela / MoneyPrinterTurbo 1.3.4 | OPEN SOURCE + 100 % GRATUITA | yes | repository declares MIT | MANTENER | yes |
-| video composition | MoviePy | OPEN SOURCE + 100 % GRATUITA | yes | upstream project metadata declares MIT | MANTENER | provisional |
-| TTS fallback | edge-tts | OSS client + external service | client yes | upstream metadata identifies LGPLv3; service behavior/terms are separate | keep only as fallback; local Qwen TTS preferred | provisional |
-| Redis Python client | redis-py | OPEN SOURCE + 100 % GRATUITA | yes | upstream LICENSE identifies MIT | MANTENER | provisional |
-| LLM abstraction | LiteLLM | OSS core + commercial/enterprise surfaces | core yes | upstream separates MIT-accessible code from enterprise-licensed surfaces | keep only used OSS surface; verify exact imports/features | provisional |
+| Function | Current / candidate | Classification | Free | License | Cloud verification | V1 decision |
+|---|---|---|---:|---|---|---|
+| application core | MoneyPrinterTurbo-Centinela / MPT 1.3.4 | OPEN SOURCE + 100 % GRATUITA | yes | MIT | repository verified | MANTENER |
+| environment/package manager | uv | OPEN SOURCE + 100 % GRATUITA | yes | MIT OR Apache-2.0 | upstream verified | MANTENER |
+| local LLM runtime | Ollama | OPEN SOURCE + 100 % GRATUITA | yes | MIT | upstream verified | MANTENER for V1 |
+| alternate local LLM runtime | llama.cpp | OPEN SOURCE + 100 % GRATUITA | yes | MIT | upstream verified | ALTERNATIVA OSS / A-B only if useful |
+| local LLM model family | Qwen3.5 4B | PESOS ABIERTOS | yes | Apache-2.0 | official model card verified | MANTENER baseline; exact local quantization/hash pending PC |
+| deferred model | Qwen3.8 27B | PESOS ABIERTOS | yes | Apache-2.0 | official model card verified | PRUEBA A/B DIFERIDA; poor V1 hardware fit |
+| local TTS code/model family | Qwen3-TTS | OPEN SOURCE / PESOS ABIERTOS | yes | Apache-2.0 | official code + 1.7B model family verified | MANTENER candidate; exact local model/perf pending PC |
+| TTS fallback client | edge-tts | OSS CON SERVICIO EXTERNO | client yes | LGPLv3 client | client verified; service rights separate | fallback only |
+| STT/alignment fallback | faster-whisper | OPEN SOURCE + 100 % GRATUITA | yes | MIT | project license verified | MANTENER fallback; local CUDA/runtime pending |
+| video composition | MoviePy | OPEN SOURCE + 100 % GRATUITA | yes | MIT | upstream metadata verified | MANTENER |
+| encoder/transcoder | FFmpeg | OPEN SOURCE | yes | LGPL-2.1+ base; can become GPL with enabled components | upstream license model verified | MANTENER; actual Windows build/license pending PC |
+| WebUI | Streamlit | OPEN SOURCE + 100 % GRATUITA | yes | Apache-2.0 | upstream verified | MANTENER V1 |
+| API | FastAPI | OPEN SOURCE + 100 % GRATUITA | yes | MIT | upstream verified | MANTENER |
+| astronomy calculations | Astronomy Engine | OPEN SOURCE + 100 % GRATUITA | yes | MIT | upstream verified | MANTENER |
+| visual analysis | OpenCV | OPEN SOURCE + 100 % GRATUITA | yes | Apache-2.0 for current releases | upstream verified | MANTENER where used |
+| conceptual image matching | OpenAI CLIP code | OPEN SOURCE + 100 % GRATUITA | code yes | MIT code | upstream code verified; exact weights/license mapping must be captured if used | MANTENER SUPPORT ROLE only |
+| spatial vision | Florence-2 family | PESOS/IMPLEMENTATION TO VERIFY EXACTLY | unknown until exact artifact | code/repo variants include MIT | family evidence insufficient for final exact artifact | MANTENER SUPPORT ROLE only after exact-model license capture |
+| LLM abstraction | LiteLLM | OSS CORE + COMMERCIAL/ENTERPRISE SURFACES | core yes | MIT-accessible core; enterprise surfaces separately licensed | upstream split verified | use only proven OSS surface |
+| Redis client | redis-py | OPEN SOURCE + 100 % GRATUITA | yes | MIT | upstream verified | MANTENER if required |
+
+## Service/API separation
+
+The presence of an OSS Python client does not make the hosted service free/open-source. For V1 cost/privacy decisions:
+
+- OpenAI SDK/API: client license and API pricing/terms are separate; do not assume ChatGPT subscription includes API usage.
+- Google GenAI client/API: client license and service pricing/terms are separate.
+- DashScope client/service: separate.
+- Azure Speech SDK/service: separate.
+- TwelveLabs client/service: separate and optional.
+- edge-tts client: OSS client, but the Microsoft online TTS service is an external dependency.
+
+Default local V1 should not depend on any paid/online provider unless explicitly selected later.
 
 ## Pipeline OSS audit required by F58
 
@@ -115,7 +142,24 @@ When GitHub Actions runner execution is restored:
 
 ### Local final on 2026-09-09+
 
-Repeat the inventory on the actual Windows V1 environment and additionally capture non-Python/runtime components: FFmpeg build/license flags, Ollama, Qwen model metadata/license, Qwen3-TTS, CUDA-dependent wheels/runtimes and NVIDIA/NVENC path.
+Repeat the inventory on the actual Windows V1 environment and additionally capture non-Python/runtime components: FFmpeg build/license flags, Ollama, exact Qwen model/quantization metadata, exact Qwen3-TTS model, CUDA-dependent wheels/runtimes and NVIDIA/NVENC path.
+
+## What can still be completed without the PC
+
+- verify remaining active direct dependency licenses from primary package repositories;
+- classify every optional online-provider SDK as `not selected`, `optional`, or `required` for local V1;
+- prepare SBOM generator/CI contract for execution when runners recover;
+- capture exact vision model artifact/license if Florence/CLIP weights are actually selected in the cloud code path.
+
+## What must remain local-final
+
+- actual installed package graph;
+- actual FFmpeg configuration and resulting license mode;
+- exact Ollama version and model digest;
+- exact Qwen quantization/hash;
+- exact Qwen3-TTS model/hash;
+- exact faster-whisper/CTranslate2/CUDA runtime combination;
+- RAM/VRAM measurements.
 
 ## Fail-closed rules
 
