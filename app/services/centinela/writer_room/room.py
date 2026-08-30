@@ -8,6 +8,10 @@ from typing import Any, Callable
 
 from app.models.astronomy import ScientificStatus
 
+from .fact_guard import (
+    validate_final_candidate_quantities,
+    validate_quantitative_claims,
+)
 from .models import (
     CritiqueBundle,
     DraftPacket,
@@ -141,6 +145,7 @@ def _validate_claims(
                     "HECHO_VERIFICADO claim references facts that are "
                     f"not HECHO_VERIFICADO: {invalid}"
                 )
+    validate_quantitative_claims(claims, fact_lock)
 
 
 def _facts_prompt(fact_lock: FactLock) -> str:
@@ -330,6 +335,7 @@ class WriterRoom:
         candidate = generated_final.value
         assert isinstance(candidate, FinalScriptCandidate)
         _validate_claims(candidate.claims, fact_lock)
+        validate_final_candidate_quantities(candidate, fact_lock)
 
         llm_request_count = (
             generated_draft.request_count
