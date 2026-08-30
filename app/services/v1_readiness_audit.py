@@ -8,7 +8,10 @@ from typing import Any
 from app.models.analytics_import_adapter import AnalyticsImportStatus
 from app.models.golden_e2e_certification import GoldenCertificationStatus
 from app.models.operational_hardening import OperationalHardeningStatus
-from app.models.publication_package import PublicationPackageStatus
+from app.models.publication_package import (
+    PUBLICATION_PACKAGE_VERSION,
+    PublicationPackageStatus,
+)
 from app.models.v1_readiness_audit import (
     V1_READINESS_AUDIT_VERSION,
     V1ReadinessAuditPlan,
@@ -50,11 +53,60 @@ def _analytics_adapter_operational(request: V1ReadinessRequest) -> bool:
     )
 
 
+def _publication_package_ready(request: V1ReadinessRequest) -> bool:
+    plan = request.publication
+    required = [asset for asset in plan.assets if asset.required]
+    expected_ids = {
+        "master",
+        "social",
+        "thumbnail",
+        "subtitles_es",
+        "caption",
+        "metadata",
+        "provenance",
+        "publication_checklist",
+    }
+    return (
+        plan.version == PUBLICATION_PACKAGE_VERSION
+        and plan.status == PublicationPackageStatus.READY_FOR_MANUAL_PACKAGE
+        and plan.deterministic
+        and plan.planning_only
+        and plan.manual_publication_only
+        and plan.resource_class == "LIGHT"
+        and not plan.writes_files
+        and not plan.uploads_files
+        and plan.network_calls == 0
+        and plan.webhook_calls == 0
+        and not plan.auto_publication
+        and not plan.authorization_to_publish
+        and not plan.marks_published
+        and plan.human_review_required
+        and plan.local_final_certification_required
+        and plan.metadata_present
+        and plan.human_review_recorded
+        and plan.finalization_evidence_valid
+        and plan.rights_ready
+        and plan.asset_count == 8
+        and plan.required_asset_count == 8
+        and plan.present_required_asset_count == 8
+        and plan.hashed_required_asset_count == 8
+        and plan.all_required_assets_present
+        and plan.all_required_assets_hashed
+        and len(required) == 8
+        and {asset.asset_id for asset in required} == expected_ids
+        and all(asset.present for asset in required)
+        and all(asset.sha256 and len(asset.sha256) == 64 for asset in required)
+        and bool(plan.source_finalization_e2e_hash.strip())
+        and bool(plan.publication_package_hash.strip())
+    )
+
+
 def build_v1_readiness_audit(request: V1ReadinessRequest) -> V1ReadinessAuditPlan:
     oss_complete = bool(request.oss_audit) and all(
         item.verified for item in request.oss_audit
     )
     analytics_operational = _analytics_adapter_operational(request)
+    publication_ready = _publication_package_ready(request)
     checks = [
         V1ReadinessCheck(
             check_id="operational_hardening_not_blocked",
@@ -74,11 +126,12 @@ def build_v1_readiness_audit(request: V1ReadinessRequest) -> V1ReadinessAuditPla
         ),
         V1ReadinessCheck(
             check_id="manual_publication_package_ready",
-            passed=(
-                request.publication.status
-                == PublicationPackageStatus.READY_FOR_MANUAL_PACKAGE
+            passed=publication_ready,
+            detail=(
+                f"status={request.publication.status.value};"
+                f"canonical_v0_2={'pass' if publication_ready else 'fail'};"
+                "auto_publication=false"
             ),
-            detail=request.publication.status.value,
         ),
         V1ReadinessCheck(
             check_id="analytics_adapter_operational",
