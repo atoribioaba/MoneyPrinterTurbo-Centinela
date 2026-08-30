@@ -10,6 +10,8 @@ Branch: `centinela-cert/c3-f58-readiness-v0.1`
 - `LOCAL_HARDWARE_CERTIFICATION=PENDING_PC`
 - `F58_MECHANISM_CLOUD=PASS`
 - `F58_EXECUTABLE_MATRIX=3/3_PASS`
+- `ANALYTICS_ADAPTER_MECHANISM=PASS`
+- `REAL_CHANNEL_ANALYTICS_REQUIRED_FOR_V1=FALSE`
 - `SBOM_PROVISIONAL_CLOUD=PASS`
 - `PUBLIC_REPO_SECRET_AUDIT=PASS`
 - `OSS_AUDIT_CLOUD=ADVANCED_LOCAL_FINAL_FIELDS_PENDING`
@@ -26,15 +28,15 @@ The F58 mechanism is intentionally audit-only. It may authorize a freeze only af
 | Operational hardening not blocked | PENDING_LOCAL_RECHECK | Yes | Partially | Cloud mechanism is executable; workstation state must be revalidated on return. |
 | Golden real E2E certified | PENDING_PC | Yes | No | Requires real local media/runtime/hardware path and human-review stop. |
 | Manual Publication Package ready | PENDING_REAL_GOLDEN | Yes | Mechanism mostly | v0.2 cloud contract exists; real package depends on approved Golden output. |
-| Analytics adapter operational | IMPLEMENTED / CLOUD_CODE_PRESENT | Yes | Mostly | Mechanism exists; dedicated adapter audit remains a cloud-doable follow-up. |
+| Analytics adapter operational | CLOUD_PASS | Yes | Yes | Dedicated 3-platform mechanism gate passed; real channel data is not required for V1 mechanism readiness. |
 | OSS audit complete and verified | ADVANCED_LOCAL_FINAL_FIELDS_PENDING | Yes | Mostly | Cloud/static licenses plus transitive SBOM exist; local FFmpeg/NVENC/runtime/model fields remain pending. |
 | Human freeze approval | NOT_GRANTED | Final | No automation | Must be explicit and only after technical readiness. |
 
-## F58 mechanism CI — certified in cloud
+## F58 mechanism CI — certified and revalidated in cloud
 
 Historical pre-step/no-runner failures were resolved after repository visibility became public. The exact hidden private-repository billing/eligibility cause was not directly observed and is not asserted.
 
-Final certified mechanism run:
+Initial final mechanism certification:
 
 - workflow: `.github/workflows/centinela-c3-f58-readiness.yml`
 - run: `33331257171`
@@ -51,7 +53,53 @@ During executable CI recovery two genuine CI-quality defects were found and fixe
 1. Ruff violations in the compact F58 source surface;
 2. a formatting-dependent textual freeze guard, replaced with semantic Pydantic/default checks.
 
+After hardening the Analytics gate so it no longer uses literal `passed=True`, F58 was revalidated:
+
+- run: `33332112652`
+- Linux / Python 3.11: PASS including Ruff, contract and semantic freeze guard
+- Linux / Python 3.13: PASS including contract and semantic freeze guard
+- Windows / Python 3.11: PASS including contract
+
 `F58_MECHANISM_CLOUD=PASS` certifies the mechanism only. It does not convert missing local/Golden/human evidence into readiness.
+
+## Analytics Adapter mechanism — cloud PASS
+
+Dedicated workflow:
+
+- `.github/workflows/centinela-c3-analytics-adapter.yml`
+- run: `33332179491`
+- source commit: `f5e0159404d2a90c8f941eef4abd5302279b5178`
+- Linux / Python 3.11: PASS
+- Linux / Python 3.13: PASS
+- Windows / Python 3.11: PASS
+- Linux 3.11 focal Ruff: PASS
+- targeted Analytics + API + F58 tests: `24 passed`
+- semantic side-effect guard: PASS
+
+The adapter now proves:
+
+- deterministic CSV/JSON ingestion;
+- explicit timezone required for `observed_at_utc`;
+- offset timestamps normalized to UTC;
+- invalid JSON/shapes/metrics/timestamps fail closed;
+- missing data yields `WAITING_FOR_IMPORT_DATA`, not a false production-ready state;
+- a failed parse does not poison the next valid import;
+- API invalid input returns HTTP 422;
+- `network_calls=0`;
+- `api_calls=0`;
+- `database_writes=0`;
+- `credentials_required=false`;
+- `uses_llm=false`;
+- `auto_publication=false`.
+
+F58 now evaluates Analytics operational readiness from those mechanism guardrails and a non-empty evidence hash instead of hard-coding the gate to pass. `WAITING_FOR_IMPORT_DATA` is valid for mechanism certification, therefore:
+
+- `ANALYTICS_ADAPTER_MECHANISM=PASS`
+- `REAL_CHANNEL_ANALYTICS_REQUIRED_FOR_V1=FALSE`
+- `ANALYTICS_REAL_DATA=PENDING_NOT_BLOCKING_MECHANISM`
+- `ANALYTICS_PERSISTENCE_OUT_OF_SCOPE_ADAPTER_V0_1=TRUE`
+
+The last line is intentional: adapter v0.1 is an import/normalization boundary and explicitly performs no database writes. Actual analytics storage/persistence is a separate concern and is not falsely claimed as certified here.
 
 ## Provisional transitive SBOM — cloud PASS
 
