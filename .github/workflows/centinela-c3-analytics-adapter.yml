@@ -1,0 +1,181 @@
+name: Centinela C3 Analytics Adapter
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/centinela-c3-analytics-adapter.yml
+      - app/models/analytics_import_adapter.py
+      - app/services/analytics_import_adapter.py
+      - app/controllers/v1/analytics_import_adapter.py
+      - app/models/analytics_brain.py
+      - app/services/v1_readiness_audit.py
+      - test/services/test_analytics_import_adapter.py
+      - test/services/test_analytics_import_adapter_api.py
+      - test/services/test_v1_readiness_audit.py
+      - pyproject.toml
+      - uv.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-c3-analytics-adapter-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analytics-linux:
+    name: Analytics adapter / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Compile analytics surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/analytics_import_adapter.py
+          app/services/analytics_import_adapter.py
+          app/controllers/v1/analytics_import_adapter.py
+          app/models/analytics_brain.py
+          app/services/v1_readiness_audit.py
+          test/services/test_analytics_import_adapter.py
+          test/services/test_analytics_import_adapter_api.py
+          test/services/test_v1_readiness_audit.py
+
+      - name: Ruff analytics surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          app/models/analytics_import_adapter.py
+          app/services/analytics_import_adapter.py
+          app/controllers/v1/analytics_import_adapter.py
+          app/services/v1_readiness_audit.py
+          test/services/test_analytics_import_adapter.py
+          test/services/test_analytics_import_adapter_api.py
+          test/services/test_v1_readiness_audit.py
+
+      - name: Run analytics adapter contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=analytics-adapter-linux-${{ matrix.python-version }}.xml
+          test/services/test_analytics_import_adapter.py
+          test/services/test_analytics_import_adapter_api.py
+          test/services/test_v1_readiness_audit.py
+
+      - name: Guard analytics side effects and V1 semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -X utf8 - <<'PY'
+          from datetime import timezone
+
+          from app.models.analytics_import_adapter import (
+              AnalyticsImportFormat,
+              AnalyticsImportRequest,
+              AnalyticsImportStatus,
+          )
+          from app.models.analytics_brain import AnalyticsPlatform
+          from app.services.analytics_import_adapter import build_analytics_import
+
+          empty = build_analytics_import(AnalyticsImportRequest())
+          assert empty.status == AnalyticsImportStatus.WAITING_FOR_IMPORT_DATA
+          assert empty.deterministic is True
+          assert empty.adapter_only is True
+          assert empty.resource_class == "LIGHT"
+          assert empty.network_calls == 0
+          assert empty.api_calls == 0
+          assert empty.database_writes == 0
+          assert empty.credentials_required is False
+          assert empty.uses_llm is False
+          assert empty.auto_publication is False
+          assert empty.analytics_import_hash
+
+          payload = (
+              "content_id,native_metric_name,value,value_type,observed_at_utc\n"
+              "abc,views,123,COUNT,2026-08-22T20:00:00+02:00\n"
+          )
+          ready = build_analytics_import(
+              AnalyticsImportRequest(
+                  format=AnalyticsImportFormat.CSV,
+                  payload_text=payload,
+                  default_platform=AnalyticsPlatform.YOUTUBE,
+              )
+          )
+          assert ready.status == AnalyticsImportStatus.IMPORT_READY
+          assert ready.observation_count == 1
+          assert ready.observations[0].observed_at_utc.tzinfo == timezone.utc
+          assert ready.observations[0].observed_at_utc.hour == 18
+
+          print("ANALYTICS_ADAPTER_MECHANISM=PASS")
+          print("REAL_CHANNEL_ANALYTICS_REQUIRED_FOR_V1=FALSE")
+          print("ANALYTICS_NETWORK_CALLS=0")
+          print("ANALYTICS_DATABASE_WRITES=0")
+          print("ANALYTICS_AUTO_PUBLICATION=FALSE")
+          print("ANALYTICS_CREDENTIALS_REQUIRED=FALSE")
+          PY
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-adapter-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: analytics-adapter-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+  analytics-windows:
+    name: Analytics adapter / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+
+      - name: Compile analytics surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/analytics_import_adapter.py
+          app/services/analytics_import_adapter.py
+          app/controllers/v1/analytics_import_adapter.py
+          app/models/analytics_brain.py
+          app/services/v1_readiness_audit.py
+          test/services/test_analytics_import_adapter.py
+          test/services/test_analytics_import_adapter_api.py
+          test/services/test_v1_readiness_audit.py
+
+      - name: Run analytics adapter contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=analytics-adapter-windows-3.11.xml
+          test/services/test_analytics_import_adapter.py
+          test/services/test_analytics_import_adapter_api.py
+          test/services/test_v1_readiness_audit.py
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analytics-adapter-windows-3.11-${{ github.run_id }}
+          path: analytics-adapter-windows-3.11.xml
+          retention-days: 14
+          if-no-files-found: warn
