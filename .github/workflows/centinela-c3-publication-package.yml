@@ -7,11 +7,14 @@ on:
       - centinela-cert/c3-f58-readiness-v0.1
     paths:
       - .github/workflows/centinela-c3-publication-package.yml
+      - app/models/finalization_e2e.py
+      - app/services/finalization_e2e.py
       - app/models/publication_package.py
       - app/services/publication_package.py
       - app/controllers/v1/publication_package.py
       - app/services/v1_readiness_audit.py
       - scripts/centinela_publication_package_cloud_dry_run.py
+      - test/services/test_finalization_e2e.py
       - test/services/test_publication_package.py
       - test/services/test_publication_package_api.py
       - test/services/test_v1_readiness_audit.py
@@ -48,11 +51,14 @@ jobs:
       - name: Compile publication package surface
         run: >-
           uv run --no-sync python -m compileall
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
           app/models/publication_package.py
           app/services/publication_package.py
           app/controllers/v1/publication_package.py
           app/services/v1_readiness_audit.py
           scripts/centinela_publication_package_cloud_dry_run.py
+          test/services/test_finalization_e2e.py
           test/services/test_publication_package.py
           test/services/test_publication_package_api.py
           test/services/test_v1_readiness_audit.py
@@ -61,11 +67,14 @@ jobs:
         if: matrix.python-version == '3.11'
         run: >-
           uv run --no-sync ruff check
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
           app/models/publication_package.py
           app/services/publication_package.py
           app/controllers/v1/publication_package.py
           app/services/v1_readiness_audit.py
           scripts/centinela_publication_package_cloud_dry_run.py
+          test/services/test_finalization_e2e.py
           test/services/test_publication_package.py
           test/services/test_publication_package_api.py
           test/services/test_v1_readiness_audit.py
@@ -74,6 +83,7 @@ jobs:
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=publication-package-linux-${{ matrix.python-version }}.xml
+          test/services/test_finalization_e2e.py
           test/services/test_publication_package.py
           test/services/test_publication_package_api.py
           test/services/test_v1_readiness_audit.py
@@ -109,11 +119,14 @@ jobs:
       - name: Compile publication package surface
         run: >-
           uv run --no-sync python -m compileall
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
           app/models/publication_package.py
           app/services/publication_package.py
           app/controllers/v1/publication_package.py
           app/services/v1_readiness_audit.py
           scripts/centinela_publication_package_cloud_dry_run.py
+          test/services/test_finalization_e2e.py
           test/services/test_publication_package.py
           test/services/test_publication_package_api.py
           test/services/test_v1_readiness_audit.py
@@ -122,6 +135,7 @@ jobs:
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=publication-package-windows-3.11.xml
+          test/services/test_finalization_e2e.py
           test/services/test_publication_package.py
           test/services/test_publication_package_api.py
           test/services/test_v1_readiness_audit.py
