@@ -85,7 +85,7 @@ class PublicationPackagePlan(StrictPublicationPackageModel):
     local_final_certification_required: bool = True
     status: PublicationPackageStatus
     asset_count: int = Field(ge=0)
-    required_asset_count: int = Field(default=8, ge=0)
+    required_asset_count: int = Field(default=0, ge=0)
     present_required_asset_count: int = Field(default=0, ge=0)
     hashed_required_asset_count: int = Field(default=0, ge=0)
     assets: list[PackageAsset]
