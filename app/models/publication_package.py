@@ -66,6 +66,16 @@ class PublicationPackageRequest(StrictPublicationPackageModel):
     metadata: PublicationMetadata | None = None
     support: PublicationSupportManifest = Field(default_factory=PublicationSupportManifest)
 
+    @model_validator(mode="after")
+    def revalidate_finalization_evidence(self):
+        # Pydantic model_copy(update=...) intentionally skips validation. Re-run
+        # the complete FinalizationE2E contract at this trust boundary so an
+        # internally mutated PASS cannot become package-ready evidence.
+        FinalizationE2EPlan.model_validate(
+            self.finalization.model_dump(mode="json")
+        )
+        return self
+
 
 class PublicationPackagePlan(StrictPublicationPackageModel):
     version: str = PUBLICATION_PACKAGE_VERSION
