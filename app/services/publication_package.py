@@ -32,7 +32,14 @@ def _hash_text(value: str) -> str:
 
 
 def _normalized_sha256(value: str | None) -> str | None:
-    return value.upper() if value else None
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    if len(normalized) != 64:
+        return None
+    if any(character not in "0123456789ABCDEF" for character in normalized):
+        return None
+    return normalized
 
 
 def _support_asset(
