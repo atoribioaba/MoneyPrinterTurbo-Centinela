@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from app.models.finalization_e2e import (
+    REQUIRED_HUMAN_REVIEW_CHECK_IDS,
     FinalVideoArtifactProbe,
     FinalizationCheck,
     FinalizationE2EPlan,
@@ -57,23 +58,26 @@ def finalization() -> FinalizationE2EPlan:
     ]
     checks = [
         FinalizationCheck(
-            check_id="human_review_approved",
+            check_id=check_id,
             passed=True,
-            detail="synthetic fixture",
-        ),
+            detail="synthetic canonical review evidence",
+        )
+        for check_id in REQUIRED_HUMAN_REVIEW_CHECK_IDS
+    ]
+    checks.append(
         FinalizationCheck(
             check_id="final_renders_verified",
             passed=True,
             detail="synthetic fixture",
-        ),
-    ]
+        )
+    )
     return FinalizationE2EPlan(
         source_video_base_e2e_hash="C" * 64,
         status=FinalizationE2EStatus.FINALIZATION_E2E_PASS,
         human_review_recorded=True,
         artifact_count=2,
-        check_count=2,
-        passed_count=2,
+        check_count=len(checks),
+        passed_count=len(checks),
         failed_count=0,
         checks=checks,
         artifacts=artifacts,
@@ -127,6 +131,7 @@ def main() -> None:
 
     print("PUBLICATION_PACKAGE_CLOUD_DRY_RUN=PASS")
     print("PUBLICATION_PACKAGE_VERSION=publication-package-v0.2")
+    print("CANONICAL_REVIEW_EVIDENCE=8_OF_8")
     print("CANONICAL_REQUIRED_ASSETS=8_OF_8")
     print("REQUIRED_ASSET_HASHES=8_OF_8")
     print("REAL_MEDIA_USED=FALSE")
