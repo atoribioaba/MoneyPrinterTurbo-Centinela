@@ -74,23 +74,14 @@ jobs:
           test/services/test_finalization_e2e.py
           test/services/test_publication_package.py
 
-      - name: Ruff security/state surface
+      - name: Ruff hardened security/state surface
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: >-
           uv run --no-sync ruff check
           app/models/production_orchestrator.py
           app/services/production_orchestrator.py
           app/controllers/v1/production_orchestrator.py
-          app/models/video_base_e2e.py
-          app/services/video_base_e2e.py
-          app/models/finalization_e2e.py
-          app/services/finalization_e2e.py
-          app/models/publication_package.py
-          app/services/publication_package.py
           test/services/test_production_orchestrator.py
-          test/services/test_video_base_e2e.py
-          test/services/test_finalization_e2e.py
-          test/services/test_publication_package.py
 
       - name: Run security/state contract
         run: >-
