@@ -1,0 +1,136 @@
+name: Centinela C3 Review Mechanism
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/centinela-c3-review-mechanism.yml
+      - app/models/finalization_e2e.py
+      - app/services/finalization_e2e.py
+      - app/services/publication_package.py
+      - scripts/centinela_review_mechanism_cloud_dry_run.py
+      - test/services/test_finalization_e2e.py
+      - test/services/test_publication_package.py
+      - test/services/test_publication_package_api.py
+      - pyproject.toml
+      - uv.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-c3-review-mechanism-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review-linux:
+    name: Review Mechanism / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Compile review surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/services/publication_package.py
+          scripts/centinela_review_mechanism_cloud_dry_run.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+
+      - name: Ruff review surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/services/publication_package.py
+          scripts/centinela_review_mechanism_cloud_dry_run.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+
+      - name: Run review contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=review-mechanism-linux-${{ matrix.python-version }}.xml
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+
+      - name: Run cloud-only review dry run
+        run: >-
+          uv run --no-sync python -X utf8 -m
+          scripts.centinela_review_mechanism_cloud_dry_run
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-mechanism-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: review-mechanism-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+  review-windows:
+    name: Review Mechanism / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+
+      - name: Compile review surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/services/publication_package.py
+          scripts/centinela_review_mechanism_cloud_dry_run.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+
+      - name: Run review contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=review-mechanism-windows-3.11.xml
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+
+      - name: Run cloud-only review dry run
+        run: >-
+          uv run --no-sync python -X utf8 -m
+          scripts.centinela_review_mechanism_cloud_dry_run
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-mechanism-windows-3.11-${{ github.run_id }}
+          path: review-mechanism-windows-3.11.xml
+          retention-days: 14
+          if-no-files-found: warn
