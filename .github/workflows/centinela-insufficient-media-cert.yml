@@ -1,0 +1,217 @@
+name: Centinela INSUFFICIENT_MEDIA Cloud Replay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-insufficient-media-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  insufficient-media-linux:
+    name: INSUFFICIENT_MEDIA contract / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+      - name: Provision FFmpeg and ffprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Compile INSUFFICIENT_MEDIA surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          app/services/video_base_planner.py
+          scripts/centinela_insufficient_media_cloud_render.py
+          test/services/test_insufficient_media_cloud_replay.py
+      - name: Ruff INSUFFICIENT_MEDIA surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          scripts/centinela_insufficient_media_cloud_render.py
+          test/services/test_insufficient_media_cloud_replay.py
+      - name: Run INSUFFICIENT_MEDIA fail-closed and recovery contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=insufficient-media-linux-${{ matrix.python-version }}.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_insufficient_media_cloud_replay.py
+      - name: Render only after specific recovery asset exists
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_insufficient_media_cloud_render.py
+          --output cloud-insufficient-media-render
+      - name: Verify INSUFFICIENT_MEDIA evidence and write F57 gate
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('cloud-insufficient-media-render')
+          evidence = json.loads((root / 'scenario-evidence.json').read_text(encoding='utf-8'))
+          manifest = json.loads((root / 'render-manifest.json').read_text(encoding='utf-8'))
+          video = root / 'insufficient-media-recovery-preview.mp4'
+          digest = hashlib.sha256(video.read_bytes()).hexdigest()
+
+          assert evidence['scenario'] == 'INSUFFICIENT_MEDIA'
+          assert evidence['initial_media_selected'] == 4
+          assert evidence['initial_media_unresolved'] == 1
+          assert evidence['initial_publication_ready'] is False
+          assert evidence['initial_scene5_status'] == 'NO_ADEQUATE_MEDIA'
+          assert evidence['initial_scene5_selected_media_id'] is None
+          assert evidence['clean_base_blocked'] is True
+          assert evidence['clean_base_blockers'] == ['scene 5: NO_ADEQUATE_MEDIA']
+          assert evidence['recovery_media_selected'] == 5
+          assert evidence['recovery_media_unresolved'] == 0
+          assert evidence['recovery_publication_ready'] is True
+          assert evidence['recovery_specificity_pass'] is True
+          assert evidence['recovery_clean_base'] is True
+          assert evidence['render_pass'] is True
+          assert evidence['visual_relevance_contract_pass'] is True
+          assert evidence['provenance_contract_pass'] is True
+          assert evidence['no_irrelevant_broll'] is True
+          assert evidence['ai_generation'] is False
+          assert evidence['auto_publication'] is False
+          assert evidence['network_discovery'] is False
+          assert evidence['requested_codec'] == 'libx264'
+          assert evidence['effective_codec'] == 'libx264'
+          assert evidence['width'] == 1080
+          assert evidence['height'] == 1920
+          assert abs(evidence['fps'] - 30.0) <= 0.01
+          assert evidence['audio_stream_count'] == 0
+          assert evidence['video_sha256'] == digest
+          assert manifest['final_video_sha256'] == digest
+          assert manifest['placeholder_count'] == 0
+          assert manifest['scene_count'] == 5
+
+          gate = {
+              'scenario': 'INSUFFICIENT_MEDIA',
+              'scope': 'CLOUD_HERMETIC_SCENARIO_GATE',
+              'scientific_pass': evidence['unsupported_scientific_claims'] == 0,
+              'scientific_scope': evidence['scientific_scope'],
+              'visual_relevance_pass': evidence['visual_relevance_contract_pass'],
+              'provenance_pass': evidence['provenance_contract_pass'],
+              'render_pass': evidence['render_pass'],
+              'no_irrelevant_broll': evidence['no_irrelevant_broll'],
+              'recovery_pass': (
+                  evidence['clean_base_blocked'] is True
+                  and evidence['recovery_media_selected'] == 5
+                  and evidence['recovery_media_unresolved'] == 0
+                  and evidence['recovery_specificity_pass'] is True
+              ),
+              'initial_media_selected': evidence['initial_media_selected'],
+              'initial_media_unresolved': evidence['initial_media_unresolved'],
+              'initial_clean_base_blocked': evidence['clean_base_blocked'],
+              'initial_blockers': evidence['clean_base_blockers'],
+              'recovery_media_selected': evidence['recovery_media_selected'],
+              'recovery_media_unresolved': evidence['recovery_media_unresolved'],
+              'requested_codec': evidence['requested_codec'],
+              'effective_codec': evidence['effective_codec'],
+              'nvenc_certified': False,
+              'nvenc_reason': 'LOCAL_RTX_2060_CERTIFICATION_REQUIRED',
+              'ai_generation': False,
+              'auto_publication': False,
+              'network_discovery': False,
+              'material_selector_final_authority': True,
+              'human_review_required': True,
+              'local_final_certification_required': True,
+              'status': 'CLOUD_PASS_LOCAL_PENDING',
+          }
+          required = (
+              'scientific_pass', 'visual_relevance_pass', 'provenance_pass',
+              'render_pass', 'no_irrelevant_broll', 'recovery_pass',
+          )
+          assert all(gate[key] is True for key in required)
+          (root / 'f57-scenario-gate.json').write_text(
+              json.dumps(gate, ensure_ascii=False, indent=2, sort_keys=True),
+              encoding='utf-8',
+          )
+          print('INSUFFICIENT_MEDIA_F57_CLOUD_GATE=PASS')
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: insufficient-media-contract-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: insufficient-media-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+      - name: Upload INSUFFICIENT_MEDIA recovery evidence
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: insufficient-media-render-linux-3.11-${{ github.run_id }}
+          path: cloud-insufficient-media-render/
+          retention-days: 14
+          if-no-files-found: error
+
+  insufficient-media-windows:
+    name: INSUFFICIENT_MEDIA contract / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare hermetic canonical E drive
+        shell: pwsh
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'centinela-insufficient-media-e-drive'
+          New-Item -ItemType Directory -Force -Path $Root | Out-Null
+          subst E: $Root
+          if ($LASTEXITCODE -ne 0) { throw 'subst E: failed' }
+          New-Item -ItemType Directory -Force -Path 'E:\IA\AstroMedia' | Out-Null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+      - name: Compile INSUFFICIENT_MEDIA surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          app/services/video_base_planner.py
+          test/services/test_insufficient_media_cloud_replay.py
+      - name: Run INSUFFICIENT_MEDIA fail-closed and recovery contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=insufficient-media-windows-3.11.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_insufficient_media_cloud_replay.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: insufficient-media-contract-windows-3.11-${{ github.run_id }}
+          path: insufficient-media-windows-3.11.xml
+          retention-days: 14
+      - name: Remove hermetic E drive
+        if: always()
+        shell: pwsh
+        run: |
+          subst E: /D
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'subst E: /D returned non-zero' }
