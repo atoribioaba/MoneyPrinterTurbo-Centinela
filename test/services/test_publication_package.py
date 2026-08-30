@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.finalization_e2e import (
-    REQUIRED_HUMAN_REVIEW_CHECK_IDS,
+    REQUIRED_FINALIZATION_CHECK_IDS,
     FinalVideoArtifactProbe,
     FinalizationCheck,
     FinalizationE2EPlan,
@@ -58,37 +58,30 @@ def passed_finalization(*, human_review_recorded=True, rights_ready=True, social
             codec="h264",
             audio_stream_count=1,
             subtitles_ready=True,
-            publication_rights_ready=rights_ready,
+            publication_rights_ready=True,
         ),
         FinalVideoArtifactProbe(
             profile_id="SOCIAL_VERTICAL_1080X1920",
             file_path="synthetic/social.mp4",
             exists=True,
-            sha256=social_hash,
+            sha256=HASH_B,
             width=1080,
             height=1920,
             fps=30.0,
             codec="h264",
             audio_stream_count=1,
             subtitles_ready=True,
-            publication_rights_ready=rights_ready,
+            publication_rights_ready=True,
         ),
     ]
     checks = [
         FinalizationCheck(
             check_id=check_id,
             passed=True,
-            detail="synthetic canonical review evidence",
+            detail="synthetic canonical finalization evidence",
         )
-        for check_id in REQUIRED_HUMAN_REVIEW_CHECK_IDS
+        for check_id in REQUIRED_FINALIZATION_CHECK_IDS
     ]
-    checks.append(
-        FinalizationCheck(
-            check_id="final_renders_verified",
-            passed=True,
-            detail="synthetic render evidence",
-        )
-    )
     plan = FinalizationE2EPlan(
         source_video_base_e2e_hash="b",
         status=FinalizationE2EStatus.FINALIZATION_E2E_PASS,
@@ -102,8 +95,19 @@ def passed_finalization(*, human_review_recorded=True, rights_ready=True, social
         finalization_e2e_hash="F" * 64,
         generated_at_utc=NOW,
     )
+
     if not human_review_recorded:
-        return plan.model_copy(update={"human_review_recorded": False})
+        plan = plan.model_copy(update={"human_review_recorded": False})
+    if not rights_ready:
+        mutated = [
+            artifact.model_copy(update={"publication_rights_ready": False})
+            for artifact in plan.artifacts
+        ]
+        plan = plan.model_copy(update={"artifacts": mutated})
+    if social_hash != HASH_B:
+        mutated = list(plan.artifacts)
+        mutated[1] = mutated[1].model_copy(update={"sha256": social_hash})
+        plan = plan.model_copy(update={"artifacts": mutated})
     return plan
 
 
@@ -187,26 +191,22 @@ def test_missing_review_checklist_fails_closed():
     assert result.status == PublicationPackageStatus.WAITING_FOR_REQUIRED_ASSETS
 
 
-def test_missing_video_hash_fails_closed():
-    request = PublicationPackageRequest(
-        finalization=passed_finalization(social_hash=None),
-        metadata=metadata(),
-        support=support(),
-    )
-    result = build_publication_package(request)
-    assert result.status == PublicationPackageStatus.WAITING_FOR_REQUIRED_ASSETS
-    assert result.all_required_assets_hashed is False
+def test_mutated_video_hash_is_rejected_before_packaging():
+    with pytest.raises(ValidationError):
+        PublicationPackageRequest(
+            finalization=passed_finalization(social_hash=None),
+            metadata=metadata(),
+            support=support(),
+        )
 
 
-def test_video_rights_not_ready_fails_closed():
-    request = PublicationPackageRequest(
-        finalization=passed_finalization(rights_ready=False),
-        metadata=metadata(),
-        support=support(),
-    )
-    result = build_publication_package(request)
-    assert result.status == PublicationPackageStatus.WAITING_FOR_REQUIRED_ASSETS
-    assert result.rights_ready is False
+def test_mutated_video_rights_are_rejected_before_packaging():
+    with pytest.raises(ValidationError):
+        PublicationPackageRequest(
+            finalization=passed_finalization(rights_ready=False),
+            metadata=metadata(),
+            support=support(),
+        )
 
 
 def test_forged_pass_without_human_review_is_rejected_before_packaging():
