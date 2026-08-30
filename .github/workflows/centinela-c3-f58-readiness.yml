@@ -78,14 +78,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'architecture_v1_frozen:bool=False' app/models/v1_readiness_audit.py
-          grep -q 'freeze_executed:bool=False' app/models/v1_readiness_audit.py
-          grep -q 'auto_publication:bool=False' app/models/v1_readiness_audit.py
-          grep -q 'human_freeze_approval:bool=False' app/models/v1_readiness_audit.py
-          grep -q 'golden_real_e2e_certified' app/services/v1_readiness_audit.py
-          grep -q 'manual_publication_package_ready' app/services/v1_readiness_audit.py
-          grep -q 'oss_audit_complete' app/services/v1_readiness_audit.py
-          echo 'F58_FREEZE_GUARDRAILS=PASS'
+          uv run --no-sync python -X utf8 - <<'PY'
+          import inspect
+
+          from app.models.v1_readiness_audit import (
+              V1ReadinessAuditPlan,
+              V1ReadinessRequest,
+          )
+          from app.services.v1_readiness_audit import build_v1_readiness_audit
+
+          audit_defaults = V1ReadinessAuditPlan.model_fields
+          request_defaults = V1ReadinessRequest.model_fields
+
+          assert audit_defaults["architecture_v1_frozen"].default is False
+          assert audit_defaults["freeze_executed"].default is False
+          assert audit_defaults["auto_publication"].default is False
+          assert audit_defaults["auto_activation"].default is False
+          assert audit_defaults["writes_runtime_config"].default is False
+          assert request_defaults["human_freeze_approval"].default is False
+
+          source = inspect.getsource(build_v1_readiness_audit)
+          for gate in (
+              "golden_real_e2e_certified",
+              "manual_publication_package_ready",
+              "analytics_adapter_operational",
+              "oss_audit_complete",
+          ):
+              assert gate in source, f"missing F58 gate: {gate}"
+
+          print("F58_FREEZE_GUARDRAILS=PASS")
+          PY
       - if: always()
         uses: actions/upload-artifact@v4
         with:
