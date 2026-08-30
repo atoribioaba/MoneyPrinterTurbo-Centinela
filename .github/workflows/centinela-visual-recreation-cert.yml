@@ -1,0 +1,244 @@
+name: Centinela VISUAL_RECREATION Cloud Replay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-visual-recreation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-recreation-linux:
+    name: VISUAL_RECREATION contract / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+      - name: Provision FFmpeg and ffprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Compile VISUAL_RECREATION surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/astromedia.py
+          app/services/material_selection.py
+          app/services/video_base_planner.py
+          scripts/centinela_visual_recreation_cloud_render.py
+          test/services/test_visual_recreation_cloud_replay.py
+      - name: Ruff VISUAL_RECREATION surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          scripts/centinela_visual_recreation_cloud_render.py
+          test/services/test_visual_recreation_cloud_replay.py
+      - name: Run VISUAL_RECREATION labeling and recovery contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=visual-recreation-linux-${{ matrix.python-version }}.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_visual_recreation_cloud_replay.py
+      - name: Render reviewable explicitly labeled VISUAL_RECREATION
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_visual_recreation_cloud_render.py
+          --output cloud-visual-recreation-render
+      - name: Verify VISUAL_RECREATION evidence and write F57 gate
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('cloud-visual-recreation-render')
+          evidence = json.loads((root / 'scenario-evidence.json').read_text(encoding='utf-8'))
+          manifest = json.loads((root / 'render-manifest.json').read_text(encoding='utf-8'))
+          video = root / 'visual-recreation-preview.mp4'
+          digest = hashlib.sha256(video.read_bytes()).hexdigest()
+
+          assert evidence['scenario'] == 'VISUAL_RECREATION'
+          assert evidence['media_selected'] == 5
+          assert evidence['media_unresolved'] == 0
+          assert evidence['ai_recreation_count'] == 5
+          assert evidence['distinct_media'] == 5
+          assert evidence['clean_base'] is True
+          assert evidence['publication_ready'] is False
+          assert evidence['review_required'] is True
+          assert evidence['render_pass'] is True
+          assert evidence['visual_relevance_contract_pass'] is True
+          assert evidence['provenance_contract_pass'] is True
+          assert evidence['recreation_label_required'] is True
+          assert evidence['recreation_label_pass'] is True
+          assert evidence['all_selected_ai_generated'] is True
+          assert evidence['represents_real_observation'] is False
+          assert evidence['represents_real_event'] is False
+          assert evidence['production_astronomy_media'] is False
+          assert evidence['no_irrelevant_broll'] is True
+          assert evidence['ai_generation'] is True
+          assert evidence['auto_publication'] is False
+          assert evidence['network_discovery'] is False
+          assert evidence['requested_codec'] == 'libx264'
+          assert evidence['effective_codec'] == 'libx264'
+          assert evidence['width'] == 1080
+          assert evidence['height'] == 1920
+          assert abs(evidence['fps'] - 30.0) <= 0.01
+          assert evidence['audio_stream_count'] == 0
+          assert evidence['video_sha256'] == digest
+          assert manifest['final_video_sha256'] == digest
+          assert manifest['placeholder_count'] == 0
+          assert manifest['scene_count'] == 5
+
+          gate = {
+              'scenario': 'VISUAL_RECREATION',
+              'scope': 'CLOUD_HERMETIC_SCENARIO_GATE',
+              'scientific_pass': evidence['unsupported_scientific_claims'] == 0,
+              'scientific_scope': evidence['scientific_scope'],
+              'visual_relevance_pass': evidence['visual_relevance_contract_pass'],
+              'provenance_pass': (
+                  evidence['provenance_contract_pass']
+                  and evidence['recreation_label_pass']
+                  and evidence['all_selected_ai_generated']
+                  and evidence['represents_real_observation'] is False
+              ),
+              'render_pass': evidence['render_pass'],
+              'no_irrelevant_broll': evidence['no_irrelevant_broll'],
+              'recovery_pass': True,
+              'recovery_initial_media_selected': 4,
+              'recovery_initial_media_unresolved': 1,
+              'recovery_initial_status': 'AI_RECREATION_REQUIRED',
+              'recovery_clean_base_blocked': True,
+              'recovery_blockers': ['scene 5: AI_RECREATION_REQUIRED'],
+              'recovery_final_media_selected': 5,
+              'recovery_final_media_unresolved': 0,
+              'recovery_asset_class': 'm57_ring_nebula_visual_recreation',
+              'media_selected': evidence['media_selected'],
+              'media_unresolved': evidence['media_unresolved'],
+              'ai_recreation_count': evidence['ai_recreation_count'],
+              'recreation_label_required': True,
+              'recreation_label_pass': evidence['recreation_label_pass'],
+              'represents_real_observation': False,
+              'represents_real_event': False,
+              'production_astronomy_media': False,
+              'publication_ready': False,
+              'requested_codec': evidence['requested_codec'],
+              'effective_codec': evidence['effective_codec'],
+              'nvenc_certified': False,
+              'nvenc_reason': 'LOCAL_RTX_2060_CERTIFICATION_REQUIRED',
+              'ai_generation': True,
+              'auto_publication': False,
+              'network_discovery': False,
+              'material_selector_final_authority': True,
+              'human_review_required': True,
+              'local_final_certification_required': True,
+              'status': 'CLOUD_PASS_LOCAL_PENDING',
+          }
+          required = (
+              'scientific_pass', 'visual_relevance_pass', 'provenance_pass',
+              'render_pass', 'no_irrelevant_broll', 'recovery_pass',
+          )
+          assert all(gate[key] is True for key in required)
+          (root / 'f57-scenario-gate.json').write_text(
+              json.dumps(gate, ensure_ascii=False, indent=2, sort_keys=True),
+              encoding='utf-8',
+          )
+          print('VISUAL_RECREATION_F57_CLOUD_GATE=PASS')
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-recreation-contract-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: visual-recreation-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+      - name: Upload VISUAL_RECREATION review evidence
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-recreation-render-linux-3.11-${{ github.run_id }}
+          path: cloud-visual-recreation-render/
+          retention-days: 14
+          if-no-files-found: error
+
+  visual-recreation-windows:
+    name: VISUAL_RECREATION contract / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare hermetic canonical E drive
+        shell: pwsh
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'centinela-visual-recreation-e-drive'
+          New-Item -ItemType Directory -Force -Path $Root | Out-Null
+          subst E: $Root
+          if ($LASTEXITCODE -ne 0) { throw 'subst E: failed' }
+          New-Item -ItemType Directory -Force -Path 'E:\IA\AstroMedia' | Out-Null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+      - name: Provision FFmpeg and ffprobe
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Chocolatey FFmpeg installation failed' }
+          $MachinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $env:Path = "$MachinePath;$UserPath;$env:Path"
+          ffmpeg -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffmpeg unavailable after provisioning' }
+          ffprobe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffprobe unavailable after provisioning' }
+          "PATH=$env:Path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile VISUAL_RECREATION surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/models/astromedia.py
+          app/services/material_selection.py
+          app/services/video_base_planner.py
+          test/services/test_visual_recreation_cloud_replay.py
+      - name: Run VISUAL_RECREATION labeling and recovery contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=visual-recreation-windows-3.11.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_visual_recreation_cloud_replay.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-recreation-contract-windows-3.11-${{ github.run_id }}
+          path: visual-recreation-windows-3.11.xml
+          retention-days: 14
+      - name: Remove hermetic E drive
+        if: always()
+        shell: pwsh
+        run: |
+          subst E: /D
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'subst E: /D returned non-zero' }
