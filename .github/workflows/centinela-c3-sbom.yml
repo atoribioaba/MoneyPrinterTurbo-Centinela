@@ -1,0 +1,110 @@
+name: Centinela C3 Python SBOM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-c3-sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom-linux-python311:
+    name: C3 SBOM / Linux / Python 3.11
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Resolve exact locked environment
+        run: uv sync --frozen --python 3.11
+
+      - name: Export resolved Python inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import importlib.metadata as metadata
+          import json
+          import platform
+          import sys
+          from pathlib import Path
+
+          packages = sorted(
+              (
+                  {
+                      "name": dist.metadata.get("Name") or dist.metadata.get("Summary") or "UNKNOWN",
+                      "version": dist.version,
+                  }
+                  for dist in metadata.distributions()
+              ),
+              key=lambda row: (row["name"].casefold(), row["version"]),
+          )
+          payload = {
+              "python": sys.version,
+              "python_executable": sys.executable,
+              "platform": platform.platform(),
+              "package_count": len(packages),
+              "packages": packages,
+          }
+          Path("centinela-python-inventory.json").write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          print(f"C3_RESOLVED_PACKAGE_COUNT={len(packages)}")
+          PY
+
+      - name: Generate reproducible CycloneDX SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON_EXE="$(uv run --no-sync python -c 'import sys; print(sys.executable)')"
+          uvx --from cyclonedx-bom==7.3.1 cyclonedx-py environment \
+            --spec-version 1.6 \
+            --output-format JSON \
+            --output-reproducible \
+            --gather-license-texts \
+            --pyproject pyproject.toml \
+            --output-file centinela-python-sbom.cdx.json \
+            "$PYTHON_EXE"
+
+      - name: Validate and hash evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import json
+          from pathlib import Path
+
+          bom = json.loads(Path("centinela-python-sbom.cdx.json").read_text(encoding="utf-8"))
+          inventory = json.loads(Path("centinela-python-inventory.json").read_text(encoding="utf-8"))
+          assert bom.get("bomFormat") == "CycloneDX"
+          assert bom.get("specVersion") == "1.6"
+          assert inventory.get("package_count", 0) > 0
+          assert len(inventory.get("packages", [])) == inventory["package_count"]
+          print("C3_SBOM_STRUCTURE=PASS")
+          PY
+          sha256sum centinela-python-sbom.cdx.json centinela-python-inventory.json > centinela-c3-sbom-sha256.txt
+          cat centinela-c3-sbom-sha256.txt
+
+      - name: Upload C3 SBOM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: centinela-c3-python-sbom-${{ github.run_id }}
+          path: |
+            centinela-python-sbom.cdx.json
+            centinela-python-inventory.json
+            centinela-c3-sbom-sha256.txt
+          retention-days: 30
+          if-no-files-found: warn
