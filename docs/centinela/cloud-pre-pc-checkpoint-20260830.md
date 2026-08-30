@@ -53,9 +53,9 @@ Cloud-side work completed before this checkpoint includes:
 - first real `SOL_TO_MOON` production pre-brief;
 - reproducible CycloneDX SBOM workflow prepared as `.github/workflows/centinela-c3-sbom.yml`.
 
-The SBOM workflow intentionally uses `workflow_dispatch` only. It must not be converted into a noisy automatic loop while GitHub-hosted runners are failing to start.
+The SBOM workflow intentionally uses `workflow_dispatch` only. It must not be converted into a noisy automatic loop while CI jobs are terminating before any workflow step starts.
 
-### F58 runner blocker
+### F58 pre-step CI blocker
 
 Correct dedicated F58 workflow run:
 
@@ -64,13 +64,18 @@ Correct dedicated F58 workflow run:
 - branch: `centinela-cert/c3-f58-readiness-v0.1`
 - second controlled attempt performed on 2026-08-30;
 - Windows 3.11, Linux 3.11 and Linux 3.13 all fail before a workflow step starts;
-- jobs expose no usable step execution/log evidence.
+- jobs expose no usable step execution/log evidence;
+- the public GitHub Status page did not show a current Actions outage at the time of the second diagnosis.
 
-Classification:
+Verified classification:
 
-`CI_RUNNER_STARTUP_INFRASTRUCTURE`
+`CI_PRE_STEP_EXECUTION_BLOCKER`
 
-It is **not** evidence of an application/test regression. Do not patch product code to compensate for a hosted-runner startup failure. Re-run only after there is evidence that runners can actually start.
+What is proven: application/test code did not execute, so this failure is **not evidence of an application/test regression**.
+
+What is not yet proven with the available evidence: whether the pre-step blocker is hosted-runner assignment, repository/account Actions quota or billing, a repository policy/permission condition, or another control-plane condition.
+
+Do not patch product code to compensate for this blocker. Re-run only after there is evidence that a job can actually enter step execution or after the account/repository control-plane condition is identified and resolved.
 
 ### OSS / license state
 
@@ -122,8 +127,8 @@ Never perform a blind pull/merge/rebase/reset over this state.
 
 Only evidence-producing cloud work is useful now. The remaining cloud queue is:
 
-1. wait for demonstrable GitHub-hosted runner recovery;
-2. once runners can start, run the dedicated F58 contract once;
+1. identify/resolve the GitHub Actions pre-step execution blocker, or wait for evidence that runners can enter step execution;
+2. once a job can start steps, run the dedicated F58 contract once;
 3. collect Linux 3.11, Linux 3.13 and Windows 3.11 JUnit/evidence from F58;
 4. execute `Centinela C3 Python SBOM` once and retain the CycloneDX JSON, resolved inventory and SHA-256 evidence;
 5. update the OSS audit with the resulting transitive cloud graph without claiming it is the Windows-final graph;
@@ -204,8 +209,8 @@ Cloud work is considered maximally complete when:
 - F57 remains preserved 8/8;
 - PR #1 remains unmerged and recoverable;
 - F58 code/contract is prepared;
-- F58 runner failure is correctly classified rather than patched around;
-- cloud transitive SBOM is captured if runners recover, otherwise the workflow and audit contract are ready;
+- F58 pre-step failure is correctly classified rather than patched around;
+- cloud transitive SBOM is captured if CI step execution becomes available, otherwise the workflow and audit contract are ready;
 - active dependency/provider licensing is statically classified;
 - local return/reconciliation procedure is immutable and explicit;
 - the first real `SOL_TO_MOON` production has a pre-brief but no stale ephemerides;
