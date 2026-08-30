@@ -191,6 +191,19 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --python 3.11
+      - name: Provision FFmpeg and ffprobe
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Chocolatey FFmpeg installation failed' }
+          $MachinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $env:Path = "$MachinePath;$UserPath;$env:Path"
+          ffmpeg -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffmpeg unavailable after provisioning' }
+          ffprobe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffprobe unavailable after provisioning' }
+          "PATH=$env:Path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Compile INSUFFICIENT_MEDIA surface
         run: >-
           uv run --no-sync python -m compileall
