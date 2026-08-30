@@ -28,6 +28,16 @@ def _hash(value: Any) -> str:
     ).hexdigest().upper()
 
 
+def _valid_sha256(value: str | None) -> bool:
+    if not value or len(value) != 64:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
+
+
 def build_finalization_e2e(request: FinalizationE2ERequest) -> FinalizationE2EPlan:
     checks: list[FinalizationCheck] = []
 
@@ -81,6 +91,11 @@ def build_finalization_e2e(request: FinalizationE2ERequest) -> FinalizationE2EPl
                 if master:
                     check("master_file", master.exists, master.file_path)
                     check(
+                        "master_sha256",
+                        _valid_sha256(master.sha256),
+                        "present" if master.sha256 else "missing",
+                    )
+                    check(
                         "master_resolution",
                         master.width == 2160 and master.height == 3840,
                         f"{master.width}x{master.height}",
@@ -103,6 +118,11 @@ def build_finalization_e2e(request: FinalizationE2ERequest) -> FinalizationE2EPl
                     )
                 if social:
                     check("social_file", social.exists, social.file_path)
+                    check(
+                        "social_sha256",
+                        _valid_sha256(social.sha256),
+                        "present" if social.sha256 else "missing",
+                    )
                     check(
                         "social_resolution",
                         social.width == 1080 and social.height == 1920,
