@@ -209,18 +209,16 @@ def test_video_rights_not_ready_fails_closed():
     assert result.rights_ready is False
 
 
-def test_forged_pass_without_human_review_fails_closed():
-    request = PublicationPackageRequest(
-        finalization=passed_finalization(human_review_recorded=False),
-        metadata=metadata(),
-        support=support(),
-    )
-    result = build_publication_package(request)
-    assert result.status == PublicationPackageStatus.WAITING_FOR_FINALIZATION
-    assert result.finalization_evidence_valid is False
+def test_forged_pass_without_human_review_is_rejected_before_packaging():
+    with pytest.raises(ValidationError):
+        PublicationPackageRequest(
+            finalization=passed_finalization(human_review_recorded=False),
+            metadata=metadata(),
+            support=support(),
+        )
 
 
-def test_forged_pass_missing_review_dimension_fails_closed():
+def test_forged_pass_missing_review_dimension_is_rejected_before_packaging():
     finalization = passed_finalization()
     forged_checks = [
         check for check in finalization.checks if check.check_id != "review_science"
@@ -232,15 +230,12 @@ def test_forged_pass_missing_review_dimension_fails_closed():
             "passed_count": len(forged_checks),
         }
     )
-    result = build_publication_package(
+    with pytest.raises(ValidationError):
         PublicationPackageRequest(
             finalization=forged,
             metadata=metadata(),
             support=support(),
         )
-    )
-    assert result.status == PublicationPackageStatus.WAITING_FOR_FINALIZATION
-    assert result.finalization_evidence_valid is False
 
 
 def test_ready_requires_all_eight_assets_with_hashes():
