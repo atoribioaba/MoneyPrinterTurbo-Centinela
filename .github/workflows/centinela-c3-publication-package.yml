@@ -80,8 +80,8 @@ jobs:
 
       - name: Run cloud-only publication package dry run
         run: >-
-          uv run --no-sync python -X utf8
-          scripts/centinela_publication_package_cloud_dry_run.py
+          uv run --no-sync python -X utf8 -m
+          scripts.centinela_publication_package_cloud_dry_run
 
       - if: always()
         uses: actions/upload-artifact@v4
@@ -128,8 +128,8 @@ jobs:
 
       - name: Run cloud-only publication package dry run
         run: >-
-          uv run --no-sync python -X utf8
-          scripts/centinela_publication_package_cloud_dry_run.py
+          uv run --no-sync python -X utf8 -m
+          scripts.centinela_publication_package_cloud_dry_run
 
       - if: always()
         uses: actions/upload-artifact@v4
