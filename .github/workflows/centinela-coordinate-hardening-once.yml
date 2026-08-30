@@ -13,7 +13,7 @@ permissions:
 
 env:
   TARGET_BRANCH: centinela-cert/cloud-mobile-v0.1
-  EXPECTED_PARENT: 4a4e38673c69a60f1c3a57eaf168e23cd6c1fdec
+  EXPECTED_PARENT: 8a53796620876f7534321893c7d1510f92ca0305
   TARGET_FILE: app/services/material_selection.py
 
 jobs:
