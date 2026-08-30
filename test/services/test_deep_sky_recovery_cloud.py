@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from app.models.astromedia import HashMode, IndexRequest
 from app.models.material_selection import MaterialSelectionPlan, SelectionStatus
 from app.models.video_base import VideoBasePlanRequest, VideoBaseRenderMode
 from app.services.astromedia import AstroMediaCatalog
-from app.services.video_base_planner import VideoBasePlanner
+from app.services.video_base_planner import VideoBasePlanBlockedError, VideoBasePlanner
 from test.services.test_deep_sky_media_cloud_replay import (
     _FIXTURES,
     _fixture_image,
@@ -79,17 +81,17 @@ def test_deep_sky_recovery_blocks_then_recovers_without_generic_nebula_broll(tmp
     ), "M42 must not be accepted as a substitute for M57 just because both are nebulae"
 
     initial_materials = MaterialSelectionPlan.model_validate(initial.selection)
-    initial_plan = VideoBasePlanner(catalog=catalog).build(
-        VideoBasePlanRequest(
-            plan=_plan(),
-            materials=initial_materials,
-            render_mode=VideoBaseRenderMode.CLEAN_BASE,
-            requested_codec="libx264",
+    planner = VideoBasePlanner(catalog=catalog)
+    with pytest.raises(VideoBasePlanBlockedError) as blocked:
+        planner.build(
+            VideoBasePlanRequest(
+                plan=_plan(),
+                materials=initial_materials,
+                render_mode=VideoBaseRenderMode.CLEAN_BASE,
+                requested_codec="libx264",
+            )
         )
-    )
-    assert initial_plan.clean_base_eligible is False
-    assert initial_plan.unresolved_count == 1
-    assert "scene 5: NO_ADEQUATE_MEDIA" in initial_plan.blockers
+    assert blocked.value.blockers == ["scene 5: NO_ADEQUATE_MEDIA"]
 
     _add_fixtures(media_root, [_RECOVERY_FIXTURE])
     recovery_index = _index(catalog, media_root)
@@ -106,7 +108,7 @@ def test_deep_sky_recovery_blocks_then_recovers_without_generic_nebula_broll(tmp
     assert "m57" in " ".join(recovered_scene5["reasons"])
 
     recovered_materials = MaterialSelectionPlan.model_validate(recovered.selection)
-    recovered_plan = VideoBasePlanner(catalog=catalog).build(
+    recovered_plan = planner.build(
         VideoBasePlanRequest(
             plan=_plan(),
             materials=recovered_materials,
