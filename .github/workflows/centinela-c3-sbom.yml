@@ -2,6 +2,13 @@ name: Centinela C3 Python SBOM
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/centinela-c3-sbom.yml
+      - pyproject.toml
+      - uv.lock
 
 permissions:
   contents: read
@@ -51,6 +58,7 @@ jobs:
               key=lambda row: (row["name"].casefold(), row["version"]),
           )
           payload = {
+              "source_commit": "${{ github.sha }}",
               "python": sys.version,
               "python_executable": sys.executable,
               "platform": platform.platform(),
@@ -74,6 +82,7 @@ jobs:
             --output-format JSON \
             --output-reproducible \
             --gather-license-texts \
+            --validate \
             --pyproject pyproject.toml \
             --output-file centinela-python-sbom.cdx.json \
             "$PYTHON_EXE"
@@ -90,11 +99,17 @@ jobs:
           inventory = json.loads(Path("centinela-python-inventory.json").read_text(encoding="utf-8"))
           assert bom.get("bomFormat") == "CycloneDX"
           assert bom.get("specVersion") == "1.6"
+          assert inventory.get("source_commit")
           assert inventory.get("package_count", 0) > 0
           assert len(inventory.get("packages", [])) == inventory["package_count"]
           print("C3_SBOM_STRUCTURE=PASS")
           PY
-          sha256sum centinela-python-sbom.cdx.json centinela-python-inventory.json > centinela-c3-sbom-sha256.txt
+          sha256sum \
+            pyproject.toml \
+            uv.lock \
+            centinela-python-sbom.cdx.json \
+            centinela-python-inventory.json \
+            > centinela-c3-sbom-sha256.txt
           cat centinela-c3-sbom-sha256.txt
 
       - name: Upload C3 SBOM evidence
