@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.finalization_e2e import (
+    REQUIRED_HUMAN_REVIEW_CHECK_IDS,
     FinalVideoArtifactProbe,
     FinalizationCheck,
     FinalizationE2EPlan,
@@ -75,20 +76,23 @@ def passed_finalization(*, human_review_recorded=True, rights_ready=True, social
     ]
     checks = [
         FinalizationCheck(
-            check_id="human_review_approved",
+            check_id=check_id,
             passed=True,
-            detail="synthetic approved review evidence",
-        ),
+            detail="synthetic canonical review evidence",
+        )
+        for check_id in REQUIRED_HUMAN_REVIEW_CHECK_IDS
+    ]
+    checks.append(
         FinalizationCheck(
             check_id="final_renders_verified",
             passed=True,
             detail="synthetic render evidence",
-        ),
-    ]
-    return FinalizationE2EPlan(
+        )
+    )
+    plan = FinalizationE2EPlan(
         source_video_base_e2e_hash="b",
         status=FinalizationE2EStatus.FINALIZATION_E2E_PASS,
-        human_review_recorded=human_review_recorded,
+        human_review_recorded=True,
         artifact_count=len(artifacts),
         check_count=len(checks),
         passed_count=len(checks),
@@ -98,6 +102,9 @@ def passed_finalization(*, human_review_recorded=True, rights_ready=True, social
         finalization_e2e_hash="F" * 64,
         generated_at_utc=NOW,
     )
+    if not human_review_recorded:
+        return plan.model_copy(update={"human_review_recorded": False})
+    return plan
 
 
 def metadata():
@@ -209,6 +216,29 @@ def test_forged_pass_without_human_review_fails_closed():
         support=support(),
     )
     result = build_publication_package(request)
+    assert result.status == PublicationPackageStatus.WAITING_FOR_FINALIZATION
+    assert result.finalization_evidence_valid is False
+
+
+def test_forged_pass_missing_review_dimension_fails_closed():
+    finalization = passed_finalization()
+    forged_checks = [
+        check for check in finalization.checks if check.check_id != "review_science"
+    ]
+    forged = finalization.model_copy(
+        update={
+            "checks": forged_checks,
+            "check_count": len(forged_checks),
+            "passed_count": len(forged_checks),
+        }
+    )
+    result = build_publication_package(
+        PublicationPackageRequest(
+            finalization=forged,
+            metadata=metadata(),
+            support=support(),
+        )
+    )
     assert result.status == PublicationPackageStatus.WAITING_FOR_FINALIZATION
     assert result.finalization_evidence_valid is False
 
