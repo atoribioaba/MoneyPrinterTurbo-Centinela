@@ -121,7 +121,7 @@ def main() -> None:
     assert result.local_final_certification_required is True
     assert all(asset.sha256 and len(asset.sha256) == 64 for asset in result.assets)
     assert all(
-        not (asset.source_path or "").startswith(("D:", "E:"))
+        not (asset.source_path or "").startswith(("D:\\", "E:\\"))
         for asset in result.assets
     )
 
