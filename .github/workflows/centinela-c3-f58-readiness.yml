@@ -5,6 +5,26 @@ on:
   push:
     branches:
       - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/centinela-c3-f58-readiness.yml
+      - pyproject.toml
+      - uv.lock
+      - app/models/v1_readiness_audit.py
+      - app/services/v1_readiness_audit.py
+      - app/controllers/v1/v1_readiness_audit.py
+      - app/models/publication_package.py
+      - app/services/publication_package.py
+      - app/models/golden_e2e_certification.py
+      - app/services/golden_e2e_certification.py
+      - app/models/operational_hardening.py
+      - app/services/operational_hardening.py
+      - app/models/analytics_import_adapter.py
+      - app/services/analytics_import_adapter.py
+      - app/models/production_orchestrator.py
+      - app/services/production_orchestrator.py
+      - test/services/test_v1_readiness_audit.py
+      - test/services/test_v1_readiness_audit_api.py
+      - test/services/test_publication_package.py
 
 permissions:
   contents: read
