@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.finalization_e2e import (
+    REQUIRED_HUMAN_REVIEW_CHECK_IDS,
     FinalVideoArtifactProbe,
     FinalizationCheck,
     FinalizationE2EPlan,
@@ -133,6 +134,8 @@ def test_all_seven_review_gates_and_artifacts_can_pass():
         "review_rights",
         "review_thumbnail",
         "review_copy",
+        "master_sha256",
+        "social_sha256",
     ):
         assert checks[check_id].passed is True
     assert result.failed_count == 0
@@ -167,6 +170,21 @@ def test_legacy_approve_without_gate_evidence_fails_closed():
     )
     assert result.status == FinalizationE2EStatus.FINALIZATION_E2E_FAIL
     assert result.failed_count == 7
+
+
+def test_missing_final_render_sha_fails_closed():
+    probes = artifacts()
+    probes[0].sha256 = None
+    result = build_finalization_e2e(
+        FinalizationE2ERequest(
+            video_base=base(VideoBaseE2EStatus.VIDEO_BASE_E2E_PASS),
+            human_review=review(),
+            artifacts=probes,
+        )
+    )
+    assert result.status == FinalizationE2EStatus.FINALIZATION_E2E_FAIL
+    checks = {item.check_id: item for item in result.checks}
+    assert checks["master_sha256"].passed is False
 
 
 def test_approved_review_does_not_authorize_publication():
@@ -204,6 +222,27 @@ def test_forged_pass_without_canonical_review_checks_is_rejected():
                     detail="insufficient synthetic evidence",
                 )
             ],
+            artifacts=[],
+            finalization_e2e_hash="F" * 64,
+            generated_at_utc=NOW,
+        )
+
+
+def test_forged_pass_with_review_only_but_no_final_renders_is_rejected():
+    checks = [
+        FinalizationCheck(check_id=check_id, passed=True, detail="review only")
+        for check_id in REQUIRED_HUMAN_REVIEW_CHECK_IDS
+    ]
+    with pytest.raises(ValidationError, match="two final render artifacts"):
+        FinalizationE2EPlan(
+            source_video_base_e2e_hash="b",
+            status=FinalizationE2EStatus.FINALIZATION_E2E_PASS,
+            human_review_recorded=True,
+            artifact_count=0,
+            check_count=len(checks),
+            passed_count=len(checks),
+            failed_count=0,
+            checks=checks,
             artifacts=[],
             finalization_e2e_hash="F" * 64,
             generated_at_utc=NOW,
