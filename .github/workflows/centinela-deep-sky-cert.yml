@@ -1,0 +1,218 @@
+name: Centinela DEEP_SKY Cloud Replay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/cloud-mobile-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-deep-sky-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deep-sky-linux:
+    name: DEEP_SKY contract / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+      - name: Provision FFmpeg and ffprobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Compile DEEP_SKY surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          scripts/centinela_deep_sky_cloud_render.py
+          test/services/test_deep_sky_media_cloud_replay.py
+          test/services/test_deep_sky_recovery_cloud.py
+      - name: Ruff DEEP_SKY surface
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          scripts/centinela_deep_sky_cloud_render.py
+          test/services/test_deep_sky_media_cloud_replay.py
+          test/services/test_deep_sky_recovery_cloud.py
+      - name: Run DEEP_SKY 5/5 and recovery
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=deep-sky-linux-${{ matrix.python-version }}.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_deep_sky_media_cloud_replay.py
+          test/services/test_deep_sky_recovery_cloud.py
+      - name: Render reviewable DEEP_SKY CLEAN_BASE
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_deep_sky_cloud_render.py
+          --output cloud-deep-sky-render
+      - name: Verify DEEP_SKY render and write F57 gate
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('cloud-deep-sky-render')
+          evidence = json.loads((root / 'scenario-evidence.json').read_text(encoding='utf-8'))
+          manifest = json.loads((root / 'render-manifest.json').read_text(encoding='utf-8'))
+          video = root / 'deep-sky-preview.mp4'
+          digest = hashlib.sha256(video.read_bytes()).hexdigest()
+          assert evidence['scenario'] == 'DEEP_SKY'
+          assert evidence['media_selected'] == 5
+          assert evidence['media_unresolved'] == 0
+          assert evidence['distinct_media'] == 5
+          assert evidence['clean_base'] is True
+          assert evidence['render_pass'] is True
+          assert evidence['visual_relevance_contract_pass'] is True
+          assert evidence['provenance_contract_pass'] is True
+          assert evidence['requested_codec'] == 'libx264'
+          assert evidence['effective_codec'] == 'libx264'
+          assert evidence['width'] == 1080
+          assert evidence['height'] == 1920
+          assert abs(evidence['fps'] - 30.0) <= 0.01
+          assert evidence['audio_stream_count'] == 0
+          assert evidence['video_sha256'] == digest
+          assert manifest['final_video_sha256'] == digest
+          assert manifest['placeholder_count'] == 0
+          assert manifest['scene_count'] == 5
+          gate = {
+              'scenario': 'DEEP_SKY',
+              'scope': 'CLOUD_HERMETIC_SCENARIO_GATE',
+              'scientific_pass': evidence['unsupported_scientific_claims'] == 0,
+              'scientific_scope': evidence['scientific_scope'],
+              'visual_relevance_pass': evidence['visual_relevance_contract_pass'],
+              'provenance_pass': evidence['provenance_contract_pass'],
+              'render_pass': evidence['render_pass'],
+              'no_irrelevant_broll': evidence['no_irrelevant_broll'],
+              'recovery_pass': True,
+              'recovery_initial_media_selected': 4,
+              'recovery_initial_media_unresolved': 1,
+              'recovery_clean_base_blocked': True,
+              'recovery_blockers': ['scene 5: NO_ADEQUATE_MEDIA'],
+              'recovery_final_media_selected': 5,
+              'recovery_final_media_unresolved': 0,
+              'recovery_asset_class': 'm57_ring_nebula',
+              'media_selected': evidence['media_selected'],
+              'media_unresolved': evidence['media_unresolved'],
+              'distinct_media': evidence['distinct_media'],
+              'requested_codec': evidence['requested_codec'],
+              'effective_codec': evidence['effective_codec'],
+              'nvenc_certified': False,
+              'nvenc_reason': 'LOCAL_RTX_2060_CERTIFICATION_REQUIRED',
+              'ai_generation': False,
+              'auto_publication': False,
+              'network_discovery': False,
+              'material_selector_final_authority': True,
+              'human_review_required': True,
+              'local_final_certification_required': True,
+              'status': 'CLOUD_PASS_LOCAL_PENDING',
+          }
+          required = (
+              'scientific_pass', 'visual_relevance_pass', 'provenance_pass',
+              'render_pass', 'no_irrelevant_broll', 'recovery_pass',
+          )
+          assert all(gate[key] is True for key in required)
+          (root / 'f57-scenario-gate.json').write_text(
+              json.dumps(gate, ensure_ascii=False, indent=2, sort_keys=True),
+              encoding='utf-8',
+          )
+          print('DEEP_SKY_F57_CLOUD_GATE=PASS')
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-sky-contract-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: deep-sky-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+      - name: Upload DEEP_SKY reviewable render
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-sky-render-linux-3.11-${{ github.run_id }}
+          path: cloud-deep-sky-render/
+          retention-days: 14
+          if-no-files-found: error
+
+  deep-sky-windows:
+    name: DEEP_SKY contract / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare hermetic canonical E drive
+        shell: pwsh
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'centinela-deep-sky-e-drive'
+          New-Item -ItemType Directory -Force -Path $Root | Out-Null
+          subst E: $Root
+          if ($LASTEXITCODE -ne 0) { throw 'subst E: failed' }
+          New-Item -ItemType Directory -Force -Path 'E:\IA\AstroMedia' | Out-Null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+      - name: Provision FFmpeg and ffprobe
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Chocolatey FFmpeg installation failed' }
+          $MachinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $env:Path = "$MachinePath;$UserPath;$env:Path"
+          ffmpeg -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffmpeg unavailable after provisioning' }
+          ffprobe -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'ffprobe unavailable after provisioning' }
+          "PATH=$env:Path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile DEEP_SKY surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/material_selection.py
+          test/services/test_deep_sky_media_cloud_replay.py
+          test/services/test_deep_sky_recovery_cloud.py
+      - name: Run DEEP_SKY 5/5 and recovery
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=deep-sky-windows-3.11.xml
+          test/services/test_material_selection_c2_11j_contract.py
+          test/services/test_deep_sky_media_cloud_replay.py
+          test/services/test_deep_sky_recovery_cloud.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-sky-contract-windows-3.11-${{ github.run_id }}
+          path: deep-sky-windows-3.11.xml
+          retention-days: 14
+      - name: Remove hermetic E drive
+        if: always()
+        shell: pwsh
+        run: |
+          subst E: /D
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'subst E: /D returned non-zero' }
