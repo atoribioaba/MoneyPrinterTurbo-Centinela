@@ -103,6 +103,8 @@ class PublicationPackagePlan(StrictPublicationPackageModel):
         required = [asset for asset in self.assets if asset.required]
         present_required = [asset for asset in required if asset.present]
         hashed_required = [asset for asset in required if asset.sha256 is not None]
+        expected_all_present = bool(required) and len(present_required) == len(required)
+        expected_all_hashed = bool(required) and len(hashed_required) == len(required)
 
         if self.asset_count != len(self.assets):
             raise ValueError("asset_count mismatch")
@@ -112,13 +114,9 @@ class PublicationPackagePlan(StrictPublicationPackageModel):
             raise ValueError("present_required_asset_count mismatch")
         if self.hashed_required_asset_count != len(hashed_required):
             raise ValueError("hashed_required_asset_count mismatch")
-        if self.all_required_assets_present != (
-            len(present_required) == len(required)
-        ):
+        if self.all_required_assets_present != expected_all_present:
             raise ValueError("all_required_assets_present mismatch")
-        if self.all_required_assets_hashed != (
-            len(hashed_required) == len(required)
-        ):
+        if self.all_required_assets_hashed != expected_all_hashed:
             raise ValueError("all_required_assets_hashed mismatch")
 
         if (
