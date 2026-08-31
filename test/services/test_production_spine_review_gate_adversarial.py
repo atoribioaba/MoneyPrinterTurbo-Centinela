@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import pytest
@@ -20,6 +21,15 @@ from app.services.centinela.production_spine import (
     StageResult,
     StageStateError,
 )
+
+
+@contextmanager
+def _spine(store: ArtifactStore):
+    service = ProductionSpine(store, max_workers=2)
+    try:
+        yield service
+    finally:
+        service.shutdown()
 
 
 def _binding(stage: SpineStage) -> StageBinding:
@@ -88,7 +98,7 @@ def _review(
 
 def test_legacy_boolean_approval_cannot_reach_final_approved(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         with pytest.raises(StageStateError, match="structured HumanFinalReviewRecord"):
             spine.record_human_review(
@@ -106,7 +116,7 @@ def test_legacy_boolean_approval_cannot_reach_final_approved(tmp_path):
 
 def test_approve_with_one_failed_gate_is_fail_closed(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         review = _review(HumanFinalReviewDecision.APPROVE, all_gates=True).model_copy(
             update={"rights_passed": False}
@@ -118,7 +128,7 @@ def test_approve_with_one_failed_gate_is_fail_closed(tmp_path):
 
 def test_valid_structured_approval_is_durable_and_integrity_verified(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         ref = spine.record_human_review(
             "p1",
@@ -134,7 +144,7 @@ def test_valid_structured_approval_is_durable_and_integrity_verified(tmp_path):
 
 def test_tampered_structured_approval_cannot_unlock_publication_package(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         ref = spine.record_human_review(
             "p1",
@@ -161,7 +171,7 @@ def test_legacy_approved_metadata_is_not_publication_authority(tmp_path):
         producer="legacy-test",
         metadata={"approved": True},
     )
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         spine.register_adapter(SpineStage.PUBLICATION_PACKAGE, _binding(SpineStage.PUBLICATION_PACKAGE))
         with pytest.raises(StageStateError, match="structured human approval"):
             spine.schedule_stage("p1", SpineStage.PUBLICATION_PACKAGE)
@@ -169,7 +179,7 @@ def test_legacy_approved_metadata_is_not_publication_authority(tmp_path):
 
 def test_legacy_rejection_remains_compatible_and_structured(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         ref = spine.record_human_review(
             "p1",
@@ -186,7 +196,7 @@ def test_legacy_rejection_remains_compatible_and_structured(tmp_path):
 
 def test_structured_reject_does_not_require_passing_gates(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         ref = spine.record_human_review(
             "p1",
@@ -199,7 +209,7 @@ def test_structured_reject_does_not_require_passing_gates(tmp_path):
 
 def test_rejected_review_can_resume_then_receive_valid_structured_approval(tmp_path):
     store = ArtifactStore(tmp_path / "store")
-    with ProductionSpine(store, max_workers=2) as spine:
+    with _spine(store) as spine:
         _advance_to_review(spine, store)
         spine.record_human_review(
             "p1",
