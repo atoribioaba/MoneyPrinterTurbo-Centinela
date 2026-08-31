@@ -1,6 +1,7 @@
 from __future__ import annotations
-import hashlib,json
-from datetime import datetime,timezone
+import hashlib
+import json
+from datetime import datetime, timezone
 from typing import Any
 from app.models.finalization_e2e import FinalizationE2EStatus
 from app.models.golden_e2e_certification import (
@@ -12,9 +13,12 @@ from app.models.golden_e2e_certification import (
 )
 from app.models.operational_hardening import OperationalHardeningStatus
 from app.models.video_base_e2e import VideoBaseE2EStatus
-def _hash(v:Any)->str: return hashlib.sha256(json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest().upper()
+def _hash(v:Any)->str:
+    return hashlib.sha256(json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest().upper()
 def build_golden_e2e_certification(request:GoldenE2ECertificationRequest)->GoldenE2ECertificationPlan:
-    required=set(GoldenScenarioId); provided={x.scenario_id for x in request.scenarios}; missing=sorted(required-provided,key=lambda x:x.value)
+    required=set(GoldenScenarioId)
+    provided={x.scenario_id for x in request.scenarios}
+    missing=sorted(required-provided,key=lambda x:x.value)
     passed=sum(all([x.scientific_pass,x.visual_relevance_pass,x.provenance_pass,x.render_pass,x.no_irrelevant_broll,x.recovery_pass]) for x in request.scenarios)
     if request.video_base.status!=VideoBaseE2EStatus.VIDEO_BASE_E2E_PASS or request.finalization.status!=FinalizationE2EStatus.FINALIZATION_E2E_PASS:
         status=GoldenCertificationStatus.WAITING_FOR_REAL_E2E
