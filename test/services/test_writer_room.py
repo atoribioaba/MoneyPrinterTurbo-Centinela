@@ -49,12 +49,13 @@ def fact(
     value,
     *,
     status=ScientificStatus.HECHO_VERIFICADO,
+    unit: str | None = None,
 ):
     return GroundingFact(
         fact_id=fact_id,
         label_es=fact_id,
         value=value,
-        unit=None,
+        unit=unit,
         scientific_status=status,
         source_ids=[],
     )
@@ -67,10 +68,10 @@ def fact_lock(subject="Saturno"):
         context_hash="A" * 64,
         facts=[
             fact("context:moment_utc", "2026-08-23T20:00:00+00:00"),
-            fact("observer:latitude_deg", 0.0),
-            fact("observer:longitude_deg", 0.0),
-            fact("body:saturn:altitude_apparent_deg", 25.0),
-            fact("body:saturn:azimuth_deg", 120.0),
+            fact("observer:latitude_deg", 0.0, unit="deg"),
+            fact("observer:longitude_deg", 0.0, unit="deg"),
+            fact("body:saturn:altitude_apparent_deg", 25.0, unit="deg"),
+            fact("body:saturn:azimuth_deg", 120.0, unit="deg"),
         ],
         sources=[],
         source_ids=[],
