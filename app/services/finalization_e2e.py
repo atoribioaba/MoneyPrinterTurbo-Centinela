@@ -56,7 +56,11 @@ def build_finalization_e2e(request: FinalizationE2ERequest) -> FinalizationE2EPl
         check("human_review_approved", approved, review.decision.value)
 
         if not approved:
-            status = FinalizationE2EStatus.HUMAN_REVIEW_REJECTED
+            status = (
+                FinalizationE2EStatus.HUMAN_REVIEW_CHANGES_REQUESTED
+                if review.decision == HumanFinalReviewDecision.CHANGES_REQUESTED
+                else FinalizationE2EStatus.HUMAN_REVIEW_REJECTED
+            )
         else:
             review_gates = (
                 ("review_science", review.science_passed, "science"),
