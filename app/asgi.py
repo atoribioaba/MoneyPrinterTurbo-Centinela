@@ -22,6 +22,11 @@ async def application_lifespan(_: FastAPI):
     """集中处理 API 进程启动恢复和关闭日志。"""
     logger.info("startup event")
 
+    # StaticFiles mounts are configured without import-time filesystem checks.
+    # Create their backing directories only when the application actually starts.
+    utils.task_dir()
+    utils.public_dir()
+
     configured_api_key = config.app.get("api_key", "")
     if configured_api_key in (None, ""):
         logger.warning(
@@ -116,8 +121,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-task_dir = utils.task_dir()
-app.mount("/tasks", StaticFiles(directory=task_dir, html=True), name="")
+task_dir = os.path.join(utils.storage_dir(), "tasks")
+app.mount(
+    "/tasks",
+    StaticFiles(directory=task_dir, html=True, check_dir=False),
+    name="",
+)
 
-public_dir = utils.public_dir()
-app.mount("/", StaticFiles(directory=public_dir, html=True), name="")
+public_dir = utils.resource_dir("public")
+app.mount(
+    "/",
+    StaticFiles(directory=public_dir, html=True, check_dir=False),
+    name="",
+)

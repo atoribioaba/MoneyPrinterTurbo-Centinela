@@ -5,11 +5,8 @@ from datetime import datetime, timezone
 import pytest
 
 from app.models.astronomy import ScientificStatus
-from app.models.astronomy_director import (
-    AstronomyDirectorError,
-    GroundingFact,
-    NarrativeAct,
-)
+from app.models.astronomy_director import GroundingFact, NarrativeAct
+from app.services.astronomy_director import AstronomyDirectorError
 from app.services.centinela.writer_room import (
     CritiqueBundle,
     DraftPacket,
