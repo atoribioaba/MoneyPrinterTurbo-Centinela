@@ -12,6 +12,8 @@ on:
       - app/models/v1_readiness_audit.py
       - app/services/v1_readiness_audit.py
       - app/controllers/v1/v1_readiness_audit.py
+      - app/models/finalization_e2e.py
+      - app/services/finalization_e2e.py
       - app/models/publication_package.py
       - app/services/publication_package.py
       - app/models/golden_e2e_certification.py
@@ -22,6 +24,7 @@ on:
       - app/services/analytics_import_adapter.py
       - app/models/production_orchestrator.py
       - app/services/production_orchestrator.py
+      - test/services/test_finalization_e2e.py
       - test/services/test_v1_readiness_audit.py
       - test/services/test_v1_readiness_audit_api.py
       - test/services/test_publication_package.py
