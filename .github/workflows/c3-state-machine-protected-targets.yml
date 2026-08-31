@@ -9,6 +9,7 @@ on:
       - .github/workflows/c3-state-machine-protected-targets.yml
       - app/services/centinela/orchestration/**
       - app/services/centinela/production_spine/**
+      - scripts/centinela_guard_protected_state_boundary.py
       - test/services/test_centinela_orchestration.py
       - test/services/test_state_machine_protected_targets.py
       - test/services/test_production_spine.py
@@ -22,6 +23,7 @@ on:
       - .github/workflows/c3-state-machine-protected-targets.yml
       - app/services/centinela/orchestration/**
       - app/services/centinela/production_spine/**
+      - scripts/centinela_guard_protected_state_boundary.py
       - test/services/test_centinela_orchestration.py
       - test/services/test_state_machine_protected_targets.py
       - test/services/test_production_spine.py
@@ -70,6 +72,7 @@ jobs:
           app/services/centinela/orchestration/protected_state_machine.py
           app/services/centinela/production_spine/spine.py
           app/services/centinela/production_spine/review_gate.py
+          scripts/centinela_guard_protected_state_boundary.py
           test/services/test_centinela_orchestration.py
           test/services/test_state_machine_protected_targets.py
           test/services/test_production_spine.py
@@ -81,8 +84,14 @@ jobs:
           uv run --no-sync ruff check
           app/services/centinela/orchestration/__init__.py
           app/services/centinela/orchestration/protected_state_machine.py
+          scripts/centinela_guard_protected_state_boundary.py
           test/services/test_centinela_orchestration.py
           test/services/test_state_machine_protected_targets.py
+
+      - name: Guard raw state-machine and direct protected-status boundary
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_guard_protected_state_boundary.py
 
       - name: Run protected-target contract
         run: >-
