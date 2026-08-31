@@ -108,7 +108,7 @@ def test_skip_forward_transition_is_rejected(store, project):
 
 
 def test_backward_transition_is_rejected(store, project):
-    machine = ProjectStateMachine(store)
+    machine = RawProjectStateMachine(store)
     machine.transition(
         project.project_id,
         ProjectState.RESEARCH_READY,
@@ -161,7 +161,7 @@ def test_side_states_are_reachable_from_progression(store, project, side_state):
     [ProjectState.BLOCKED, ProjectState.NEEDS_INPUT],
 )
 def test_recoverable_side_state_resumes_only_to_previous_state(store, project, side_state):
-    machine = ProjectStateMachine(store)
+    machine = RawProjectStateMachine(store)
     machine.transition(
         project.project_id,
         ProjectState.RESEARCH_READY,
@@ -246,7 +246,7 @@ def test_transition_guard_can_block(store, project):
     def guard(manifest, current, target, metadata):
         raise ValueError("missing fact lock")
 
-    machine = ProjectStateMachine(
+    machine = RawProjectStateMachine(
         store,
         guards={ProjectState.RESEARCH_READY: [guard]},
     )
@@ -261,7 +261,7 @@ def test_transition_guard_can_block(store, project):
 
 
 def test_transition_history_persists_across_instances(store, project):
-    first = ProjectStateMachine(store)
+    first = RawProjectStateMachine(store)
     first.transition(
         project.project_id,
         ProjectState.RESEARCH_READY,
@@ -269,7 +269,7 @@ def test_transition_history_persists_across_instances(store, project):
         actor="test",
         metadata={"source": "test"},
     )
-    second = ProjectStateMachine(store)
+    second = RawProjectStateMachine(store)
     history = second.history(project.project_id)
     assert len(history) == 1
     assert history[0].metadata == {"source": "test"}
