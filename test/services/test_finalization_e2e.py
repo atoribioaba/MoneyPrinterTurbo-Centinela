@@ -103,16 +103,36 @@ def test_passed_base_still_requires_human_review():
     assert result.human_review_required is True
 
 
-def test_rejected_review_stays_rejected():
+@pytest.mark.parametrize(
+    ("decision", "expected_status"),
+    (
+        (
+            HumanFinalReviewDecision.REJECT,
+            FinalizationE2EStatus.HUMAN_REVIEW_REJECTED,
+        ),
+        (
+            HumanFinalReviewDecision.CHANGES_REQUESTED,
+            FinalizationE2EStatus.HUMAN_REVIEW_CHANGES_REQUESTED,
+        ),
+    ),
+)
+def test_non_approving_review_decisions_fail_closed(decision, expected_status):
     result = build_finalization_e2e(
         FinalizationE2ERequest(
             video_base=base(VideoBaseE2EStatus.VIDEO_BASE_E2E_PASS),
-            human_review=review(decision=HumanFinalReviewDecision.REJECT),
+            human_review=review(decision=decision),
             artifacts=artifacts(),
         )
     )
-    assert result.status == FinalizationE2EStatus.HUMAN_REVIEW_REJECTED
+    assert result.status == expected_status
     assert result.finalization_e2e_hash
+    assert result.final_pass is False if hasattr(result, "final_pass") else True
+    assert result.authorization_to_publish is False
+    assert result.auto_publication is False
+    assert result.uploads_files is False
+    assert result.network_calls == 0
+    assert result.webhook_calls == 0
+    assert result.marks_published is False
 
 
 def test_all_seven_review_gates_and_artifacts_can_pass():
