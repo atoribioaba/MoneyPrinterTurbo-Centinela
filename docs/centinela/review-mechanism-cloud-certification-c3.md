@@ -1,14 +1,14 @@
 # C3 Review Mechanism — Cloud Certification
 
 Status: `PASS`
-Date: `2026-08-30`
+Date: `2026-08-31`
 Working branch: `centinela-cert/c3-f58-readiness-v0.1`
 
 ## Scope
 
 This certificate covers the cloud-executable Review/Finalization mechanism that is authoritative in the current pipeline:
 
-`HumanFinalReviewRecord -> FinalizationE2E -> PublicationPackage`
+`HumanFinalReviewRecord -> FinalizationE2E -> PublicationPackage -> F58`
 
 It does **not** certify a real human review of a real Golden render. Real workstation media/hardware review remains local and pending.
 
@@ -24,9 +24,17 @@ A human `APPROVE` decision is insufficient by itself. `FINALIZATION_E2E_PASS` re
 6. `review_thumbnail`
 7. `review_copy`
 
-Together with `human_review_approved`, these form the eight canonical review checks required by a PASS plan.
+Together with `human_review_approved`, these form the eight canonical human-review checks required by a PASS plan.
 
-Each individual review dimension was exercised adversarially as `false`; every case failed closed as `FINALIZATION_E2E_FAIL`.
+Each individual review dimension is exercised adversarially as `false`; every case fails closed as `FINALIZATION_E2E_FAIL`.
+
+Human review decisions are explicit:
+
+- `APPROVE`: may continue only if all 7 review gates and all canonical final-render checks pass.
+- `CHANGES_REQUESTED`: returns `HUMAN_REVIEW_CHANGES_REQUESTED` and blocks finalization/publication.
+- `REJECT`: returns `HUMAN_REVIEW_REJECTED` and blocks finalization/publication.
+
+`CHANGES_REQUESTED` and `REJECT` both preserve all publication side-effect guardrails.
 
 ## Safety invariants
 
@@ -42,17 +50,15 @@ The certified mechanism preserves all of the following:
 - `marks_published = false`
 - `local_final_certification_required = true`
 
-A forged `FINALIZATION_E2E_PASS` without recorded human review or without all canonical review checks is rejected by model/request validation before packaging.
+A forged `FINALIZATION_E2E_PASS` without recorded human review, without all canonical review checks, without both canonical final renders, or without their required evidence is rejected by validation before packaging.
 
-Publication Package additionally verifies the canonical review evidence downstream rather than trusting only the textual PASS status.
+Publication Package revalidates the `FinalizationE2EPlan` at its trust boundary instead of trusting a textual PASS status.
 
-## Executable evidence
-
-### Review mechanism run
+## Executable evidence — final strengthened Review run
 
 - Workflow: `Centinela C3 Review Mechanism`
-- Run: `33334208890`
-- Head SHA: `a497a1172480afbb3f25e09cfab9dbad537ea2c1`
+- Run: `33381224374`
+- Head SHA: `ac933e44dd4f1cbcbb7a24b98213770fd707d243`
 - Conclusion: `success`
 
 Platform matrix:
@@ -65,52 +71,80 @@ Platform matrix:
 
 Linux 3.11 JUnit evidence:
 
-- artifact id: `9738525839`
-- artifact digest: `sha256:7c3856c56f46bf02c0f6ab2525eebfd5bb284800e82215ac1f4afdffab326eb7`
-- tests: `30`
+- artifact id: `9753819837`
+- artifact digest: `sha256:3b4a83a8a5d5d809cb807c1ff15316ab4aa2a47cc3f4990070a86483c2ee03c5`
+- tests: `33`
 - failures: `0`
 - errors: `0`
 - skipped: `0`
 
-Other Review JUnit artifact digests:
+The 33-test suite includes explicit coverage for:
 
-- Linux 3.13: `sha256:386d827ebd3a6ade9b99a7d3c4c2bf23983cd0935af50b07add067b3d5caaa85`
-- Windows 3.11: `sha256:e9f861a95cfb49e5462fd75192e12a6ce47c9d025368934609e5a9f4de05f2c9`
+- `REJECT -> HUMAN_REVIEW_REJECTED`;
+- `CHANGES_REQUESTED -> HUMAN_REVIEW_CHANGES_REQUESTED`;
+- all seven review dimensions independently failing closed;
+- legacy approval without explicit gate evidence;
+- missing final-render SHA;
+- forged PASS without canonical checks;
+- forged PASS without final renders;
+- approved review not authorizing publication;
+- downstream Publication Package contract/API coverage.
 
-### First-run diagnostic
+Other Review JUnit artifacts:
 
-Initial Review run `33334098560` failed only because two adversarial Publication Package tests expected forged evidence to be rejected later by the service. The new Pydantic boundary rejected the forged `FINALIZATION_E2E_PASS` earlier during `PublicationPackageRequest` construction.
+- Linux 3.13 artifact id: `9753823872`
+- Linux 3.13 digest: `sha256:3ff4822f2452b92c27083cbcf79df52eff2e65c1ec14454869ff5d9e43eaf140`
+- Windows 3.11 artifact id: `9753827332`
+- Windows 3.11 digest: `sha256:bc0b39981b6eb82b634ce888185ef450d5f3742268bc13790b6f4a23794954f9`
 
-That was stronger fail-closed behavior, not a product regression. Tests were corrected to require the earlier rejection. Production semantics were not weakened.
+## Downstream Publication Package regression and fix
 
-## Downstream regression evidence
+The strengthened Finalization contract exposed a stale Publication Package cloud dry-run. The contract tests themselves passed on all three platforms, but run `33381194085` failed only in `Run cloud-only publication package dry run` because that fixture manually fabricated a `FinalizationE2EPlan` using an obsolete aggregate `final_renders_verified` check.
 
-The Review hardening exposed a stale Publication Package dry-run that still fabricated `FINALIZATION_E2E_PASS` with only two checks. The Publication Package contract tests themselves remained green. The dry-run was updated to supply the canonical review evidence and its CI trigger surface was bound to `finalization_e2e` model/service/tests.
+This was a fixture drift defect, not a Publication Package service regression.
 
-Final Publication Package regression run:
+The fixture was corrected to obtain Finalization evidence through the authoritative `build_finalization_e2e()` service rather than duplicating the Finalization contract.
+
+Final Publication Package downstream regression run:
 
 - Workflow: `Centinela C3 Publication Package v0.2`
-- Run: `33334363150`
-- Head SHA: `6f4c2109ca26fe2b3f2e7e6136f4e8376f87e0d5`
+- Run: `33381572955`
+- Head SHA: `ce35d1217cd409ab81e854f550d1f39f661398b5`
 - Linux 3.11: PASS, including Ruff + contract + dry-run
 - Linux 3.13: PASS, including contract + dry-run
 - Windows 3.11: PASS, including contract + dry-run
 - Overall: `success`
 
-F58 was also revalidated after the Review hardening:
+This makes the cloud dry-run consume the same Finalization authority as production code and prevents silent future drift between Review/Finalization and Publication Package fixtures.
+
+## Downstream F58 regression evidence
+
+F58 previously did not trigger when `finalization_e2e` model/service/tests changed. That was a CI regression-coverage gap because F58's manual Publication Package gate ultimately depends on the Finalization/Review trust chain.
+
+The F58 workflow trigger surface was therefore bound to:
+
+- `app/models/finalization_e2e.py`
+- `app/services/finalization_e2e.py`
+- `test/services/test_finalization_e2e.py`
+
+Fresh F58 regression run:
 
 - Workflow: `Centinela C3 F58 Readiness Mechanism`
-- Run: `33334208845`
-- Head SHA: `a497a1172480afbb3f25e09cfab9dbad537ea2c1`
+- Run: `33381699046`
+- Head SHA: `12671d1e8463a53e4b2efb2979c9fdc4f22b53a9`
+- Linux 3.11: PASS, including Ruff + contract + semantic freeze guard
+- Linux 3.13: PASS, including contract + semantic freeze guard
+- Windows 3.11: PASS, including contract
 - Overall: `success`
 
-The later Publication Package CI-only binding commit did not change F58 production semantics.
+No freeze, activation, publication, runtime-config write, or human-approval semantics were weakened.
 
 ## Certified cloud state
 
 ```text
 REVIEW_MECHANISM=PASS
 REVIEW_MATRIX=3/3_PASS
+REVIEW_CONTRACT_TESTS_LINUX311=33_PASS
 SCIENCE_GATE=FAIL_CLOSED
 VISUAL_GATE=FAIL_CLOSED
 AUDIO_GATE=FAIL_CLOSED
@@ -118,6 +152,8 @@ SUBTITLES_GATE=FAIL_CLOSED
 RIGHTS_GATE=FAIL_CLOSED
 THUMBNAIL_GATE=FAIL_CLOSED
 COPY_GATE=FAIL_CLOSED
+REJECT_BLOCKS=TRUE
+CHANGES_REQUESTED_BLOCKS=TRUE
 REVIEW_APPROVED!=AUTHORIZED_TO_PUBLISH
 AUTO_PUBLICATION=FALSE
 UPLOADS_FILES=FALSE
@@ -126,6 +162,8 @@ WEBHOOK_CALLS=0
 MARKS_PUBLISHED=FALSE
 HUMAN_REVIEW_REQUIRED=TRUE
 LOCAL_FINAL_CERTIFICATION_REQUIRED=TRUE
+PUBLICATION_PACKAGE_DOWNSTREAM=3/3_PASS
+F58_DOWNSTREAM=3/3_PASS
 REAL_HUMAN_REVIEW=PENDING_LOCAL
 ```
 
@@ -133,12 +171,12 @@ REAL_HUMAN_REVIEW=PENDING_LOCAL
 
 This certificate validates mechanism semantics and fail-closed behavior using synthetic cloud fixtures. It does not claim:
 
-- real Golden E2E approval,
-- real media quality approval,
-- real audio/subtitle subjective acceptance,
-- real rights/manual checklist sign-off,
-- authorization to publish,
-- local workstation certification,
+- real Golden E2E approval;
+- real media quality approval;
+- real audio/subtitle subjective acceptance;
+- real rights/manual checklist sign-off;
+- authorization to publish;
+- local workstation certification;
 - architecture freeze authorization.
 
 Those remain separate local/human gates.
