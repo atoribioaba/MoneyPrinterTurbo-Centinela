@@ -3,7 +3,13 @@ import hashlib,json
 from datetime import datetime,timezone
 from typing import Any
 from app.models.finalization_e2e import FinalizationE2EStatus
-from app.models.golden_e2e_certification import *
+from app.models.golden_e2e_certification import (
+    GOLDEN_E2E_CERTIFICATION_VERSION,
+    GoldenCertificationStatus,
+    GoldenE2ECertificationPlan,
+    GoldenE2ECertificationRequest,
+    GoldenScenarioId,
+)
 from app.models.operational_hardening import OperationalHardeningStatus
 from app.models.video_base_e2e import VideoBaseE2EStatus
 def _hash(v:Any)->str: return hashlib.sha256(json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest().upper()
