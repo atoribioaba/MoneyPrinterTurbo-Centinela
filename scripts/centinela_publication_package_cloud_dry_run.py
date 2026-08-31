@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 from app.models.finalization_e2e import (
-    REQUIRED_HUMAN_REVIEW_CHECK_IDS,
     FinalVideoArtifactProbe,
-    FinalizationCheck,
-    FinalizationE2EPlan,
+    FinalizationE2ERequest,
     FinalizationE2EStatus,
+    HumanFinalReviewDecision,
+    HumanFinalReviewRecord,
 )
 from app.models.publication_package import (
     PublicationMetadata,
@@ -14,6 +14,8 @@ from app.models.publication_package import (
     PublicationSupportAssetProbe,
     PublicationSupportManifest,
 )
+from app.models.video_base_e2e import VideoBaseE2EPlan, VideoBaseE2EStatus
+from app.services.finalization_e2e import build_finalization_e2e
 from app.services.publication_package import build_publication_package
 
 NOW = datetime(2026, 8, 30, tzinfo=timezone.utc)
@@ -27,7 +29,31 @@ def probe(path: str, character: str) -> PublicationSupportAssetProbe:
     )
 
 
-def finalization() -> FinalizationE2EPlan:
+def finalization():
+    video_base = VideoBaseE2EPlan(
+        source_production_orchestrator_hash="synthetic-orchestrator",
+        status=VideoBaseE2EStatus.VIDEO_BASE_E2E_PASS,
+        real_artifact_present=True,
+        check_count=0,
+        passed_count=0,
+        failed_count=0,
+        checks=[],
+        video_base_e2e_hash="synthetic-video-base",
+        generated_at_utc=NOW,
+    )
+    review = HumanFinalReviewRecord(
+        decision=HumanFinalReviewDecision.APPROVE,
+        reviewer_ref="publication-package-cloud-dry-run",
+        rationale="Synthetic canonical review evidence; not publication authorization.",
+        decided_at_utc=NOW,
+        science_passed=True,
+        visual_passed=True,
+        audio_passed=True,
+        subtitles_passed=True,
+        rights_passed=True,
+        thumbnail_passed=True,
+        copy_passed=True,
+    )
     artifacts = [
         FinalVideoArtifactProbe(
             profile_id="MASTER_VERTICAL_2160X3840",
@@ -56,34 +82,17 @@ def finalization() -> FinalizationE2EPlan:
             publication_rights_ready=True,
         ),
     ]
-    checks = [
-        FinalizationCheck(
-            check_id=check_id,
-            passed=True,
-            detail="synthetic canonical review evidence",
-        )
-        for check_id in REQUIRED_HUMAN_REVIEW_CHECK_IDS
-    ]
-    checks.append(
-        FinalizationCheck(
-            check_id="final_renders_verified",
-            passed=True,
-            detail="synthetic fixture",
+    result = build_finalization_e2e(
+        FinalizationE2ERequest(
+            video_base=video_base,
+            human_review=review,
+            artifacts=artifacts,
         )
     )
-    return FinalizationE2EPlan(
-        source_video_base_e2e_hash="C" * 64,
-        status=FinalizationE2EStatus.FINALIZATION_E2E_PASS,
-        human_review_recorded=True,
-        artifact_count=2,
-        check_count=len(checks),
-        passed_count=len(checks),
-        failed_count=0,
-        checks=checks,
-        artifacts=artifacts,
-        finalization_e2e_hash="D" * 64,
-        generated_at_utc=NOW,
-    )
+    assert result.status == FinalizationE2EStatus.FINALIZATION_E2E_PASS
+    assert result.authorization_to_publish is False
+    assert result.auto_publication is False
+    return result
 
 
 def main() -> None:
@@ -131,7 +140,7 @@ def main() -> None:
 
     print("PUBLICATION_PACKAGE_CLOUD_DRY_RUN=PASS")
     print("PUBLICATION_PACKAGE_VERSION=publication-package-v0.2")
-    print("CANONICAL_REVIEW_EVIDENCE=8_OF_8")
+    print("CANONICAL_REVIEW_EVIDENCE=SERVICE_VALIDATED")
     print("CANONICAL_REQUIRED_ASSETS=8_OF_8")
     print("REQUIRED_ASSET_HASHES=8_OF_8")
     print("REAL_MEDIA_USED=FALSE")
