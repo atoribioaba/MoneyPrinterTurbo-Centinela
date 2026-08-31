@@ -38,11 +38,15 @@ def _video_base() -> VideoBaseE2EPlan:
     )
 
 
-def _review(**overrides: bool) -> HumanFinalReviewRecord:
+def _review(
+    *,
+    decision: HumanFinalReviewDecision = HumanFinalReviewDecision.APPROVE,
+    **overrides: bool,
+) -> HumanFinalReviewRecord:
     gates = {field: True for field in REVIEW_FIELDS}
     gates.update(overrides)
     return HumanFinalReviewRecord(
-        decision=HumanFinalReviewDecision.APPROVE,
+        decision=decision,
         reviewer_ref="cloud-dry-run",
         rationale="Synthetic review mechanism evidence; not publication approval.",
         decided_at_utc=NOW,
@@ -91,25 +95,46 @@ def _run(review: HumanFinalReviewRecord):
     )
 
 
+def _assert_no_publication_side_effects(result) -> None:
+    assert result.authorization_to_publish is False
+    assert result.auto_publication is False
+    assert result.uploads_files is False
+    assert result.network_calls == 0
+    assert result.webhook_calls == 0
+    assert result.marks_published is False
+    assert result.local_final_certification_required is True
+
+
 def main() -> None:
     passed = _run(_review())
     assert passed.status == FinalizationE2EStatus.FINALIZATION_E2E_PASS
     assert passed.failed_count == 0
     assert passed.human_review_required is True
-    assert passed.authorization_to_publish is False
-    assert passed.auto_publication is False
-    assert passed.uploads_files is False
-    assert passed.network_calls == 0
-    assert passed.webhook_calls == 0
-    assert passed.marks_published is False
-    assert passed.local_final_certification_required is True
+    _assert_no_publication_side_effects(passed)
 
     for field in REVIEW_FIELDS:
         failed = _run(_review(**{field: False}))
         assert failed.status == FinalizationE2EStatus.FINALIZATION_E2E_FAIL
         assert failed.failed_count == 1
+        _assert_no_publication_side_effects(failed)
+
+    rejected = _run(_review(decision=HumanFinalReviewDecision.REJECT))
+    assert rejected.status == FinalizationE2EStatus.HUMAN_REVIEW_REJECTED
+    assert rejected.failed_count == 1
+    _assert_no_publication_side_effects(rejected)
+
+    changes_requested = _run(
+        _review(decision=HumanFinalReviewDecision.CHANGES_REQUESTED)
+    )
+    assert (
+        changes_requested.status
+        == FinalizationE2EStatus.HUMAN_REVIEW_CHANGES_REQUESTED
+    )
+    assert changes_requested.failed_count == 1
+    _assert_no_publication_side_effects(changes_requested)
 
     print("REVIEW_MECHANISM=PASS")
+    print("REVIEW_GATE_COUNT=7")
     print("SCIENCE_GATE=FAIL_CLOSED")
     print("VISUAL_GATE=FAIL_CLOSED")
     print("AUDIO_GATE=FAIL_CLOSED")
@@ -117,6 +142,8 @@ def main() -> None:
     print("RIGHTS_GATE=FAIL_CLOSED")
     print("THUMBNAIL_GATE=FAIL_CLOSED")
     print("COPY_GATE=FAIL_CLOSED")
+    print("REJECT_BLOCKS=TRUE")
+    print("CHANGES_REQUESTED_BLOCKS=TRUE")
     print("REVIEW_APPROVED=TRUE")
     print("AUTHORIZED_TO_PUBLISH=FALSE")
     print("AUTO_PUBLICATION=FALSE")
