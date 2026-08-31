@@ -177,6 +177,63 @@ def test_legacy_approved_metadata_is_not_publication_authority(tmp_path):
             spine.schedule_stage("p1", SpineStage.PUBLICATION_PACKAGE)
 
 
+def test_forged_structured_approval_without_transition_is_not_publication_authority(tmp_path):
+    store = ArtifactStore(tmp_path / "store")
+    store.create_project("Forged final approved", project_id="p1")
+    manifest = store.load_project("p1")
+    manifest.status = ProjectState.FINAL_APPROVED.value
+    store.save_project(manifest)
+    forged = _review(HumanFinalReviewDecision.APPROVE, all_gates=True)
+    store.put_json(
+        "p1",
+        STRUCTURED_HUMAN_REVIEW_ARTIFACT_TYPE,
+        forged.model_dump(mode="json"),
+        producer="centinela.human_review.structured",
+        producer_version="adversarial-v1",
+        provenance={
+            "explicit_human_decision": True,
+            "structured_review": True,
+        },
+        metadata={
+            "decision": HumanFinalReviewDecision.APPROVE.value,
+            "all_required_gates_passed": True,
+        },
+    )
+    with _spine(store) as spine:
+        spine.register_adapter(SpineStage.PUBLICATION_PACKAGE, _binding(SpineStage.PUBLICATION_PACKAGE))
+        with pytest.raises(StageStateError, match="structured human approval"):
+            spine.schedule_stage("p1", SpineStage.PUBLICATION_PACKAGE)
+
+
+def test_newer_structured_reject_revokes_prior_publication_authority(tmp_path):
+    store = ArtifactStore(tmp_path / "store")
+    with _spine(store) as spine:
+        _advance_to_review(spine, store)
+        spine.record_human_review(
+            "p1",
+            review=_review(HumanFinalReviewDecision.APPROVE, all_gates=True),
+        )
+        rejection = _review(HumanFinalReviewDecision.REJECT, all_gates=False)
+        store.put_json(
+            "p1",
+            STRUCTURED_HUMAN_REVIEW_ARTIFACT_TYPE,
+            rejection.model_dump(mode="json"),
+            producer="centinela.human_review.structured",
+            producer_version="adversarial-v1",
+            provenance={
+                "explicit_human_decision": True,
+                "structured_review": True,
+            },
+            metadata={
+                "decision": HumanFinalReviewDecision.REJECT.value,
+                "all_required_gates_passed": False,
+            },
+        )
+        spine.register_adapter(SpineStage.PUBLICATION_PACKAGE, _binding(SpineStage.PUBLICATION_PACKAGE))
+        with pytest.raises(StageStateError, match="structured human approval"):
+            spine.schedule_stage("p1", SpineStage.PUBLICATION_PACKAGE)
+
+
 def test_legacy_rejection_remains_compatible_and_structured(tmp_path):
     store = ArtifactStore(tmp_path / "store")
     with _spine(store) as spine:
