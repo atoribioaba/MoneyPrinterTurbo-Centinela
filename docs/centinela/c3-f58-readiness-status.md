@@ -1,6 +1,6 @@
 # C3 / F58 Readiness Status
 
-Date: 2026-08-30
+Date: 2026-08-31
 Branch: `centinela-cert/c3-f58-readiness-v0.1`
 
 ## Executive state
@@ -12,9 +12,15 @@ Branch: `centinela-cert/c3-f58-readiness-v0.1`
 - `F58_EXECUTABLE_MATRIX=3/3_PASS`
 - `ANALYTICS_ADAPTER_MECHANISM=PASS`
 - `REAL_CHANNEL_ANALYTICS_REQUIRED_FOR_V1=FALSE`
+- `PUBLICATION_PACKAGE_MECHANISM=PASS`
+- `PUBLICATION_PACKAGE_MATRIX=3/3_PASS`
+- `REVIEW_MECHANISM=PASS`
+- `REVIEW_MATRIX=3/3_PASS`
 - `SBOM_PROVISIONAL_CLOUD=PASS`
 - `PUBLIC_REPO_SECRET_AUDIT=PASS`
 - `OSS_AUDIT_CLOUD=ADVANCED_LOCAL_FINAL_FIELDS_PENDING`
+- `REAL_HUMAN_REVIEW=PENDING_LOCAL`
+- `REAL_PUBLICATION_PACKAGE=PENDING_REAL_GOLDEN`
 - `HUMAN_FREEZE_APPROVAL=FALSE`
 - `ARCHITECTURE_FREEZE_AUTHORIZED=FALSE`
 - `AUTO_PUBLICATION=FALSE`
@@ -27,7 +33,7 @@ The F58 mechanism is intentionally audit-only. It may authorize a freeze only af
 |---|---|---:|---:|---|
 | Operational hardening not blocked | PENDING_LOCAL_RECHECK | Yes | Partially | Cloud mechanism is executable; workstation state must be revalidated on return. |
 | Golden real E2E certified | PENDING_PC | Yes | No | Requires real local media/runtime/hardware path and human-review stop. |
-| Manual Publication Package ready | PENDING_REAL_GOLDEN | Yes | Mechanism mostly | v0.2 cloud contract exists; real package depends on approved Golden output. |
+| Manual Publication Package ready | PENDING_REAL_GOLDEN | Yes | Mechanism only | v0.2 mechanism is cloud-certified 3/3; the real package still depends on approved Golden output. |
 | Analytics adapter operational | CLOUD_PASS | Yes | Yes | Dedicated 3-platform mechanism gate passed; real channel data is not required for V1 mechanism readiness. |
 | OSS audit complete and verified | ADVANCED_LOCAL_FINAL_FIELDS_PENDING | Yes | Mostly | Cloud/static licenses plus transitive SBOM exist; local FFmpeg/NVENC/runtime/model fields remain pending. |
 | Human freeze approval | NOT_GRANTED | Final | No automation | Must be explicit and only after technical readiness. |
@@ -53,14 +59,98 @@ During executable CI recovery two genuine CI-quality defects were found and fixe
 1. Ruff violations in the compact F58 source surface;
 2. a formatting-dependent textual freeze guard, replaced with semantic Pydantic/default checks.
 
-After hardening the Analytics gate so it no longer uses literal `passed=True`, F58 was revalidated:
+After hardening the Analytics gate so it no longer uses literal `passed=True`, F58 was revalidated in run `33332112652`.
 
-- run: `33332112652`
+After strengthening Review/Finalization and its downstream Publication Package trust chain, a CI coverage gap was also fixed: F58 now retriggers when `finalization_e2e` model/service/tests change.
+
+Latest F58 downstream regression run:
+
+- workflow: `Centinela C3 F58 Readiness Mechanism`
+- run: `33381699046`
+- source commit: `12671d1e8463a53e4b2efb2979c9fdc4f22b53a9`
 - Linux / Python 3.11: PASS including Ruff, contract and semantic freeze guard
 - Linux / Python 3.13: PASS including contract and semantic freeze guard
 - Windows / Python 3.11: PASS including contract
+- overall: `success`
 
 `F58_MECHANISM_CLOUD=PASS` certifies the mechanism only. It does not convert missing local/Golden/human evidence into readiness.
+
+## Review mechanism — cloud PASS
+
+Authoritative chain:
+
+`HumanFinalReviewRecord -> FinalizationE2E -> PublicationPackage -> F58`
+
+Latest dedicated Review certification:
+
+- workflow: `Centinela C3 Review Mechanism`
+- run: `33381224374`
+- source commit: `ac933e44dd4f1cbcbb7a24b98213770fd707d243`
+- Linux / Python 3.11: PASS including Ruff + contract + dry-run
+- Linux / Python 3.13: PASS including contract + dry-run
+- Windows / Python 3.11: PASS including contract + dry-run
+- Linux 3.11 JUnit: `33` tests, `0` failures, `0` errors, `0` skipped
+
+The mechanism enforces seven explicit human-review dimensions:
+
+- science;
+- visual;
+- audio;
+- subtitles;
+- rights;
+- thumbnail;
+- copy.
+
+Every individual dimension is tested fail-closed. `REJECT` and `CHANGES_REQUESTED` are explicit non-approving states and both block finalization/publication.
+
+Certified invariants:
+
+- `REVIEW_APPROVED != AUTHORIZED_TO_PUBLISH`
+- `REJECT_BLOCKS=TRUE`
+- `CHANGES_REQUESTED_BLOCKS=TRUE`
+- `authorization_to_publish=false`
+- `auto_publication=false`
+- `uploads_files=false`
+- `network_calls=0`
+- `webhook_calls=0`
+- `marks_published=false`
+- `human_review_required=true`
+- `local_final_certification_required=true`
+
+Real subjective review remains `PENDING_LOCAL`.
+
+Full evidence: `docs/centinela/review-mechanism-cloud-certification-c3.md`.
+
+## Publication Package v0.2 mechanism — cloud PASS
+
+Publication Package remains manual/planning-only in cloud and cannot publish.
+
+The strengthened Review/Finalization contract exposed one stale cloud dry-run that manually fabricated obsolete Finalization evidence. Contract tests remained green; only the dry-run failed. The fixture was corrected to obtain Finalization evidence through the authoritative `build_finalization_e2e()` service instead of duplicating the contract.
+
+Latest downstream regression run:
+
+- workflow: `Centinela C3 Publication Package v0.2`
+- run: `33381572955`
+- source commit: `ce35d1217cd409ab81e854f550d1f39f661398b5`
+- Linux / Python 3.11: PASS including Ruff + contract + dry-run
+- Linux / Python 3.13: PASS including contract + dry-run
+- Windows / Python 3.11: PASS including contract + dry-run
+- overall: `success`
+
+Cloud mechanism invariants remain:
+
+- canonical required assets: `8/8`;
+- required asset hashes: `8/8` when ready;
+- `writes_files=false`;
+- `uploads_files=false`;
+- `network_calls=0`;
+- `webhook_calls=0`;
+- `auto_publication=false`;
+- `authorization_to_publish=false`;
+- `marks_published=false`;
+- `local_final_certification_required=true`.
+
+The real manual package is still `PENDING_REAL_GOLDEN`.
 
 ## Analytics Adapter mechanism — cloud PASS
 
@@ -76,7 +166,7 @@ Dedicated workflow:
 - targeted Analytics + API + F58 tests: `24 passed`
 - semantic side-effect guard: PASS
 
-The adapter now proves:
+The adapter proves:
 
 - deterministic CSV/JSON ingestion;
 - explicit timezone required for `observed_at_utc`;
@@ -92,7 +182,7 @@ The adapter now proves:
 - `uses_llm=false`;
 - `auto_publication=false`.
 
-F58 now evaluates Analytics operational readiness from those mechanism guardrails and a non-empty evidence hash instead of hard-coding the gate to pass. `WAITING_FOR_IMPORT_DATA` is valid for mechanism certification, therefore:
+F58 evaluates Analytics operational readiness from those mechanism guardrails and a non-empty evidence hash instead of hard-coding the gate to pass. `WAITING_FOR_IMPORT_DATA` is valid for mechanism certification, therefore:
 
 - `ANALYTICS_ADAPTER_MECHANISM=PASS`
 - `REAL_CHANNEL_ANALYTICS_REQUIRED_FOR_V1=FALSE`
