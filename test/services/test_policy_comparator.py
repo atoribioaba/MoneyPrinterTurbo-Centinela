@@ -9,4 +9,5 @@ def test_empty_waits(): assert build_policy_comparator(PolicyComparatorRequest(s
 def test_safe_ready(): assert build_policy_comparator(PolicyComparatorRequest(simulations=sim([row()]))).safe_candidate_count==1
 def test_regression_blocks(): assert build_policy_comparator(PolicyComparatorRequest(simulations=sim([row(False)]))).status==PolicyComparatorStatus.NO_SAFE_CANDIDATES
 def test_no_quality_claim():
-    r=build_policy_comparator(PolicyComparatorRequest(simulations=sim([row()]))); assert not r.quality_improvement_claims and not r.causal_claims
+    r=build_policy_comparator(PolicyComparatorRequest(simulations=sim([row()])))
+    assert not r.quality_improvement_claims and not r.causal_claims

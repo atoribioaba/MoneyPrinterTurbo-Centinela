@@ -6,7 +6,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.astromedia import MediaType
-from app.models.shot_quality import ShotQualityPlan, ShotQualityStatus
+from app.models.shot_quality import ShotQualityPlan
 
 
 MEDIA_MINING_VERSION = "media-mining-v0.1"

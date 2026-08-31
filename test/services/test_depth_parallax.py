@@ -1,6 +1,6 @@
 from app.models.astromedia import MediaType
 from app.models.cinematic_director import CinematicMood
-from app.models.depth_parallax import DepthMapHint, DepthParallaxRequest, DepthParallaxStatus
+from app.models.depth_parallax import DepthMapHint, DepthParallaxRequest
 from app.models.smart_ken_burns import KenBurnsScenePlan, KenBurnsSceneStatus, SmartKenBurnsPlan
 from app.models.visual_story_graph import VisualStoryGraph, VisualStoryNode
 from app.services.depth_parallax import build_depth_parallax

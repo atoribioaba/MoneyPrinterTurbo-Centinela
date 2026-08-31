@@ -2,9 +2,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from app.models.finalization_e2e import FinalizationE2EPlan, FinalizationE2EStatus
-from app.models.operational_hardening import OperationalHardeningPlan, OperationalHardeningStatus
-from app.models.video_base_e2e import VideoBaseE2EPlan, VideoBaseE2EStatus
+from app.models.finalization_e2e import FinalizationE2EPlan
+from app.models.operational_hardening import OperationalHardeningPlan
+from app.models.video_base_e2e import VideoBaseE2EPlan
 GOLDEN_E2E_CERTIFICATION_VERSION="golden-e2e-certification-v0.1"
 class StrictGoldenModel(BaseModel):
     model_config=ConfigDict(extra="forbid",validate_assignment=True)

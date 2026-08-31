@@ -1,5 +1,6 @@
 from __future__ import annotations
-import hashlib, json
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any
 from app.models.production_orchestrator import ProductionOrchestratorStatus
@@ -14,13 +15,20 @@ def _hash(value: Any) -> str:
 
 def build_video_base_e2e(request: VideoBaseE2ERequest) -> VideoBaseE2EPlan:
     if request.orchestrator.status == ProductionOrchestratorStatus.BLOCKED_BY_QUALITY_OR_DELIVERY:
-        status=VideoBaseE2EStatus.WAITING_FOR_ORCHESTRATOR; checks=[]; present=False
+        status=VideoBaseE2EStatus.WAITING_FOR_ORCHESTRATOR
+        checks=[]
+        present=False
     elif request.manifest is None:
-        status=VideoBaseE2EStatus.WAITING_FOR_REAL_VIDEO_BASE; checks=[]; present=False
+        status=VideoBaseE2EStatus.WAITING_FOR_REAL_VIDEO_BASE
+        checks=[]
+        present=False
     elif request.manifest.render_mode != VideoBaseRenderMode.CLEAN_BASE or request.manifest.placeholder_count != 0:
-        status=VideoBaseE2EStatus.WAITING_FOR_CLEAN_VIDEO_BASE; checks=[]; present=True
+        status=VideoBaseE2EStatus.WAITING_FOR_CLEAN_VIDEO_BASE
+        checks=[]
+        present=True
     else:
-        m=request.manifest; p=request.probe
+        m=request.manifest
+        p=request.probe
         checks=[
             VideoBaseE2ECheck(check_id="file_exists",passed=p.exists,detail=p.file_path),
             VideoBaseE2ECheck(check_id="path_matches_manifest",passed=p.file_path==m.final_video_path,detail=f"probe={p.file_path}; manifest={m.final_video_path}"),

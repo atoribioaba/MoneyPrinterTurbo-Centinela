@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.analytics_brain import (
     AnalyticsBrainPlan,
-    AnalyticsPlatform,
     NativeMetricObservation,
 )
 

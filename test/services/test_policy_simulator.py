@@ -20,9 +20,13 @@ def cp():
     return PolicyCandidatePlan(source_recommendation_gate_hash="g",status=PolicyCandidateStatus.CANDIDATE_POLICIES_READY,binding_count=1,candidate_count=1,candidates=[c],policy_candidate_hash="c",generated_at_utc=NOW)
 def test_empty_waits(): assert build_policy_simulator(PolicySimulatorRequest(candidates=cp())).status==PolicySimulatorStatus.WAITING_FOR_CANDIDATE_POLICY_AND_CASES
 def test_real_director_changes():
-    p=ap(); r=build_policy_simulator(PolicySimulatorRequest(candidates=cp(),cases=[PolicySimulationCase(case_id="case",plan=p,video_base=vb(p))])); assert r.simulation_count==1 and r.behavior_change_count==1 and r.results[0].candidate_structural_checks_pass
+    p=ap()
+    r=build_policy_simulator(PolicySimulatorRequest(candidates=cp(),cases=[PolicySimulationCase(case_id="case",plan=p,video_base=vb(p))]))
+    assert r.simulation_count==1 and r.behavior_change_count==1 and r.results[0].candidate_structural_checks_pass
 def test_placeholders_preserved():
-    p=ap(); r=build_policy_simulator(PolicySimulatorRequest(candidates=cp(),cases=[PolicySimulationCase(case_id="case",plan=p,video_base=vb(p))])); assert r.results[0].placeholders_preserved
+    p=ap()
+    r=build_policy_simulator(PolicySimulatorRequest(candidates=cp(),cases=[PolicySimulationCase(case_id="case",plan=p,video_base=vb(p))]))
+    assert r.results[0].placeholders_preserved
 def test_simulator_revalidates_direct_candidate_parameter():
     bad=cp()
     bad.candidates[0].parameter="invented_parameter"
@@ -32,4 +36,5 @@ def test_simulator_revalidates_direct_candidate_parameter():
         build_policy_simulator(PolicySimulatorRequest(candidates=bad,cases=[PolicySimulationCase(case_id="case",plan=p,video_base=vb(p))]))
 
 def test_never_renders():
-    r=build_policy_simulator(PolicySimulatorRequest(candidates=cp())); assert not r.renders_video and not r.gpu_required and not r.activates_policy
+    r=build_policy_simulator(PolicySimulatorRequest(candidates=cp()))
+    assert not r.renders_video and not r.gpu_required and not r.activates_policy
