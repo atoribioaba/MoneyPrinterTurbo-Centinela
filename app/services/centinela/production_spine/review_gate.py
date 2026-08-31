@@ -90,6 +90,23 @@ class ProductionSpine(_LegacyProductionSpine):
         )
         return HumanFinalReviewRecord.model_validate(payload)
 
+    def _review_transition_authorizes(self, project_id: str, ref: ArtifactRef) -> bool:
+        history = self.state_machine.history(project_id)
+        for transition in reversed(history):
+            metadata = transition.metadata if isinstance(transition.metadata, dict) else {}
+            if not (
+                metadata.get("human_review") is True
+                and metadata.get("structured_review") is True
+            ):
+                continue
+            return (
+                transition.to_state == ProjectState.FINAL_APPROVED
+                and metadata.get("decision_artifact_id") == ref.artifact_id
+                and metadata.get("decision") == HumanFinalReviewDecision.APPROVE.value
+                and metadata.get("approved") is True
+            )
+        return False
+
     def _previous_receipt(self, project_id: str, stage: SpineStage) -> ArtifactRef | None:
         if stage != SpineStage.PUBLICATION_PACKAGE:
             return super()._previous_receipt(project_id, stage)
@@ -98,17 +115,22 @@ class ProductionSpine(_LegacyProductionSpine):
             project_id,
             artifact_type=STRUCTURED_HUMAN_REVIEW_ARTIFACT_TYPE,
         )
-        for ref in reversed(reviews):
-            try:
-                record = self._validated_structured_review(project_id, ref)
-            except Exception:
-                continue
-            if (
-                record.decision == HumanFinalReviewDecision.APPROVE
-                and record.all_required_gates_passed
-            ):
-                return ref
-        return None
+        if not reviews:
+            return None
+
+        ref = reviews[-1]
+        try:
+            record = self._validated_structured_review(project_id, ref)
+        except Exception:
+            return None
+        if (
+            record.decision != HumanFinalReviewDecision.APPROVE
+            or not record.all_required_gates_passed
+        ):
+            return None
+        if not self._review_transition_authorizes(project_id, ref):
+            return None
+        return ref
 
     def schedule_stage(
         self,
