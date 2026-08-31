@@ -22,6 +22,9 @@ from app.services.centinela.orchestration import (
     TransitionRecoveryRequired,
     InvalidTransitionError,
 )
+from app.services.centinela.orchestration.state_machine import (
+    ProjectStateMachine as RawProjectStateMachine,
+)
 from app.services.centinela.project_foundation import ArtifactStore
 
 
@@ -67,7 +70,7 @@ def test_state_machine_initial_state_is_draft(store, project):
 
 
 def test_linear_state_progression(store, project):
-    machine = ProjectStateMachine(store)
+    machine = RawProjectStateMachine(store)
     expected = [
         ProjectState.RESEARCH_READY,
         ProjectState.SCRIPT_READY,
@@ -212,7 +215,7 @@ def test_terminal_side_states_cannot_transition(store, project, terminal):
 
 
 def test_publication_package_ready_is_terminal(store, project):
-    machine = ProjectStateMachine(store)
+    machine = RawProjectStateMachine(store)
     for target in (
         ProjectState.RESEARCH_READY,
         ProjectState.SCRIPT_READY,
