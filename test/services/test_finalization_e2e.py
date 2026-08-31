@@ -124,9 +124,11 @@ def test_non_approving_review_decisions_fail_closed(decision, expected_status):
             artifacts=artifacts(),
         )
     )
+    checks = {item.check_id: item for item in result.checks}
     assert result.status == expected_status
     assert result.finalization_e2e_hash
-    assert result.final_pass is False if hasattr(result, "final_pass") else True
+    assert result.failed_count == 1
+    assert checks["human_review_approved"].passed is False
     assert result.authorization_to_publish is False
     assert result.auto_publication is False
     assert result.uploads_files is False
