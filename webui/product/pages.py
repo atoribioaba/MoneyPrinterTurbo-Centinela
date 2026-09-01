@@ -338,53 +338,6 @@ def projects_page() -> None:
         st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
-def review_page() -> None:
-    service = _service()
-    _header(
-        "Revisión",
-        "La aprobación humana es una frontera deliberada del pipeline.",
-    )
-    project = _project_selector(service, "review-selector")
-    if project is None:
-        return
-
-    if project.state != ProjectState.READY_FOR_HUMAN_REVIEW:
-        st.info(
-            f"Este proyecto está en **{project.state_label}**. "
-            "La revisión se habilitará cuando exista un vídeo preparado para revisión humana."
-        )
-        return
-
-    st.warning("Revisa el vídeo y sus evidencias antes de aprobar.")
-    reviewer = st.text_input("Revisor", value="Revisión humana")
-    notes = st.text_area("Notas de revisión", placeholder="Motivo de aprobación o cambios requeridos")
-    c1, c2 = st.columns(2)
-
-    if c1.button("Aprobar", type="primary", use_container_width=True):
-        try:
-            service.review(
-                project.project_id,
-                approved=True,
-                reviewer=reviewer,
-                notes=notes,
-            )
-            st.success("Proyecto aprobado explícitamente.")
-        except Exception as exc:
-            st.error(str(exc))
-
-    if c2.button("Solicitar cambios", use_container_width=True):
-        try:
-            service.review(
-                project.project_id,
-                approved=False,
-                reviewer=reviewer,
-                notes=notes,
-            )
-            st.warning("El proyecto vuelve a necesitar intervención antes de continuar.")
-        except Exception as exc:
-            st.error(str(exc))
-
-
 def observatory_page() -> None:
     _header("Observatorio", "Capacidad astronómica local y determinista.")
     health = get_astronomy_health()

@@ -34,6 +34,9 @@ from app.services.centinela.research_adapters import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 class FakeTransport:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -52,6 +55,24 @@ class FakeTransport:
 
 def research_context():
     return ResearchContext("test-project", ResearchPhase.RESEARCH)
+
+
+def test_c3_loopback_defaults_and_runtime_binding_are_closed():
+    example = (ROOT / "config.example.toml").read_text(encoding="utf-8")
+    config_source = (ROOT / "app/config/config.py").read_text(encoding="utf-8")
+    main_source = (ROOT / "main.py").read_text(encoding="utf-8")
+    assert 'listen_host = "127.0.0.1"' in example
+    assert 'listen_host = "0.0.0.0"' not in example
+    assert 'listen_host = _cfg.get("listen_host", "127.0.0.1")' in config_source
+    assert 'C3_LISTEN_HOST = "127.0.0.1"' in main_source
+    assert "host=C3_LISTEN_HOST" in main_source
+
+
+def test_legacy_boolean_review_ui_is_removed_from_product_pages():
+    pages_source = (ROOT / "webui/product/pages.py").read_text(encoding="utf-8")
+    assert "def review_page()" not in pages_source
+    assert "approved=True" not in pages_source
+    assert "approved=False" not in pages_source
 
 
 @pytest.mark.parametrize(
@@ -237,7 +258,7 @@ def test_nasa_apod_mock_is_not_eligible_when_copyright_is_present():
     assert bundle.media[0].rights_decision == "review"
 
 
-def test_nasa_apod_mock_public_domain_signal_is_accepted():
+def test_nasa_apod_missing_copyright_fails_closed_to_review():
     fake = FakeTransport(
         [
             {
@@ -251,8 +272,27 @@ def test_nasa_apod_mock_public_domain_signal_is_accepted():
         research_context(),
         day=date(2026, 1, 1),
     )
+    assert bundle.media[0].publication_eligible is False
+    assert bundle.media[0].rights_decision == "review"
+    assert bundle.warnings
+
+
+def test_nasa_apod_trusted_nasa_asset_can_pass_existing_conservative_gate():
+    fake = FakeTransport(
+        [
+            {
+                "date": "2026-01-01",
+                "title": "Example APOD",
+                "hdurl": "https://images-assets.nasa.gov/image/example/example~orig.jpg",
+            }
+        ]
+    )
+    bundle = NasaOpenAdapter(fake).apod(
+        research_context(),
+        day=date(2026, 1, 1),
+    )
     assert bundle.media[0].publication_eligible is True
-    assert bundle.media[0].rights_decision == "accept"
+    assert bundle.media[0].rights_decision == "accept_with_attribution"
 
 
 def test_nasa_epic_mock_stays_rights_review():
@@ -276,7 +316,7 @@ def test_nasa_epic_mock_stays_rights_review():
     assert bundle.media[0].rights_decision == "review"
 
 
-def test_exoplanet_mock_produces_grounded_facts():
+def test_exoplanet_mock_produces_grounded_facts_with_uncertainty_and_references():
     fake = FakeTransport(
         [
             [
@@ -284,9 +324,20 @@ def test_exoplanet_mock_produces_grounded_facts():
                     "pl_name": "Proxima Cen b",
                     "hostname": "Proxima Centauri",
                     "disc_year": 2016,
+                    "discoverymethod": "Radial Velocity",
+                    "disc_refname": "Discovery Reference",
                     "pl_rade": 1.03,
+                    "pl_radeerr1": 0.05,
+                    "pl_radeerr2": -0.04,
+                    "pl_rade_reflink": "Radius Reference",
                     "pl_bmasse": 1.07,
+                    "pl_bmasseerr1": 0.06,
+                    "pl_bmasseerr2": -0.05,
+                    "pl_bmasse_reflink": "Mass Reference",
                     "pl_orbper": 11.186,
+                    "pl_orbpererr1": 0.002,
+                    "pl_orbpererr2": -0.002,
+                    "pl_orbper_reflink": "Period Reference",
                 }
             ]
         ]
@@ -295,10 +346,16 @@ def test_exoplanet_mock_produces_grounded_facts():
         research_context(),
         "Proxima Cen b",
     )
-    assert len(bundle.data) == 6
+    assert len(bundle.data) == 17
     assert all(item.verified for item in bundle.data)
+    fact_ids = {item.fact_id for item in bundle.data}
+    assert "nasa_exoplanet_proxima_cen_b:discoverymethod" in fact_ids
+    assert "nasa_exoplanet_proxima_cen_b:pl_orbpererr1" in fact_ids
+    assert "nasa_exoplanet_proxima_cen_b:pl_orbper_reflink" in fact_ids
     query = fake.calls[0][1]["params"]["query"]
     assert "from pscomppars" in query
+    assert "discoverymethod" in query
+    assert "pl_bmasseerr1" in query
     assert "Proxima Cen b" in query
 
 
@@ -330,6 +387,7 @@ def test_mast_hst_jwst_mock_discovery_remains_rights_review():
     assert '"service":"Mast.Caom.Filtered"' in request_json
     assert '"JWST"' in request_json
 
+
 def test_mpc_mock_requires_one_designation_and_seals_count():
     fake = FakeTransport(
         [
@@ -349,6 +407,59 @@ def test_mpc_mock_requires_one_designation_and_seals_count():
     )
     assert bundle.data[0].value == 2
     assert fake.calls[0][1]["json_body"]["desigs"] == ["Bennu"]
+
+
+def test_mpc_orbit_mock_seals_keplerian_elements_and_uncertainties():
+    fake = FakeTransport(
+        [
+            [
+                {
+                    "mpc_orb": [
+                        {
+                            "COM": {
+                                "coefficient_names": [
+                                    "a",
+                                    "e",
+                                    "i",
+                                    "node",
+                                    "argperi",
+                                    "meananomaly",
+                                ],
+                                "coefficient_values": [
+                                    1.1264,
+                                    0.2037,
+                                    6.0349,
+                                    2.0609,
+                                    66.2231,
+                                    101.7,
+                                ],
+                                "coefficient_uncertainties": [
+                                    1e-7,
+                                    1e-7,
+                                    1e-5,
+                                    1e-5,
+                                    1e-5,
+                                    1e-4,
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        ]
+    )
+    bundle = MinorPlanetCenterAdapter(fake).orbit(
+        research_context(),
+        "Bennu",
+    )
+    facts = {item.fact_id: item for item in bundle.data}
+    assert "mpc_orbit_bennu:a" in facts
+    assert facts["mpc_orbit_bennu:a"].unit == "AU"
+    assert "mpc_orbit_bennu:e" in facts
+    assert "mpc_orbit_bennu:argperi" in facts
+    assert "mpc_orbit_bennu:a:uncertainty" in facts
+    assert fake.calls[0][0].endswith("/api/get-orb")
+    assert fake.calls[0][1]["json_body"] == {"desig": "Bennu"}
 
 
 @pytest.mark.parametrize(

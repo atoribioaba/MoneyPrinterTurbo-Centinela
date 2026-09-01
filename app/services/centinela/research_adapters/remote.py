@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from app.services.centinela.licensing import LicenseDecision
+from app.services.centinela.nasa import assess_nasa_rights, normalize_nasa_rights
 from app.services.centinela.wikimedia import (
     assess_wikimedia_license,
     normalize_wikimedia_extmetadata,
@@ -25,6 +26,16 @@ from .transport import RequestsResearchTransport
 _QID = re.compile(r"^Q[1-9][0-9]*$")
 _PID = re.compile(r"^P[1-9][0-9]*$")
 _DESIGNATION = re.compile(r"^[A-Za-z0-9 ()+./_-]{1,80}$")
+_MPC_ORBIT_FIELDS = {
+    "a": ("Semieje mayor", "AU"),
+    "e": ("Excentricidad", None),
+    "i": ("Inclinación orbital", "deg"),
+    "node": ("Longitud del nodo ascendente", "deg"),
+    "argperi": ("Argumento del perihelio", "deg"),
+    "meananomaly": ("Anomalía media", "deg"),
+    "q": ("Distancia al perihelio", "AU"),
+    "tp": ("Época de paso por perihelio", None),
+}
 
 
 def _text(value: Any) -> str:
@@ -229,19 +240,39 @@ class NasaOpenAdapter:
         url = _text(payload.get("hdurl") or payload.get("url"))
         if not title or not url:
             raise ResearchDataError("NASA APOD response lacks title or media URL")
+
         copyright_notice = _text(payload.get("copyright"))
-        # NASA documents that 'copyright' is returned when the image is not public domain.
-        eligible = not bool(copyright_notice)
+        rights_info = normalize_nasa_rights(
+            {
+                "title": title,
+                "description": _text(payload.get("explanation")),
+                "copyright": copyright_notice,
+            },
+            payload,
+            asset_url=url,
+        )
+        assessment = assess_nasa_rights(rights_info)
+        eligible = assessment.decision in {
+            LicenseDecision.ACCEPT,
+            LicenseDecision.ACCEPT_WITH_ATTRIBUTION,
+        }
         media = ResearchMediaRecord(
             media_id=f"apod-{day.isoformat()}",
             provider="nasa_apod",
             title=title,
             source_page="https://apod.nasa.gov/apod/",
             file_url=url,
-            license="NASA public-domain candidate" if eligible else None,
-            attribution=copyright_notice or "NASA/APOD",
-            attribution_required=bool(copyright_notice),
-            rights_decision="accept" if eligible else "review",
+            license=_text(rights_info.get("rights_basis")) or None,
+            license_url=_text(rights_info.get("rights_url")) or None,
+            attribution=(
+                copyright_notice
+                or _text(rights_info.get("attribution"))
+                or "NASA/APOD"
+            ),
+            attribution_required=bool(
+                rights_info.get("attribution_required", True)
+            ),
+            rights_decision=assessment.decision.value,
             publication_eligible=eligible,
         )
         return ResearchBundle(
@@ -257,6 +288,14 @@ class NasaOpenAdapter:
                 ),
             ),
             media=(media,),
+            warnings=(
+                ()
+                if eligible
+                else (
+                    "APOD media remains publication-ineligible until the conservative "
+                    "NASA rights gate has unambiguous trusted-host evidence.",
+                )
+            ),
         )
 
     def epic(self, context: ResearchContext, *, day: date) -> ResearchBundle:
@@ -314,9 +353,20 @@ class NasaExoplanetArchiveAdapter:
         ("pl_name", "Nombre del planeta", None),
         ("hostname", "Estrella anfitriona", None),
         ("disc_year", "Año de descubrimiento", "year"),
+        ("discoverymethod", "Método de descubrimiento", None),
+        ("disc_refname", "Referencia de descubrimiento", None),
         ("pl_rade", "Radio planetario", "Earth radii"),
+        ("pl_radeerr1", "Incertidumbre superior del radio", "Earth radii"),
+        ("pl_radeerr2", "Incertidumbre inferior del radio", "Earth radii"),
+        ("pl_rade_reflink", "Referencia del radio", None),
         ("pl_bmasse", "Masa planetaria", "Earth masses"),
+        ("pl_bmasseerr1", "Incertidumbre superior de la masa", "Earth masses"),
+        ("pl_bmasseerr2", "Incertidumbre inferior de la masa", "Earth masses"),
+        ("pl_bmasse_reflink", "Referencia de la masa", None),
         ("pl_orbper", "Periodo orbital", "day"),
+        ("pl_orbpererr1", "Incertidumbre superior del periodo orbital", "day"),
+        ("pl_orbpererr2", "Incertidumbre inferior del periodo orbital", "day"),
+        ("pl_orbper_reflink", "Referencia del periodo orbital", None),
     )
 
     def __init__(self, transport: RequestsResearchTransport) -> None:
@@ -377,18 +427,25 @@ class NasaExoplanetArchiveAdapter:
 
 
 class MinorPlanetCenterAdapter:
-    ENDPOINT = "https://data.minorplanetcenter.net/api/get-obs"
+    OBSERVATIONS_ENDPOINT = "https://data.minorplanetcenter.net/api/get-obs"
+    ORBIT_ENDPOINT = "https://data.minorplanetcenter.net/api/get-orb"
+    ENDPOINT = OBSERVATIONS_ENDPOINT
 
     def __init__(self, transport: RequestsResearchTransport) -> None:
         self.transport = transport
 
-    def observations(self, context: ResearchContext, designation: str) -> ResearchBundle:
-        target = _text(designation)
+    @staticmethod
+    def _designation(value: str) -> str:
+        target = _text(value)
         if not _DESIGNATION.fullmatch(target):
             raise ResearchDataError("invalid MPC designation")
+        return target
+
+    def observations(self, context: ResearchContext, designation: str) -> ResearchBundle:
+        target = self._designation(designation)
         payload = self.transport.get_json(
             context,
-            self.ENDPOINT,
+            self.OBSERVATIONS_ENDPOINT,
             json_body={"desigs": [target], "output_format": ["ADES_DF"]},
         )
         if not isinstance(payload, list) or len(payload) != 1:
@@ -413,7 +470,94 @@ class MinorPlanetCenterAdapter:
                     source_id=source_id,
                     title=f"Minor Planet Center observations: {target}",
                     provider="Minor Planet Center",
-                    url=self.ENDPOINT,
+                    url=self.OBSERVATIONS_ENDPOINT,
+                    classification="PRIMARY_ARCHIVE",
+                    primary_source=True,
+                ),
+            ),
+        )
+
+    def orbit(self, context: ResearchContext, designation: str) -> ResearchBundle:
+        target = self._designation(designation)
+        payload = self.transport.get_json(
+            context,
+            self.ORBIT_ENDPOINT,
+            json_body={"desig": target},
+        )
+        if not isinstance(payload, list) or len(payload) != 1:
+            raise ResearchDataError("MPC orbit lookup must return exactly one object")
+        root = payload[0]
+        records = root.get("mpc_orb") if isinstance(root, dict) else None
+        if not isinstance(records, list) or len(records) != 1 or not isinstance(records[0], dict):
+            raise ResearchDataError("MPC response lacks one mpc_orb orbit record")
+
+        orbit_record = records[0]
+        source_id = "mpc_orbit_" + re.sub(
+            r"[^a-z0-9]+", "_", target.casefold()
+        ).strip("_")
+        data: list[ResearchDatum] = []
+        emitted: set[str] = set()
+
+        for section in orbit_record.values():
+            if not isinstance(section, dict):
+                continue
+            names = section.get("coefficient_names")
+            values = section.get("coefficient_values")
+            uncertainties = section.get("coefficient_uncertainties")
+            if not isinstance(names, list) or not isinstance(values, list):
+                continue
+            if len(names) != len(values):
+                raise ResearchDataError("MPC orbit coefficient names/values length mismatch")
+            if uncertainties is not None and (
+                not isinstance(uncertainties, list)
+                or len(uncertainties) != len(values)
+            ):
+                raise ResearchDataError("MPC orbit uncertainty vector length mismatch")
+
+            for index, raw_name in enumerate(names):
+                key = _text(raw_name).casefold().replace("_", "")
+                metadata = _MPC_ORBIT_FIELDS.get(key)
+                if metadata is None or key in emitted:
+                    continue
+                value = values[index]
+                if value is None:
+                    continue
+                label, unit = metadata
+                data.append(
+                    ResearchDatum(
+                        fact_id=f"{source_id}:{key}",
+                        label_es=label,
+                        value=value,
+                        unit=unit,
+                        source_id=source_id,
+                        verified=True,
+                    )
+                )
+                emitted.add(key)
+
+                if uncertainties is not None and uncertainties[index] is not None:
+                    data.append(
+                        ResearchDatum(
+                            fact_id=f"{source_id}:{key}:uncertainty",
+                            label_es=f"Incertidumbre de {label.casefold()}",
+                            value=uncertainties[index],
+                            unit=unit,
+                            source_id=source_id,
+                            verified=True,
+                        )
+                    )
+
+        if not emitted:
+            raise ResearchDataError("MPC orbit record contains no supported orbital elements")
+
+        return ResearchBundle(
+            data=tuple(data),
+            sources=(
+                ResearchSource(
+                    source_id=source_id,
+                    title=f"Minor Planet Center orbit: {target}",
+                    provider="Minor Planet Center",
+                    url=self.ORBIT_ENDPOINT,
                     classification="PRIMARY_ARCHIVE",
                     primary_source=True,
                 ),
@@ -508,6 +652,7 @@ class MastHstJwstAdapter:
                 "before download/publication.",
             ),
         )
+
 
 class TapArchiveAdapter:
     """Fixed-query TAP adapter for public ESO/ESA archive discovery."""
