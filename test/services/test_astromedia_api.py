@@ -34,7 +34,7 @@ def _client(
 
     monkeypatch.setattr(
         controller,
-        "catalog",
+        "_catalog",
         catalog,
     )
 

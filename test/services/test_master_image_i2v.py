@@ -23,7 +23,6 @@ from app.models.master_image_i2v import (
 from app.models.material_selection import SelectionStatus
 from app.models.schema import VideoFitMode
 from app.models.smart_ken_burns import (
-    KenBurnsKeyframe,
     KenBurnsMotionType,
     KenBurnsScenePlan,
     KenBurnsSceneStatus,

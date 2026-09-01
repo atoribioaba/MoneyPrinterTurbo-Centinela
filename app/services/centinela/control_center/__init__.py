@@ -11,7 +11,8 @@ from .models import (
     PipelineStart,
     ProjectView,
 )
-from .service import CentinelaControlCenter, ControlCenterError
+from .review_service import CentinelaControlCenter
+from .service import ControlCenterError
 
 __all__ = [
     "AUTO_PIPELINE_JOB_TYPE",

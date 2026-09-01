@@ -22,11 +22,21 @@ from app.utils import utils
 
 router = new_router()
 
-catalog = AstroMediaCatalog()
+_catalog: AstroMediaCatalog | None = None
+
+
+def get_catalog() -> AstroMediaCatalog:
+    global _catalog
+
+    if _catalog is None:
+        _catalog = AstroMediaCatalog()
+
+    return _catalog
 
 
 @router.get("/astromedia/health")
 def health():
+    catalog = get_catalog()
     items = catalog.list_items(False)
 
     active = [item for item in items if item.active]
@@ -53,6 +63,8 @@ def health():
 def index(
     body: IndexRequest,
 ):
+    catalog = get_catalog()
+
     try:
         report = catalog.index_library(body)
 
@@ -72,6 +84,8 @@ def index(
 def search(
     body: SearchRequest,
 ):
+    catalog = get_catalog()
+
     return utils.get_response(
         200,
         [result.model_dump(mode="json") for result in catalog.search(body)],
@@ -82,6 +96,7 @@ def search(
 def item(
     media_id: str,
 ):
+    catalog = get_catalog()
     value = catalog.get(media_id)
 
     if not value:
@@ -100,6 +115,8 @@ def item(
 def override(
     body: OverrideRequest,
 ):
+    catalog = get_catalog()
+
     try:
         catalog.set_override(
             body.scene_key,
@@ -125,6 +142,7 @@ def override(
 def clear_override(
     scene_key: str,
 ):
+    catalog = get_catalog()
     previous = catalog.get_override(scene_key)
 
     catalog.clear_override(scene_key)

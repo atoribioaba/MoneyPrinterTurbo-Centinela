@@ -1,0 +1,209 @@
+name: Centinela C3 Review Gate Certification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/c3-f58-review-gate-hardening-v0.1
+    paths:
+      - .github/workflows/c3-review-gate-certification.yml
+      - app/services/centinela/control_center/**
+      - app/services/centinela/production_spine/**
+      - app/services/centinela/orchestration/**
+      - app/models/finalization_e2e.py
+      - app/services/finalization_e2e.py
+      - app/services/publication_package.py
+      - webui/Centinela.py
+      - webui/product/**
+      - test/services/test_production_spine.py
+      - test/services/test_production_spine_review_gate_adversarial.py
+      - test/services/test_control_center.py
+      - test/services/test_centinela_orchestration.py
+      - test/services/test_finalization_e2e.py
+      - test/services/test_publication_package.py
+      - test/services/test_publication_package_api.py
+      - test/services/test_product_review_gate_ui.py
+      - pyproject.toml
+      - uv.lock
+  pull_request:
+    branches:
+      - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/c3-review-gate-certification.yml
+      - app/services/centinela/control_center/**
+      - app/services/centinela/production_spine/**
+      - app/services/centinela/orchestration/**
+      - app/models/finalization_e2e.py
+      - app/services/finalization_e2e.py
+      - app/services/publication_package.py
+      - webui/Centinela.py
+      - webui/product/**
+      - test/services/test_production_spine.py
+      - test/services/test_production_spine_review_gate_adversarial.py
+      - test/services/test_control_center.py
+      - test/services/test_centinela_orchestration.py
+      - test/services/test_finalization_e2e.py
+      - test/services/test_publication_package.py
+      - test/services/test_publication_package_api.py
+      - test/services/test_product_review_gate_ui.py
+      - pyproject.toml
+      - uv.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-c3-review-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review-gate-linux:
+    name: Review Gate / Linux / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Compile focused review-gate surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/centinela/control_center/__init__.py
+          app/services/centinela/control_center/review_service.py
+          app/services/centinela/production_spine/__init__.py
+          app/services/centinela/production_spine/review_gate.py
+          app/services/centinela/orchestration/state_machine.py
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/services/publication_package.py
+          webui/Centinela.py
+          webui/product/review.py
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+          test/services/test_product_review_gate_ui.py
+
+      - name: Ruff hardening diff only
+        if: matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          app/services/centinela/control_center/__init__.py
+          app/services/centinela/control_center/review_service.py
+          app/services/centinela/production_spine/__init__.py
+          app/services/centinela/production_spine/review_gate.py
+          webui/Centinela.py
+          webui/product/review.py
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+          test/services/test_product_review_gate_ui.py
+
+      - name: Run focused review-gate contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=review-gate-linux-${{ matrix.python-version }}.xml
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+          test/services/test_control_center.py
+          test/services/test_centinela_orchestration.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+          test/services/test_product_review_gate_ui.py
+
+      - name: Guard public review authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -X utf8 - <<'PY'
+          from app.services.centinela.production_spine import ProductionSpine
+          from app.services.centinela.production_spine.review_gate import ProductionSpine as HardenedProductionSpine
+          from app.services.centinela.production_spine.spine import ProductionSpine as LegacyProductionSpine
+
+          assert ProductionSpine is HardenedProductionSpine
+          assert ProductionSpine is not LegacyProductionSpine
+          print("PUBLIC_PRODUCTION_SPINE_REVIEW_GATE=PASS")
+          PY
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-gate-linux-${{ matrix.python-version }}-${{ github.run_id }}
+          path: review-gate-linux-${{ matrix.python-version }}.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+  review-gate-windows:
+    name: Review Gate / Windows / Python 3.11
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python 3.11
+
+      - name: Compile focused review-gate surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/centinela/control_center/__init__.py
+          app/services/centinela/control_center/review_service.py
+          app/services/centinela/production_spine/__init__.py
+          app/services/centinela/production_spine/review_gate.py
+          app/services/centinela/orchestration/state_machine.py
+          app/models/finalization_e2e.py
+          app/services/finalization_e2e.py
+          app/services/publication_package.py
+          webui/Centinela.py
+          webui/product/review.py
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+          test/services/test_product_review_gate_ui.py
+
+      - name: Run focused review-gate contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=review-gate-windows-3.11.xml
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+          test/services/test_control_center.py
+          test/services/test_centinela_orchestration.py
+          test/services/test_finalization_e2e.py
+          test/services/test_publication_package.py
+          test/services/test_publication_package_api.py
+          test/services/test_product_review_gate_ui.py
+
+      - name: Guard public review authority boundary
+        shell: pwsh
+        run: |
+          @'
+          from app.services.centinela.production_spine import ProductionSpine
+          from app.services.centinela.production_spine.review_gate import ProductionSpine as HardenedProductionSpine
+          from app.services.centinela.production_spine.spine import ProductionSpine as LegacyProductionSpine
+
+          assert ProductionSpine is HardenedProductionSpine
+          assert ProductionSpine is not LegacyProductionSpine
+          print("PUBLIC_PRODUCTION_SPINE_REVIEW_GATE=PASS")
+          '@ | uv run --no-sync python -X utf8 -
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-gate-windows-3.11-${{ github.run_id }}
+          path: review-gate-windows-3.11.xml
+          retention-days: 14
+          if-no-files-found: warn

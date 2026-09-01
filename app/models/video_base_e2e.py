@@ -76,9 +76,12 @@ class VideoBaseE2EPlan(StrictVideoBaseE2EModel):
 
     @model_validator(mode="after")
     def validate_plan(self):
-        if self.check_count != len(self.checks): raise ValueError("check_count mismatch")
-        if self.passed_count != sum(x.passed for x in self.checks): raise ValueError("passed_count mismatch")
-        if self.failed_count != sum(not x.passed for x in self.checks): raise ValueError("failed_count mismatch")
+        if self.check_count != len(self.checks):
+            raise ValueError("check_count mismatch")
+        if self.passed_count != sum(x.passed for x in self.checks):
+            raise ValueError("passed_count mismatch")
+        if self.failed_count != sum(not x.passed for x in self.checks):
+            raise ValueError("failed_count mismatch")
         if not self.verification_only or self.renders_video or self.modifies_media or self.network_calls or self.uses_llm or self.auto_publication:
             raise ValueError("F52 guardrail violation")
         return self

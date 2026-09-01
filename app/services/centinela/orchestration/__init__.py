@@ -20,9 +20,9 @@ from .models import (
     StateTransition,
 )
 from .persistence import OrchestrationDB, OrchestrationPersistenceError
+from .protected_state_machine import ProjectStateMachine
 from .state_machine import (
     InvalidTransitionError,
-    ProjectStateMachine,
     StateConflictError,
     StateIntegrityError,
     StateMachineError,

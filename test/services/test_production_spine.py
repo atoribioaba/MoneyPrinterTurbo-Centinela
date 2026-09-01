@@ -3,10 +3,15 @@ from __future__ import annotations
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from app.models.finalization_e2e import (
+    HumanFinalReviewDecision,
+    HumanFinalReviewRecord,
+)
 from app.services.centinela.orchestration import (
     JobStatus,
     ProjectState,
@@ -61,6 +66,22 @@ def spine(store: ArtifactStore):
 
 def create_project(store: ArtifactStore, pid="p1"):
     return store.create_project("Project", project_id=pid)
+
+
+def approved_review(*, reviewer="human", rationale="approved") -> HumanFinalReviewRecord:
+    return HumanFinalReviewRecord(
+        decision=HumanFinalReviewDecision.APPROVE,
+        reviewer_ref=reviewer,
+        rationale=rationale,
+        decided_at_utc=datetime(2026, 8, 31, tzinfo=timezone.utc),
+        science_passed=True,
+        visual_passed=True,
+        audio_passed=True,
+        subtitles_passed=True,
+        rights_passed=True,
+        thumbnail_passed=True,
+        copy_passed=True,
+    )
 
 
 def binding_for(stage: SpineStage, *, disposition=StageDisposition.COMPLETE):
@@ -229,8 +250,9 @@ def test_complete_pipeline_through_publication_package(spine, store):
         spine.register_adapter(stage, binding_for(stage))
         run_stage(spine, "p1", stage)
     assert spine.state_machine.current_state("p1") == ProjectState.READY_FOR_HUMAN_REVIEW
-    decision = spine.record_human_review("p1", approved=True, reviewer="human", notes="approved")
-    assert decision.metadata["approved"] is True
+    decision = spine.record_human_review("p1", review=approved_review())
+    assert decision.metadata["decision"] == HumanFinalReviewDecision.APPROVE.value
+    assert decision.metadata["all_required_gates_passed"] is True
     assert spine.state_machine.current_state("p1") == ProjectState.FINAL_APPROVED
     spine.register_adapter(SpineStage.PUBLICATION_PACKAGE, binding_for(SpineStage.PUBLICATION_PACKAGE))
     run_stage(spine, "p1", SpineStage.PUBLICATION_PACKAGE)
@@ -245,7 +267,7 @@ def test_publication_package_depends_on_approved_human_decision(spine, store):
     ]:
         spine.register_adapter(stage, binding_for(stage))
         run_stage(spine, "p1", stage)
-    decision = spine.record_human_review("p1", approved=True, reviewer="human", notes="approved")
+    decision = spine.record_human_review("p1", review=approved_review())
     spine.register_adapter(SpineStage.PUBLICATION_PACKAGE, binding_for(SpineStage.PUBLICATION_PACKAGE))
     record = run_stage(spine, "p1", SpineStage.PUBLICATION_PACKAGE)
     output = store.get_artifact("p1", record.result["output_artifact_ids"][0])
@@ -273,7 +295,7 @@ def test_rejected_review_can_be_explicitly_reviewed_again(spine, store):
         spine.register_adapter(stage, binding_for(stage))
         run_stage(spine, "p1", stage)
     spine.record_human_review("p1", approved=False, reviewer="human", notes="revise")
-    spine.record_human_review("p1", approved=True, reviewer="human", notes="now approved")
+    spine.record_human_review("p1", review=approved_review(rationale="now approved"))
     assert spine.state_machine.current_state("p1") == ProjectState.FINAL_APPROVED
 
 

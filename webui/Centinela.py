@@ -11,7 +11,7 @@ WEBUI_ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from webui.product import pages  # noqa: E402
+from webui.product import pages, review  # noqa: E402
 
 
 st.set_page_config(
@@ -67,7 +67,7 @@ navigation = {
         st.Page(pages.home_page, title="Inicio", default=True),
         st.Page(pages.create_video_page, title="Crear vídeo"),
         st.Page(pages.projects_page, title="Proyectos"),
-        st.Page(pages.review_page, title="Revisión"),
+        st.Page(review.review_page, title="Revisión"),
     ],
     "ASTRONOMÍA": [
         st.Page(pages.observatory_page, title="Observatorio"),

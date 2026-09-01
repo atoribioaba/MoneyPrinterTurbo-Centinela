@@ -1,0 +1,168 @@
+name: Centinela C3 State Machine Protected Targets
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - centinela-cert/c3-f58-review-gate-hardening-v0.1
+    paths:
+      - .github/workflows/c3-state-machine-protected-targets.yml
+      - app/config/__init__.py
+      - app/services/upload_post.py
+      - app/services/task.py
+      - app/services/centinela/orchestration/**
+      - app/services/centinela/production_spine/**
+      - webui/product/__init__.py
+      - scripts/centinela_guard_protected_state_boundary.py
+      - test/services/test_centinela_remote_hardening.py
+      - test/services/test_centinela_orchestration.py
+      - test/services/test_state_machine_protected_targets.py
+      - test/services/test_production_spine.py
+      - test/services/test_production_spine_review_gate_adversarial.py
+      - pyproject.toml
+      - uv.lock
+  pull_request:
+    branches:
+      - centinela-cert/c3-f58-readiness-v0.1
+    paths:
+      - .github/workflows/c3-state-machine-protected-targets.yml
+      - app/config/__init__.py
+      - app/services/upload_post.py
+      - app/services/task.py
+      - app/services/centinela/orchestration/**
+      - app/services/centinela/production_spine/**
+      - webui/product/__init__.py
+      - scripts/centinela_guard_protected_state_boundary.py
+      - test/services/test_centinela_remote_hardening.py
+      - test/services/test_centinela_orchestration.py
+      - test/services/test_state_machine_protected_targets.py
+      - test/services/test_production_spine.py
+      - test/services/test_production_spine_review_gate_adversarial.py
+      - pyproject.toml
+      - uv.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-c3-protected-targets-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protected-targets:
+    name: Protected targets / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.11"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Compile protected state-machine surface
+        run: >-
+          uv run --no-sync python -m compileall
+          app/services/centinela/orchestration/__init__.py
+          app/services/centinela/orchestration/state_machine.py
+          app/services/centinela/orchestration/protected_state_machine.py
+          app/services/centinela/production_spine/spine.py
+          app/services/centinela/production_spine/review_gate.py
+          scripts/centinela_guard_protected_state_boundary.py
+          test/services/test_centinela_remote_hardening.py
+          test/services/test_centinela_orchestration.py
+          test/services/test_state_machine_protected_targets.py
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+
+      - name: Ruff protected state-machine surface
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: >-
+          uv run --no-sync ruff check
+          app/config/__init__.py
+          app/services/upload_post.py
+          webui/product/__init__.py
+          test/services/test_centinela_remote_hardening.py
+          app/services/centinela/orchestration/__init__.py
+          app/services/centinela/orchestration/protected_state_machine.py
+          scripts/centinela_guard_protected_state_boundary.py
+          test/services/test_centinela_orchestration.py
+          test/services/test_state_machine_protected_targets.py
+
+      - name: Guard raw state-machine and direct protected-status boundary
+        run: >-
+          uv run --no-sync python -X utf8
+          scripts/centinela_guard_protected_state_boundary.py
+
+      - name: Run protected-target contract
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          --junitxml=protected-targets-${{ matrix.os }}-${{ matrix.python-version }}.xml
+          test/services/test_centinela_remote_hardening.py
+          test/services/test_centinela_orchestration.py
+          test/services/test_state_machine_protected_targets.py
+          test/services/test_production_spine.py
+          test/services/test_production_spine_review_gate_adversarial.py
+
+      - name: Guard public authority boundary
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -X utf8 - <<'PY'
+          from app.services.centinela.orchestration import ProjectStateMachine
+          from app.services.centinela.orchestration.protected_state_machine import ProjectStateMachine as ProtectedProjectStateMachine
+          from app.services.centinela.orchestration.state_machine import ProjectStateMachine as RawProjectStateMachine
+          from app.services.centinela.production_spine import ProductionSpine
+          from app.services.centinela.production_spine.review_gate import ProductionSpine as HardenedProductionSpine
+          from app.services.centinela.production_spine.spine import ProductionSpine as LegacyProductionSpine
+
+          assert ProjectStateMachine is ProtectedProjectStateMachine
+          assert ProjectStateMachine is not RawProjectStateMachine
+          assert ProductionSpine is HardenedProductionSpine
+          assert ProductionSpine is not LegacyProductionSpine
+          print("PUBLIC_PROTECTED_STATE_MACHINE=PASS")
+          print("PUBLIC_PRODUCTION_SPINE_REVIEW_GATE=PASS")
+          PY
+
+      - name: Guard public authority boundary (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          @'
+          from app.services.centinela.orchestration import ProjectStateMachine
+          from app.services.centinela.orchestration.protected_state_machine import ProjectStateMachine as ProtectedProjectStateMachine
+          from app.services.centinela.orchestration.state_machine import ProjectStateMachine as RawProjectStateMachine
+          from app.services.centinela.production_spine import ProductionSpine
+          from app.services.centinela.production_spine.review_gate import ProductionSpine as HardenedProductionSpine
+          from app.services.centinela.production_spine.spine import ProductionSpine as LegacyProductionSpine
+
+          assert ProjectStateMachine is ProtectedProjectStateMachine
+          assert ProjectStateMachine is not RawProjectStateMachine
+          assert ProductionSpine is HardenedProductionSpine
+          assert ProductionSpine is not LegacyProductionSpine
+          print("PUBLIC_PROTECTED_STATE_MACHINE=PASS")
+          print("PUBLIC_PRODUCTION_SPINE_REVIEW_GATE=PASS")
+          '@ | uv run --no-sync python -X utf8 -
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protected-targets-${{ matrix.os }}-${{ matrix.python-version }}-${{ github.run_id }}
+          path: protected-targets-${{ matrix.os }}-${{ matrix.python-version }}.xml
+          retention-days: 14
+          if-no-files-found: warn

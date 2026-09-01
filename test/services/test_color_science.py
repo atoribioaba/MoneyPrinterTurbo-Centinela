@@ -1,6 +1,6 @@
 from app.models.cinematic_director import CinematicMood
 from app.models.color_science import ColorScienceRequest, ColorScienceStatus
-from app.models.depth_parallax import DepthParallaxPlan, DepthParallaxScene, DepthParallaxStatus
+from app.models.depth_parallax import DepthParallaxPlan, DepthParallaxScene
 from app.models.visual_story_graph import VisualStoryGraph, VisualStoryNode
 from app.services.color_science import build_color_science
 

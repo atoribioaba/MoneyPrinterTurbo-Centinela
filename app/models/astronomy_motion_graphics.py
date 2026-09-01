@@ -6,8 +6,6 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.astronomy import ScientificStatus
-from app.models.astronomy_director import AstronomyVideoPlan
-from app.models.visual_story_graph import VisualStoryGraph
 
 
 ASTRONOMY_MOTION_GRAPHICS_VERSION = "astronomy-motion-graphics-v0.1"

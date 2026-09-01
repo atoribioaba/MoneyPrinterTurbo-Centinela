@@ -16,9 +16,12 @@ from .persistence import (
     ProductionSpineDB,
     ProductionSpinePersistenceError,
 )
+from .review_gate import (
+    STRUCTURED_HUMAN_REVIEW_ARTIFACT_TYPE,
+    ProductionSpine,
+)
 from .spine import (
     STAGE_DESCRIPTORS,
-    ProductionSpine,
     ProductionSpineError,
     StageConflictError,
     StageExecutionContext,
@@ -49,6 +52,7 @@ __all__ = [
     "StageOutputError",
     "StageExecutionContext",
     "STAGE_DESCRIPTORS",
+    "STRUCTURED_HUMAN_REVIEW_ARTIFACT_TYPE",
     "LegacyArtifactIngestAdapter",
     "PydanticServiceAdapter",
 ]

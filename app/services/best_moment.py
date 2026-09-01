@@ -16,7 +16,6 @@ from app.models.best_moment import (
     BestMomentStatus,
     BestMomentStructuralChecks,
 )
-from app.models.shot_quality import ShotQualityStatus
 from app.services.shot_quality import (
     FFmpegFrameDiagnostics,
     FrameAnalysisError,

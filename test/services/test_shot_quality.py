@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -10,7 +8,6 @@ from app.models.astromedia import MediaType, Provider, Rights
 from app.models.schema import VideoFitMode
 from app.models.shot_quality import (
     RepresentativeFrameMetrics,
-    ShotQualityBand,
     ShotQualityRequest,
     ShotQualityStatus,
 )

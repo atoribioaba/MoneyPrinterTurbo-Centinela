@@ -2,16 +2,22 @@ from fastapi import HTTPException
 
 from app.controllers.v1.base import new_router
 from app.models.material_selection import MaterialSelectionRequest
-from app.services.material_selection import (
-    MaterialSelectionError,
-    MaterialSelector,
-)
+from app.services.material_selection import MaterialSelectionError, MaterialSelector
 from app.utils import utils
 
 
 router = new_router()
 
-selector = MaterialSelector()
+_selector: MaterialSelector | None = None
+
+
+def get_selector() -> MaterialSelector:
+    global _selector
+
+    if _selector is None:
+        _selector = MaterialSelector()
+
+    return _selector
 
 
 @router.get("/material-selection/health")
@@ -33,6 +39,8 @@ def health():
 def select_materials(
     body: MaterialSelectionRequest,
 ):
+    selector = get_selector()
+
     try:
         result = selector.select_plan(body)
 

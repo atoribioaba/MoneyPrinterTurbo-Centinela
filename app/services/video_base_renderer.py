@@ -300,7 +300,7 @@ class FFmpegSceneRenderer:
             _placeholder_png(placeholder_path, scene)
             source_path = placeholder_path
             filters = (
-                f"scale=1080:1920,setsar=1,fps=30,format=yuv420p"
+                "scale=1080:1920,setsar=1,fps=30,format=yuv420p"
             )
             command = [
                 self.ffmpeg_binary,

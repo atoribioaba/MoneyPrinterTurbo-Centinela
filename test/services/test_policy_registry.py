@@ -12,8 +12,11 @@ def aps(ok=True):
     return HumanPolicyApprovalPlan(source_policy_comparator_hash="cmp",status=HumanPolicyApprovalStatus.HUMAN_DECISIONS_RECORDED if recs else HumanPolicyApprovalStatus.WAITING_FOR_HUMAN_DECISIONS,safe_candidate_count=1,decision_count=len(recs),approved_count=len(recs),rejected_count=0,pending_count=1-len(recs),records=recs,human_policy_approval_hash="h",generated_at_utc=NOW)
 def test_waits_without_approval(): assert build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps(False))).status==PolicyRegistryStatus.WAITING_FOR_APPROVED_POLICY
 def test_versioned_not_active():
-    r=build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps())); assert r.entry_count==1 and not r.entries[0].active and not r.activates_policy
+    r=build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps()))
+    assert r.entry_count==1 and not r.entries[0].active and not r.activates_policy
 def test_rollback_reference():
-    r=build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps(),previous_versions=[PreviousPolicyReference(target_component=PolicyTargetComponent.CINEMATIC_DIRECTOR_REQUEST,parameter="intensity_bias",policy_version="v0")])); assert r.entries[0].rollback_target_policy_version=="v0"
+    r=build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps(),previous_versions=[PreviousPolicyReference(target_component=PolicyTargetComponent.CINEMATIC_DIRECTOR_REQUEST,parameter="intensity_bias",policy_version="v0")]))
+    assert r.entries[0].rollback_target_policy_version=="v0"
 def test_no_runtime_write():
-    r=build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps())); assert not r.writes_runtime_config and r.database_writes==0 and not r.active_policy_changed
+    r=build_policy_registry(PolicyRegistryRequest(candidates=cps(),approvals=aps()))
+    assert not r.writes_runtime_config and r.database_writes==0 and not r.active_policy_changed

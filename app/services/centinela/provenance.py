@@ -6,7 +6,6 @@ copied into provenance records.
 """
 
 import math
-from pathlib import Path
 import re
 from typing import Any, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -88,6 +87,11 @@ def _safe_duration(value: Any) -> float | None:
     return number
 
 
+def _portable_basename(value: str) -> str:
+    normalized = value.replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1] if normalized else ""
+
+
 def sanitize_creator(value: Any) -> dict[str, str] | None:
     """Normalize public creator metadata."""
 
@@ -159,7 +163,7 @@ def sanitize_provenance(
     }
 
     if local_path:
-        record["local_file"] = Path(local_path).name
+        record["local_file"] = _portable_basename(local_path)
 
     safe_duration = _safe_duration(
         duration if duration is not None else source.get("duration")

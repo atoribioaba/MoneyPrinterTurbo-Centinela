@@ -12,6 +12,8 @@ def test_waits(): assert build_human_policy_approval(HumanPolicyApprovalRequest(
 def test_approval_recorded(): assert build_human_policy_approval(HumanPolicyApprovalRequest(comparator=comp(),decisions=[dec()])).approved_count==1
 def test_rejection_recorded(): assert build_human_policy_approval(HumanPolicyApprovalRequest(comparator=comp(),decisions=[dec(HumanDecision.REJECT)])).rejected_count==1
 def test_unsafe_rejected():
-    with pytest.raises(RuntimeError): build_human_policy_approval(HumanPolicyApprovalRequest(comparator=comp(False),decisions=[dec()]))
+    with pytest.raises(RuntimeError):
+        build_human_policy_approval(HumanPolicyApprovalRequest(comparator=comp(False),decisions=[dec()]))
 def test_does_not_activate():
-    r=build_human_policy_approval(HumanPolicyApprovalRequest(comparator=comp(),decisions=[dec()])); assert not r.auto_approval and not r.activates_policy and not r.edits_project
+    r=build_human_policy_approval(HumanPolicyApprovalRequest(comparator=comp(),decisions=[dec()]))
+    assert not r.auto_approval and not r.activates_policy and not r.edits_project
