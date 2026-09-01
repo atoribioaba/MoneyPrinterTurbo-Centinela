@@ -16,6 +16,7 @@ from app.services.centinela.production_spine import (
 from app.services.centinela.writer_room.models import FactLock
 from app.services.centinela.writer_room.spine_adapter import FactLockStageAdapter
 
+from .conflicts import ScientificConflictError, ScientificConflictResolver
 from .contracts import (
     ResearchAdapterError,
     ResearchBundle,
@@ -59,9 +60,11 @@ class C3ExternalResearchFactLockAdapter:
         runner: ExternalResearchRunner,
         *,
         base_adapter: FactLockStageAdapter | None = None,
+        conflict_resolver: ScientificConflictResolver | None = None,
     ) -> None:
         self.runner = runner
         self.base_adapter = base_adapter or FactLockStageAdapter()
+        self.conflict_resolver = conflict_resolver or ScientificConflictResolver()
 
     def __call__(self, context: Any, payload: dict[str, Any]) -> StageResult:
         base = self.base_adapter(context, payload)
@@ -89,6 +92,21 @@ class C3ExternalResearchFactLockAdapter:
             external = self.runner(research_context, external_request)
             if not isinstance(external, ResearchBundle):
                 raise TypeError("external research runner must return ResearchBundle")
+            self._resolve_external_quantities(external)
+        except ScientificConflictError as exc:
+            return StageResult.blocked(
+                "scientific research conflict blocks Fact Lock enrichment",
+                details={
+                    "error_type": type(exc).__name__,
+                    "error_code": exc.code,
+                    "error": str(exc)[:1200],
+                    "subject": exc.subject,
+                    "quantity": exc.quantity,
+                    "network_phase": "RESEARCH_ONLY",
+                    "writer_room_allowed": False,
+                    "auto_publication": False,
+                },
+            )
         except ResearchAdapterError as exc:
             return StageResult.blocked(
                 "external astronomy research failed closed",
@@ -113,7 +131,9 @@ class C3ExternalResearchFactLockAdapter:
         sources = list(fact_lock.sources)
         known_fact_ids = {item.fact_id for item in facts}
         known_source_ids = {item.source_id for item in sources}
-        primary_required = fact_lock.primary_source_verification_required_for_publication
+        primary_required = (
+            fact_lock.primary_source_verification_required_for_publication
+        )
 
         for source in external.sources:
             if source.source_id in known_source_ids:
@@ -175,12 +195,15 @@ class C3ExternalResearchFactLockAdapter:
                 "sources": [item.model_dump(mode="json") for item in sources],
                 "source_ids": source_ids,
                 "context_hash": _hash_fact_lock(facts, source_ids),
-                "primary_source_verification_required_for_publication": primary_required,
+                "primary_source_verification_required_for_publication": (
+                    primary_required
+                ),
                 "generated_at_utc": datetime.now(timezone.utc),
                 "scope_note": (
                     fact_lock.scope_note
                     + " External research was sealed during RESEARCH only; "
-                    "downstream stages receive immutable artifacts, not network clients."
+                    "downstream stages receive immutable artifacts, not network "
+                    "clients."
                 )[:4000],
             }
         )
@@ -203,7 +226,9 @@ class C3ExternalResearchFactLockAdapter:
                 metadata={
                     "fact_count": len(enriched.facts),
                     "source_count": len(enriched.sources),
-                    "primary_source_verification_required_for_publication": primary_required,
+                    "primary_source_verification_required_for_publication": (
+                        primary_required
+                    ),
                     "auto_publication": False,
                 },
             ),
@@ -238,6 +263,25 @@ class C3ExternalResearchFactLockAdapter:
                 "auto_publication": False,
             },
         )
+
+    def _resolve_external_quantities(self, bundle: ResearchBundle) -> None:
+        quantities = []
+        for datum in bundle.data:
+            quantity = datum.canonical_quantity
+            if quantity is None:
+                continue
+            if quantity.source.strip().casefold() != datum.source_id.strip().casefold():
+                raise ScientificConflictError(
+                    "SOURCE_PROVENANCE_MISMATCH",
+                    (
+                        f"canonical quantity source {quantity.source!r} does not match "
+                        f"research datum source_id {datum.source_id!r}"
+                    ),
+                    subject=quantity.subject,
+                    quantity=quantity.quantity,
+                )
+            quantities.append(quantity)
+        self.conflict_resolver.resolve(quantities)
 
 
 def build_c3_external_research_binding(
