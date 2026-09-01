@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import socket
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -8,13 +9,14 @@ import pytest
 
 from app.models.astronomy import ObserverContext
 from app.services.centinela.event_calendar import (
+    MADRID_TIMEZONE,
     AstronomyEngineEventSource,
     EventCalendarService,
     RawCalendarEvent,
 )
 
 
-MADRID = ZoneInfo("Europe/Madrid")
+MADRID = ZoneInfo(MADRID_TIMEZONE)
 
 
 class FakeSource:
@@ -163,4 +165,79 @@ def test_calendar_event_maps_losslessly_to_canonical_scientific_quantity() -> No
     assert quantity.provenance["network_required"] is False
     assert quantity.provenance["auto_publication"] is False
     assert quantity.provenance["observer"]["latitude_deg"] == pytest.approx(41.6523)
+    assert quantity.observer.endswith("official_timezone=Europe/Madrid")
     assert event.time_local == raw.time_utc.astimezone(MADRID)
+
+
+def test_official_madrid_time_switches_dynamically_between_cet_and_cest() -> None:
+    winter = _raw(datetime(2026, 1, 15, 12, 0, tzinfo=UTC), "winter")
+    summer = _raw(datetime(2026, 7, 15, 12, 0, tzinfo=UTC), "summer")
+    service = EventCalendarService(_observer(), source=FakeSource((winter, summer)))
+
+    events = service.get_events_between(
+        datetime(2026, 1, 1, 0, 0, tzinfo=MADRID),
+        datetime(2026, 8, 1, 0, 0, tzinfo=MADRID),
+    )
+
+    assert len(events) == 2
+    winter_event, summer_event = events
+
+    assert winter_event.time_local.tzname() == "CET"
+    assert winter_event.time_local.isoformat().endswith("+01:00")
+    winter_meta = winter_event.canonical_quantity.provenance["official_madrid_time"]
+    assert winter_meta == {
+        "timezone": "Europe/Madrid",
+        "abbreviation": "CET",
+        "utc_offset": "+01:00",
+        "iso8601": winter_event.time_local.isoformat(),
+    }
+
+    assert summer_event.time_local.tzname() == "CEST"
+    assert summer_event.time_local.isoformat().endswith("+02:00")
+    summer_meta = summer_event.canonical_quantity.provenance["official_madrid_time"]
+    assert summer_meta == {
+        "timezone": "Europe/Madrid",
+        "abbreviation": "CEST",
+        "utc_offset": "+02:00",
+        "iso8601": summer_event.time_local.isoformat(),
+    }
+
+
+def test_canonical_payload_contains_local_visibility_celestial_region_and_global_maximum() -> None:
+    raw = RawCalendarEvent(
+        event_type="local_solar_eclipse",
+        label_es="Eclipse solar local",
+        time_utc=datetime(2024, 4, 8, 18, 43, 12, tzinfo=UTC),
+        body="sun",
+        details={"fixture": "2024-total-eclipse"},
+    )
+    service = EventCalendarService(_observer(), source=FakeSource((raw,)))
+
+    event = service.get_events_between(
+        datetime(2024, 4, 8, 0, 0, tzinfo=MADRID),
+        datetime(2024, 4, 9, 0, 0, tzinfo=MADRID),
+    )[0]
+    provenance = event.canonical_quantity.provenance
+
+    local = provenance["local_circumstances"]
+    assert math.isfinite(local["altitude_deg"])
+    assert math.isfinite(local["azimuth_deg"])
+    assert local["elevation_above_horizon_deg"] == pytest.approx(local["altitude_deg"])
+    assert isinstance(local["above_horizon"], bool)
+
+    celestial = provenance["celestial_region"]
+    assert math.isfinite(celestial["right_ascension_hours"])
+    assert math.isfinite(celestial["declination_deg"])
+    assert celestial["constellation_symbol"]
+    assert celestial["constellation_name"]
+
+    global_maximum = provenance["global_maximum"]
+    assert global_maximum["status"] == "available"
+    assert math.isfinite(global_maximum["latitude_deg"])
+    assert math.isfinite(global_maximum["longitude_deg"])
+    assert global_maximum["region_geographic"] is None
+    assert global_maximum["region_status"].startswith("NO_VERIFICADO")
+
+    assert event.details["global_maximum"] == global_maximum
+    assert event.details["local_circumstances"] == local
+    assert event.details["celestial_region"] == celestial

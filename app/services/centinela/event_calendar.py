@@ -13,6 +13,23 @@ from app.services.astronomy_core import ENGINE_NAME, ENGINE_SOURCE_ID, ENGINE_VE
 from app.services.centinela.research_adapters.contracts import CanonicalScientificQuantity
 
 
+MADRID_TIMEZONE = "Europe/Madrid"
+MADRID_ZONE = ZoneInfo(MADRID_TIMEZONE)
+
+_BODY_TO_ENGINE = {
+    AstronomyBody.SUN.value: ae.Body.Sun,
+    AstronomyBody.MOON.value: ae.Body.Moon,
+    AstronomyBody.MERCURY.value: ae.Body.Mercury,
+    AstronomyBody.VENUS.value: ae.Body.Venus,
+    AstronomyBody.MARS.value: ae.Body.Mars,
+    AstronomyBody.JUPITER.value: ae.Body.Jupiter,
+    AstronomyBody.SATURN.value: ae.Body.Saturn,
+    AstronomyBody.URANUS.value: ae.Body.Uranus,
+    AstronomyBody.NEPTUNE.value: ae.Body.Neptune,
+    AstronomyBody.PLUTO.value: ae.Body.Pluto,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class RawCalendarEvent:
     event_type: str
@@ -267,7 +284,7 @@ class AstronomyEngineEventSource:
 
 
 class EventCalendarService:
-    """Observer-local agenda backed by deterministic local ephemeris calculations."""
+    """Observer agenda with Madrid official time and deterministic ephemerides."""
 
     def __init__(
         self,
@@ -277,7 +294,10 @@ class EventCalendarService:
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.observer = observer
-        self._zone = ZoneInfo(observer.timezone)
+        # Product time display is deliberately fixed to Spain's mainland
+        # official civil time. ZoneInfo applies CET/CEST dynamically from
+        # the IANA tz database; offsets are never hardcoded.
+        self._zone = MADRID_ZONE
         self._source = source or AstronomyEngineEventSource()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
@@ -286,7 +306,8 @@ class EventCalendarService:
             f"lat={self.observer.latitude_deg:.8f};"
             f"lon={self.observer.longitude_deg:.8f};"
             f"elevation_m={self.observer.elevation_m:.3f};"
-            f"timezone={self.observer.timezone}"
+            f"observer_timezone={self.observer.timezone};"
+            f"official_timezone={MADRID_TIMEZONE}"
         )
 
     def _local_moment(self, moment: datetime | None = None) -> datetime:
@@ -295,10 +316,176 @@ class EventCalendarService:
             raise ValueError("agenda moment must be timezone-aware")
         return value.astimezone(self._zone)
 
+    @staticmethod
+    def _offset_text(value: datetime) -> str:
+        compact = value.strftime("%z")
+        if len(compact) != 5:
+            return compact
+        return f"{compact[:3]}:{compact[3:]}"
+
+    def _official_time_metadata(self, time_utc: datetime) -> dict[str, Any]:
+        madrid = time_utc.astimezone(self._zone)
+        return {
+            "timezone": MADRID_TIMEZONE,
+            "abbreviation": madrid.tzname(),
+            "utc_offset": self._offset_text(madrid),
+            "iso8601": madrid.isoformat(),
+        }
+
+    def _ae_observer(self) -> Any:
+        return ae.Observer(
+            self.observer.latitude_deg,
+            self.observer.longitude_deg,
+            self.observer.elevation_m,
+        )
+
+    def _local_and_celestial_metadata(
+        self,
+        raw: RawCalendarEvent,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        engine_body = _BODY_TO_ENGINE.get(raw.body or "")
+        if engine_body is None:
+            unavailable = {
+                "status": "not_available",
+                "reason": "event has no supported Solar System body",
+            }
+            return unavailable, unavailable
+
+        event_time = AstronomyEngineEventSource._to_engine_time(raw.time_utc)
+        observer = self._ae_observer()
+
+        eqd = ae.Equator(
+            engine_body,
+            event_time,
+            observer,
+            True,
+            True,
+        )
+        horizon = ae.Horizon(
+            event_time,
+            observer,
+            eqd.ra,
+            eqd.dec,
+            ae.Refraction.Normal,
+        )
+
+        eqj = ae.Equator(
+            engine_body,
+            event_time,
+            observer,
+            False,
+            True,
+        )
+        constellation = ae.Constellation(eqj.ra, eqj.dec)
+
+        local = {
+            "observer_name": self.observer.name,
+            "latitude_deg": self.observer.latitude_deg,
+            "longitude_deg": self.observer.longitude_deg,
+            "elevation_m": self.observer.elevation_m,
+            "altitude_deg": float(horizon.altitude),
+            "azimuth_deg": float(horizon.azimuth),
+            "elevation_above_horizon_deg": float(horizon.altitude),
+            "above_horizon": bool(horizon.altitude > 0.0),
+            "refraction": "normal",
+        }
+        celestial = {
+            "frame": "J2000",
+            "right_ascension_hours": float(eqj.ra),
+            "declination_deg": float(eqj.dec),
+            "constellation_symbol": constellation.symbol,
+            "constellation_name": constellation.name,
+        }
+        return local, celestial
+
+    def _global_maximum_metadata(
+        self,
+        raw: RawCalendarEvent,
+    ) -> dict[str, Any]:
+        if raw.event_type == "local_solar_eclipse":
+            start = AstronomyEngineEventSource._to_engine_time(
+                raw.time_utc - timedelta(days=2)
+            )
+            eclipse = ae.SearchGlobalSolarEclipse(start)
+            peak_utc = AstronomyEngineEventSource._from_engine_time(eclipse.peak)
+            if abs((peak_utc - raw.time_utc).total_seconds()) > 3 * 86400:
+                return {
+                    "status": "not_matched",
+                    "reason": "global eclipse search did not match local eclipse window",
+                    "region_geographic": None,
+                    "region_status": "NO_VERIFICADO",
+                }
+
+            latitude_raw = getattr(eclipse, "latitude", None)
+            longitude_raw = getattr(eclipse, "longitude", None)
+            try:
+                latitude = float(latitude_raw)
+                longitude = float(longitude_raw)
+            except (TypeError, ValueError):
+                latitude = math.nan
+                longitude = math.nan
+            coordinates_defined = math.isfinite(latitude) and math.isfinite(longitude)
+            return {
+                "status": "available" if coordinates_defined else "not_defined",
+                "kind": eclipse.kind.name.lower(),
+                "peak_utc": peak_utc.isoformat(),
+                "latitude_deg": latitude if coordinates_defined else None,
+                "longitude_deg": longitude if coordinates_defined else None,
+                "region_geographic": None,
+                "region_status": (
+                    "NO_VERIFICADO — Astronomy Engine supplies geographic "
+                    "coordinates, but the local runtime has no authoritative "
+                    "geographic-region/continent resolver"
+                ),
+                "definition_note": (
+                    "Latitude/longitude represent the center of the Moon's "
+                    "shadow at global peak for total/annular eclipses. They "
+                    "are undefined for partial solar eclipses."
+                ),
+            }
+
+        if raw.event_type == "lunar_eclipse":
+            return {
+                "status": "not_applicable",
+                "latitude_deg": None,
+                "longitude_deg": None,
+                "region_geographic": None,
+                "reason": (
+                    "A lunar eclipse has a global peak instant but no unique "
+                    "terrestrial surface point of maximum; visibility spans "
+                    "the night hemisphere."
+                ),
+            }
+
+        return {
+            "status": "not_applicable",
+            "latitude_deg": None,
+            "longitude_deg": None,
+            "region_geographic": None,
+            "reason": "this event has no scientifically defined terrestrial maximum point",
+        }
+
     def _to_calendar_event(self, raw: RawCalendarEvent) -> CalendarEvent:
-        local_time = raw.time_utc.astimezone(self._zone)
+        official_time = raw.time_utc.astimezone(self._zone)
         occurrence = raw.time_utc.isoformat()
         body_key = raw.body or "global"
+
+        local_circumstances, celestial_region = (
+            self._local_and_celestial_metadata(raw)
+        )
+        global_maximum = self._global_maximum_metadata(raw)
+        official_time_metadata = self._official_time_metadata(raw.time_utc)
+
+        details = dict(raw.details)
+        details.update(
+            {
+                "official_madrid_time": official_time_metadata,
+                "local_circumstances": local_circumstances,
+                "global_maximum": global_maximum,
+                "celestial_region": celestial_region,
+            }
+        )
+
         canonical = CanonicalScientificQuantity(
             subject=f"astronomy-event:{raw.event_type}:{body_key}:{occurrence}",
             quantity="event_time",
@@ -321,8 +508,11 @@ class EventCalendarService:
                     "elevation_m": self.observer.elevation_m,
                     "timezone": self.observer.timezone,
                 },
-                "event_details": dict(raw.details),
-                "local_time": local_time.isoformat(),
+                "official_madrid_time": official_time_metadata,
+                "local_circumstances": local_circumstances,
+                "global_maximum": global_maximum,
+                "celestial_region": celestial_region,
+                "event_details": details,
                 "network_required": False,
                 "auto_publication": False,
             },
@@ -331,9 +521,9 @@ class EventCalendarService:
             event_type=raw.event_type,
             label_es=raw.label_es,
             time_utc=raw.time_utc,
-            time_local=local_time,
+            time_local=official_time,
             body=raw.body,
-            details=dict(raw.details),
+            details=details,
             canonical_quantity=canonical,
         )
 

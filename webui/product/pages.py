@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import tomllib
 from datetime import datetime
@@ -17,7 +16,10 @@ from app.services.centinela.control_center import (
     CONTROL_CENTER_VERSION,
     CentinelaControlCenter,
 )
-from app.services.centinela.event_calendar import EventCalendarService
+from app.services.centinela.event_calendar import (
+    MADRID_TIMEZONE,
+    EventCalendarService,
+)
 from app.services.centinela.orchestration import JobStatus, ProjectState
 from app.services.centinela.research_adapters.integration import C3ResearchControlCenter
 
@@ -147,8 +149,9 @@ def _render_project_status(project) -> None:
 def _agenda_observer_controls() -> ObserverContext | None:
     st.subheader("Contexto del observador")
     st.caption(
-        "La Agenda Futura calcula circunstancias para este punto geográfico y "
-        "respeta su zona horaria IANA."
+        "La Agenda Futura calcula circunstancias para este punto geográfico. "
+        "La hora mostrada es siempre la hora oficial peninsular Europe/Madrid, "
+        "con CET/CEST resuelto dinámicamente por zoneinfo."
     )
     c1, c2 = st.columns(2)
     latitude = c1.number_input(
@@ -176,11 +179,7 @@ def _agenda_observer_controls() -> ObserverContext | None:
         format="%.1f",
         key="agenda-elevation",
     )
-    timezone_name = c4.text_input(
-        "Zona horaria IANA",
-        value="Europe/Madrid",
-        key="agenda-timezone",
-    )
+    c4.metric("Hora oficial peninsular", MADRID_TIMEZONE)
     observer_name = st.text_input(
         "Nombre del lugar",
         value="Valladolid",
@@ -191,7 +190,7 @@ def _agenda_observer_controls() -> ObserverContext | None:
             latitude_deg=float(latitude),
             longitude_deg=float(longitude),
             elevation_m=float(elevation),
-            timezone=timezone_name.strip(),
+            timezone=MADRID_TIMEZONE,
             name=observer_name.strip() or None,
         )
     except Exception as exc:
@@ -216,8 +215,66 @@ def _observer_summary(observer: ObserverContext) -> str:
     name = observer.name or "Observador"
     return (
         f"{name} · {observer.latitude_deg:.6f}°, {observer.longitude_deg:.6f}° · "
-        f"{observer.elevation_m:.1f} m · {observer.timezone}"
+        f"{observer.elevation_m:.1f} m · hora oficial {MADRID_TIMEZONE}"
     )
+
+
+def _official_madrid_time(event) -> str:
+    metadata = event.canonical_quantity.provenance["official_madrid_time"]
+    return (
+        f"{metadata['iso8601']} · "
+        f"{metadata['abbreviation']} ({metadata['utc_offset']})"
+    )
+
+
+def _visibility_and_maximum(event) -> str:
+    provenance = event.canonical_quantity.provenance
+    local = provenance.get("local_circumstances") or {}
+    global_maximum = provenance.get("global_maximum") or {}
+    celestial = provenance.get("celestial_region") or {}
+
+    parts: list[str] = []
+    if local.get("status") == "not_available":
+        parts.append("Local: no disponible")
+    else:
+        visibility = "sobre el horizonte" if local.get("above_horizon") else "bajo el horizonte"
+        parts.append(
+            "Local: "
+            f"Alt {float(local['altitude_deg']):.2f}° · "
+            f"Az {float(local['azimuth_deg']):.2f}° · "
+            f"{visibility}"
+        )
+
+    if global_maximum.get("status") == "available":
+        region = global_maximum.get("region_geographic") or "región no verificada"
+        parts.append(
+            "Máximo terrestre: "
+            f"{float(global_maximum['latitude_deg']):.4f}°, "
+            f"{float(global_maximum['longitude_deg']):.4f}° · "
+            f"{region}"
+        )
+    elif global_maximum.get("status") == "not_applicable":
+        parts.append(
+            "Máximo terrestre: no aplicable · "
+            f"{global_maximum.get('reason') or 'sin punto terrestre único'}"
+        )
+    elif global_maximum.get("status") is not None:
+        parts.append(
+            "Máximo terrestre: "
+            f"{global_maximum.get('status')} · "
+            f"{global_maximum.get('region_status') or global_maximum.get('reason') or '—'}"
+        )
+
+    if celestial.get("status") == "not_available":
+        parts.append("Región celeste: no disponible")
+    else:
+        parts.append(
+            "Cielo: "
+            f"RA {float(celestial['right_ascension_hours']):.4f} h · "
+            f"Dec {float(celestial['declination_deg']):+.3f}° · "
+            f"{celestial['constellation_name']} ({celestial['constellation_symbol']})"
+        )
+    return " | ".join(parts)
 
 
 def _agenda_rows(events) -> list[dict[str, Any]]:
@@ -225,16 +282,12 @@ def _agenda_rows(events) -> list[dict[str, Any]]:
     for event in events:
         rows.append(
             {
-                "Hora local": event.time_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
-                "Fenómeno": event.label_es,
-                "Tipo": event.event_type,
-                "Cuerpo": event.body or "—",
-                "Observador": event.canonical_quantity.provenance["observer"]["timezone"],
-                "Detalles": json.dumps(
-                    event.details,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    default=str,
+                "Hora Oficial Madrid (CET/CEST)": _official_madrid_time(event),
+                "Fenómeno / Cuerpo": (
+                    f"{event.label_es} / {event.body or '—'}"
+                ),
+                "Visibilidad Local / Coordenadas del Máximo": (
+                    _visibility_and_maximum(event)
                 ),
             }
         )
@@ -250,7 +303,8 @@ def _render_agenda_futura(
     ui = ui or st
     ui.subheader("Agenda Futura")
     ui.caption(
-        "Cálculo local con Astronomy Engine. Los adaptadores C3 de investigación "
+        "Cálculo local con Astronomy Engine. Hora oficial peninsular resuelta "
+        "con Europe/Madrid (CET/CEST). Los adaptadores C3 de investigación "
         "externa no se invocan desde esta vista y la publicación automática sigue desactivada."
     )
     selected_filter = ui.radio(
@@ -474,7 +528,8 @@ def create_video_page() -> None:
         st.write("Producción automática iniciada.")
         st.progress(0.0, text="Preparando pipeline…")
     st.caption(
-        "No se publicará nada automáticamente. La revisión y aprobación humana siguen siendo obligatorias."
+        "No se publicará nada automáticamente. La revisión y aprobación humana "
+        "siguen siendo obligatorias."
     )
 
 
@@ -671,5 +726,6 @@ def engineering_page() -> None:
         "artefactos técnicos. No forman parte del flujo normal de crear un vídeo."
     )
     st.write(
-        "Utiliza las entradas adicionales de este grupo sólo para diagnóstico, validación o A/B técnico."
+        "Utiliza las entradas adicionales de este grupo sólo para diagnóstico, "
+        "validación o A/B técnico."
     )

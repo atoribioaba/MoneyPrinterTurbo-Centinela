@@ -91,10 +91,24 @@ def test_agenda_panel_renders_with_local_engine_when_external_network_is_denied(
 
     assert ui.errors == []
     assert ui.rows
-    assert all("Hora local" in row for row in ui.rows)
-    assert all("Tipo" in row for row in ui.rows)
-    assert all("Observador" in row for row in ui.rows)
-    assert all("Detalles" in row for row in ui.rows)
+    expected_columns = {
+        "Hora Oficial Madrid (CET/CEST)",
+        "Fenómeno / Cuerpo",
+        "Visibilidad Local / Coordenadas del Máximo",
+    }
+    assert all(set(row) == expected_columns for row in ui.rows)
+    assert all("CEST" in row["Hora Oficial Madrid (CET/CEST)"] for row in ui.rows)
+    assert all("+02:00" in row["Hora Oficial Madrid (CET/CEST)"] for row in ui.rows)
+    assert all("Local:" in row["Visibilidad Local / Coordenadas del Máximo"] for row in ui.rows)
+    assert all("Cielo:" in row["Visibilidad Local / Coordenadas del Máximo"] for row in ui.rows)
+    assert all(
+        "Máximo terrestre:" in row["Visibilidad Local / Coordenadas del Máximo"]
+        for row in ui.rows
+    )
+
+
+def test_webui_uses_official_madrid_timezone_contract() -> None:
+    assert pages.MADRID_TIMEZONE == "Europe/Madrid"
 
 
 @pytest.mark.parametrize(
