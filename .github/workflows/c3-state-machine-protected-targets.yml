@@ -7,9 +7,14 @@ on:
       - centinela-cert/c3-f58-review-gate-hardening-v0.1
     paths:
       - .github/workflows/c3-state-machine-protected-targets.yml
+      - app/config/__init__.py
+      - app/services/upload_post.py
+      - app/services/task.py
       - app/services/centinela/orchestration/**
       - app/services/centinela/production_spine/**
+      - webui/product/__init__.py
       - scripts/centinela_guard_protected_state_boundary.py
+      - test/services/test_centinela_remote_hardening.py
       - test/services/test_centinela_orchestration.py
       - test/services/test_state_machine_protected_targets.py
       - test/services/test_production_spine.py
@@ -21,9 +26,14 @@ on:
       - centinela-cert/c3-f58-readiness-v0.1
     paths:
       - .github/workflows/c3-state-machine-protected-targets.yml
+      - app/config/__init__.py
+      - app/services/upload_post.py
+      - app/services/task.py
       - app/services/centinela/orchestration/**
       - app/services/centinela/production_spine/**
+      - webui/product/__init__.py
       - scripts/centinela_guard_protected_state_boundary.py
+      - test/services/test_centinela_remote_hardening.py
       - test/services/test_centinela_orchestration.py
       - test/services/test_state_machine_protected_targets.py
       - test/services/test_production_spine.py
@@ -73,6 +83,7 @@ jobs:
           app/services/centinela/production_spine/spine.py
           app/services/centinela/production_spine/review_gate.py
           scripts/centinela_guard_protected_state_boundary.py
+          test/services/test_centinela_remote_hardening.py
           test/services/test_centinela_orchestration.py
           test/services/test_state_machine_protected_targets.py
           test/services/test_production_spine.py
@@ -82,6 +93,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: >-
           uv run --no-sync ruff check
+          app/config/__init__.py
+          app/services/upload_post.py
+          webui/product/__init__.py
+          test/services/test_centinela_remote_hardening.py
           app/services/centinela/orchestration/__init__.py
           app/services/centinela/orchestration/protected_state_machine.py
           scripts/centinela_guard_protected_state_boundary.py
@@ -97,6 +112,7 @@ jobs:
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=protected-targets-${{ matrix.os }}-${{ matrix.python-version }}.xml
+          test/services/test_centinela_remote_hardening.py
           test/services/test_centinela_orchestration.py
           test/services/test_state_machine_protected_targets.py
           test/services/test_production_spine.py

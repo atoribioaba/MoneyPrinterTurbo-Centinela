@@ -11,6 +11,11 @@ from loguru import logger
 from app.config import config
 
 
+# EL CENTINELA DEL UNIVERSO invariant: generated outputs are never published
+# automatically. Manual publication remains a separate, explicit action.
+AUTO_PUBLICATION = False
+
+
 class UploadPostService:
     API_BASE = "https://api.upload-post.com"
 
@@ -19,7 +24,7 @@ class UploadPostService:
         self.username = config.app.get("upload_post_username", "")
         self.enabled = config.app.get("upload_post_enabled", False)
         self.platforms = config.app.get("upload_post_platforms", ["tiktok", "instagram"])
-        self.auto_upload = config.app.get("upload_post_auto_upload", False)
+        self.auto_upload = AUTO_PUBLICATION
         self.youtube_privacy_status = config.app.get("upload_post_youtube_privacy_status", "public")
 
     def is_configured(self) -> bool:
