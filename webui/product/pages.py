@@ -1,31 +1,49 @@
 from __future__ import annotations
 
+import json
 import logging
 import tomllib
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
 
+from app.models.astronomy import ObserverContext
 from app.services.astronomy_core import get_astronomy_health
 from app.services.centinela.control_center import (
     CENTINELA_EDITION_LABEL,
     CONTROL_CENTER_VERSION,
     CentinelaControlCenter,
 )
+from app.services.centinela.event_calendar import EventCalendarService
 from app.services.centinela.orchestration import JobStatus, ProjectState
+from app.services.centinela.research_adapters.integration import C3ResearchControlCenter
+
 
 LOGGER = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[2]
 
+AGENDA_FILTER_TODAY = "Hoy"
+AGENDA_FILTER_MONTH = "Este mes"
+AGENDA_FILTER_365 = "Próximos 365 días"
+AGENDA_FILTERS = (
+    AGENDA_FILTER_TODAY,
+    AGENDA_FILTER_MONTH,
+    AGENDA_FILTER_365,
+)
+AGENDA_SESSION_KEY = "centinela_agenda_futura"
+
+
+def _new_control_center() -> C3ResearchControlCenter:
+    """Product authority with network-enabled RESEARCH and closed downstream stages."""
+    return C3ResearchControlCenter(register_default_av=True)
+
 
 @st.cache_resource(show_spinner=False)
-def get_control_center() -> CentinelaControlCenter:
-    service = CentinelaControlCenter(
-        register_default_writer_room=True,
-        register_default_av=True,
-    )
+def get_control_center() -> C3ResearchControlCenter:
+    service = _new_control_center()
     service.recover_runtime()
     return service
 
@@ -124,6 +142,165 @@ def _render_project_status(project) -> None:
         for job in active:
             st.write(f"**{_job_status_text(job.status)}** · {job.message or job.job_type}")
             st.progress(job.progress / 100.0, text=f"{job.progress}%")
+
+
+def _agenda_observer_controls() -> ObserverContext | None:
+    st.subheader("Contexto del observador")
+    st.caption(
+        "La Agenda Futura calcula circunstancias para este punto geográfico y "
+        "respeta su zona horaria IANA."
+    )
+    c1, c2 = st.columns(2)
+    latitude = c1.number_input(
+        "Latitud (°)",
+        min_value=-90.0,
+        max_value=90.0,
+        value=41.6523,
+        format="%.6f",
+        key="agenda-latitude",
+    )
+    longitude = c2.number_input(
+        "Longitud (°)",
+        min_value=-180.0,
+        max_value=180.0,
+        value=-4.7245,
+        format="%.6f",
+        key="agenda-longitude",
+    )
+    c3, c4 = st.columns(2)
+    elevation = c3.number_input(
+        "Elevación (m)",
+        min_value=-500.0,
+        max_value=100000.0,
+        value=698.0,
+        format="%.1f",
+        key="agenda-elevation",
+    )
+    timezone_name = c4.text_input(
+        "Zona horaria IANA",
+        value="Europe/Madrid",
+        key="agenda-timezone",
+    )
+    observer_name = st.text_input(
+        "Nombre del lugar",
+        value="Valladolid",
+        key="agenda-observer-name",
+    )
+    try:
+        return ObserverContext(
+            latitude_deg=float(latitude),
+            longitude_deg=float(longitude),
+            elevation_m=float(elevation),
+            timezone=timezone_name.strip(),
+            name=observer_name.strip() or None,
+        )
+    except Exception as exc:
+        st.error(f"Contexto del observador inválido: {exc}")
+        return None
+
+
+def _agenda_events(
+    service: EventCalendarService,
+    selected_filter: str,
+):
+    if selected_filter == AGENDA_FILTER_TODAY:
+        return service.get_events_today()
+    if selected_filter == AGENDA_FILTER_MONTH:
+        return service.get_events_this_month()
+    if selected_filter == AGENDA_FILTER_365:
+        return service.get_events_next_365_days()
+    raise ValueError(f"Filtro de Agenda Futura desconocido: {selected_filter}")
+
+
+def _observer_summary(observer: ObserverContext) -> str:
+    name = observer.name or "Observador"
+    return (
+        f"{name} · {observer.latitude_deg:.6f}°, {observer.longitude_deg:.6f}° · "
+        f"{observer.elevation_m:.1f} m · {observer.timezone}"
+    )
+
+
+def _agenda_rows(events) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for event in events:
+        rows.append(
+            {
+                "Hora local": event.time_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                "Fenómeno": event.label_es,
+                "Tipo": event.event_type,
+                "Cuerpo": event.body or "—",
+                "Observador": event.canonical_quantity.provenance["observer"]["timezone"],
+                "Detalles": json.dumps(
+                    event.details,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                ),
+            }
+        )
+    return rows
+
+
+def _render_agenda_futura(
+    observer: ObserverContext,
+    *,
+    ui: Any = None,
+    calendar_factory: Callable[[ObserverContext], EventCalendarService] = EventCalendarService,
+) -> None:
+    ui = ui or st
+    ui.subheader("Agenda Futura")
+    ui.caption(
+        "Cálculo local con Astronomy Engine. Los adaptadores C3 de investigación "
+        "externa no se invocan desde esta vista y la publicación automática sigue desactivada."
+    )
+    selected_filter = ui.radio(
+        "Intervalo",
+        options=AGENDA_FILTERS,
+        horizontal=True,
+        key="agenda-filter",
+    )
+    refresh = ui.button(
+        "Actualizar Agenda Futura",
+        type="primary",
+        use_container_width=True,
+        key="agenda-refresh",
+    )
+
+    observer_key = _observer_summary(observer)
+    state = ui.session_state.get(AGENDA_SESSION_KEY)
+    if refresh:
+        try:
+            calendar = calendar_factory(observer)
+            events = _agenda_events(calendar, selected_filter)
+            state = {
+                "filter": selected_filter,
+                "observer": observer_key,
+                "events": events,
+            }
+            ui.session_state[AGENDA_SESSION_KEY] = state
+        except Exception as exc:
+            LOGGER.exception("Agenda Futura calculation failed")
+            ui.error(f"No se pudo calcular la Agenda Futura: {exc}")
+            return
+
+    if not state:
+        ui.info("Selecciona un intervalo y actualiza la Agenda Futura.")
+        return
+    if state.get("observer") != observer_key:
+        ui.info("El observador ha cambiado. Actualiza la Agenda Futura.")
+        return
+
+    events = tuple(state.get("events") or ())
+    ui.caption(f"Observador: {observer_key}")
+    ui.caption(f"Filtro calculado: {state.get('filter', selected_filter)}")
+    if not events:
+        ui.info("No se han encontrado eventos astronómicos en este intervalo.")
+        return
+    ui.dataframe(
+        _agenda_rows(events),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def home_page() -> None:
@@ -291,7 +468,6 @@ def create_video_page() -> None:
         )
         return
 
-
     st.session_state["centinela_project_id"] = project.project_id
     st.success(f"Proyecto creado: {project.title}")
     if started is not None:
@@ -347,7 +523,7 @@ def observatory_page() -> None:
     c3.metric("Runtime", "LOCAL / CPU")
     st.write(
         "El núcleo de efemérides está disponible sin red. La capa de producto para "
-        "planificación observacional se ampliará sin duplicar este motor."
+        "planificación observacional se amplía sin duplicar este motor."
     )
     st.caption(
         "Los datos destinados a publicación sobre actualidad, misiones, eclipses o descubrimientos "
@@ -356,13 +532,18 @@ def observatory_page() -> None:
 
 
 def ephemerides_page() -> None:
-    _header("Efemérides", "Vista de producto en construcción sobre Astronomy Engine.")
+    _header("Efemérides", "Agenda Futura local sobre Astronomy Engine.")
     health = get_astronomy_health()
     st.success(f"Motor disponible: {health.engine} {health.engine_version}")
     st.write(
-        "R5 no crea un segundo calculador. Esta sección queda preparada para consumir el núcleo "
-        "astronómico existente con contexto de observación del proyecto."
+        "La Agenda usa el núcleo astronómico local. Los adaptadores externos del "
+        "C3ResearchControlCenter sólo pueden intervenir durante RESEARCH y nunca "
+        "desde esta consulta de efemérides."
     )
+    observer = _agenda_observer_controls()
+    if observer is None:
+        return
+    _render_agenda_futura(observer)
 
 
 def library_page() -> None:

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "dataset_id": "usno-local-solar-eclipse-2024-texas-v1",
+  "control": {
+    "provider": "U.S. Naval Observatory, Astronomical Applications Department",
+    "source_url": "https://aa.usno.navy.mil/calculated/eclipse/solar?eclipse=12024&height=156&label=Sigmund+and+Albert%27s+Observatory%2C+TX&lat=32.976292&lon=-96.582335&submit=Get+Data",
+    "source_kind": "independent frozen topocentric local circumstance",
+    "timescale": "UT1",
+    "retrieved_on": "2026-09-01",
+    "note": "USNO local Solar Eclipse Computer reports Maximum Eclipse at 18:43:12.5 UT1 for this exact observer. Astronomy Engine returns UTC-like civil time; tolerance covers UT1-UTC and independent-model differences."
+  },
+  "observer": {
+    "latitude_deg": 32.976292,
+    "longitude_deg": -96.582335,
+    "elevation_m": 156.0,
+    "timezone": "America/Chicago",
+    "name": "Sigmund and Albert's Observatory, TX"
+  },
+  "window": {
+    "start_local": "2024-04-08T00:00:00-05:00",
+    "end_local": "2024-04-09T00:00:00-05:00"
+  },
+  "events": [
+    {
+      "event_type": "local_solar_eclipse",
+      "body": "sun",
+      "expected_utc": "2024-04-08T18:43:12.5Z",
+      "expected_details": {
+        "kind": "total"
+      },
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    }
+  ]
+}
