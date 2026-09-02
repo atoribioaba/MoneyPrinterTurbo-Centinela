@@ -4,14 +4,17 @@ import os
 from datetime import date, datetime
 from typing import Any
 
-from .contracts import ResearchBundle, ResearchContext, ResearchDataError
-from .local import SkyfieldDE440Adapter, SunPyLocalAdapter
-from .remote import (
-    MastHstJwstAdapter,
+from .canonicalized import (
     MinorPlanetCenterAdapter,
     NasaExoplanetArchiveAdapter,
-    NasaOpenAdapter,
+    SkyfieldDE440Adapter,
+    SunPyLocalAdapter,
     WikidataAdapter,
+)
+from .contracts import ResearchBundle, ResearchContext, ResearchDataError
+from .remote import (
+    MastHstJwstAdapter,
+    NasaOpenAdapter,
     WikimediaCommonsAdapter,
     build_esa_gaia_tap_adapter,
     build_eso_tap_adapter,
@@ -54,12 +57,7 @@ def _datetime(value: Any, field_name: str) -> datetime:
 
 
 class C3AstronomyResearchRouter:
-    """
-    Explicit allow-list router for the RESEARCH stage.
-
-    It accepts only named adapters and bounded schemas; arbitrary URLs and arbitrary
-    SPARQL are deliberately not supported.
-    """
+    """Explicit allow-list router for C3 RESEARCH-only astronomy adapters."""
 
     def __init__(
         self,
@@ -136,13 +134,17 @@ class C3AstronomyResearchRouter:
             spec = request["nasa_apod"]
             if not isinstance(spec, dict):
                 raise ResearchDataError("nasa_apod request must be an object")
-            bundles.append(nasa.apod(context, day=_date(spec.get("date"), "nasa_apod.date")))
+            bundles.append(
+                nasa.apod(context, day=_date(spec.get("date"), "nasa_apod.date"))
+            )
 
         if "nasa_epic" in request:
             spec = request["nasa_epic"]
             if not isinstance(spec, dict):
                 raise ResearchDataError("nasa_epic request must be an object")
-            bundles.append(nasa.epic(context, day=_date(spec.get("date"), "nasa_epic.date")))
+            bundles.append(
+                nasa.epic(context, day=_date(spec.get("date"), "nasa_epic.date"))
+            )
 
         if "nasa_exoplanet" in request:
             spec = request["nasa_exoplanet"]
@@ -159,12 +161,11 @@ class C3AstronomyResearchRouter:
             spec = request["mpc"]
             if not isinstance(spec, dict):
                 raise ResearchDataError("mpc request must be an object")
-            bundles.append(
-                MinorPlanetCenterAdapter(self.transport).observations(
-                    context,
-                    str(spec.get("designation") or ""),
-                )
-            )
+            designation = str(spec.get("designation") or "")
+            adapter = MinorPlanetCenterAdapter(self.transport)
+            bundles.append(adapter.observations(context, designation))
+            if bool(spec.get("include_orbit")):
+                bundles.append(adapter.orbit(context, designation))
 
         if "mast" in request:
             spec = request["mast"]

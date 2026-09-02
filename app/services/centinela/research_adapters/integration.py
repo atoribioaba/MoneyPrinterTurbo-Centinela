@@ -8,18 +8,12 @@ from app.services.centinela.production_spine import ProductionSpine, SpineStage
 from app.services.centinela.project_foundation import ArtifactStore
 from app.services.centinela.writer_room import build_writer_room_stage_binding
 
+from .conflict_gate import build_c3_external_research_binding
 from .router import C3AstronomyResearchRouter
-from .spine_adapter import build_c3_external_research_binding
 
 
 class C3ResearchControlCenter(CentinelaControlCenter):
-    """
-    Opt-in Control Center with external astronomy network access at RESEARCH only.
-
-    The ordinary CentinelaControlCenter remains network-disabled. Choosing this class
-    is therefore the explicit authority boundary that enables remote scientific
-    research without granting network access to render or publication stages.
-    """
+    """Opt-in Control Center with external astronomy network access at RESEARCH only."""
 
     def __init__(
         self,
@@ -52,9 +46,7 @@ class C3ResearchControlCenter(CentinelaControlCenter):
             register_default_media=register_default_media,
             register_default_av=register_default_av,
             stage_bindings={
-                SpineStage.RESEARCH: build_c3_external_research_binding(
-                    research_router
-                ),
+                SpineStage.RESEARCH: build_c3_external_research_binding(research_router),
                 SpineStage.SCRIPT: build_writer_room_stage_binding(),
             },
             max_workers=max_workers,

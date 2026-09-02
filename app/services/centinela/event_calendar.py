@@ -3,14 +3,22 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
+from itertools import combinations
 from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
 import astronomy as ae
 
 from app.models.astronomy import AstronomyBody, AstronomyContextRequest, ObserverContext
-from app.services.astronomy_core import ENGINE_NAME, ENGINE_SOURCE_ID, ENGINE_VERSION, build_events
-from app.services.centinela.research_adapters.contracts import CanonicalScientificQuantity
+from app.services.astronomy_core import (
+    ENGINE_NAME,
+    ENGINE_SOURCE_ID,
+    ENGINE_VERSION,
+    build_events,
+)
+from app.services.centinela.research_adapters.contracts import (
+    CanonicalScientificQuantity,
+)
 
 
 MADRID_TIMEZONE = "Europe/Madrid"
@@ -28,6 +36,28 @@ _BODY_TO_ENGINE = {
     AstronomyBody.NEPTUNE.value: ae.Body.Neptune,
     AstronomyBody.PLUTO.value: ae.Body.Pluto,
 }
+
+# Only Moon-planet and planet-planet pairs are searched. The Sun is deliberately
+# excluded because planet-Sun conjunctions already use Astronomy Engine's
+# SearchRelativeLongitude primitives below.
+_APPARENT_CONJUNCTION_BODIES = (
+    (AstronomyBody.MOON, ae.Body.Moon),
+    (AstronomyBody.MERCURY, ae.Body.Mercury),
+    (AstronomyBody.VENUS, ae.Body.Venus),
+    (AstronomyBody.MARS, ae.Body.Mars),
+    (AstronomyBody.JUPITER, ae.Body.Jupiter),
+    (AstronomyBody.SATURN, ae.Body.Saturn),
+    (AstronomyBody.URANUS, ae.Body.Uranus),
+    (AstronomyBody.NEPTUNE, ae.Body.Neptune),
+)
+
+_CONJUNCTION_SCAN_STEP = timedelta(hours=12)
+_CONJUNCTION_REFINEMENT_SECONDS = 1.0
+# A broad candidate gate prevents every synodic local minimum from being
+# surfaced as a useful conjunction while still leaving the numerical minimum
+# itself unconstrained. This is product-selection metadata, not measurement
+# uncertainty.
+_CONJUNCTION_CANDIDATE_MAX_SEPARATION_DEG = 8.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,8 +117,10 @@ class AstronomyEngineEventSource:
         self,
         *,
         base_event_builder: Callable[..., list[Any]] = build_events,
+        include_apparent_conjunctions: bool = True,
     ) -> None:
         self._base_event_builder = base_event_builder
+        self._include_apparent_conjunctions = bool(include_apparent_conjunctions)
 
     @staticmethod
     def _to_engine_time(value: datetime) -> Any:
@@ -106,6 +138,14 @@ class AstronomyEngineEventSource:
     @staticmethod
     def _from_engine_time(value: Any) -> datetime:
         return value.Utc().astimezone(UTC)
+
+    @staticmethod
+    def _ae_observer(observer: ObserverContext) -> Any:
+        return ae.Observer(
+            observer.latitude_deg,
+            observer.longitude_deg,
+            observer.elevation_m,
+        )
 
     def _base_events(
         self,
@@ -201,13 +241,258 @@ class AstronomyEngineEventSource:
             cursor = self._to_engine_time(event_utc + timedelta(seconds=1))
         return result
 
+    @staticmethod
+    def _angular_separation_deg(
+        left_ra_hours: float,
+        left_dec_deg: float,
+        right_ra_hours: float,
+        right_dec_deg: float,
+    ) -> float:
+        left_ra = math.radians(left_ra_hours * 15.0)
+        right_ra = math.radians(right_ra_hours * 15.0)
+        left_dec = math.radians(left_dec_deg)
+        right_dec = math.radians(right_dec_deg)
+        dot = (
+            math.sin(left_dec) * math.sin(right_dec)
+            + math.cos(left_dec)
+            * math.cos(right_dec)
+            * math.cos(left_ra - right_ra)
+        )
+        return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+    @classmethod
+    def _apparent_pair_state(
+        cls,
+        observer: ObserverContext,
+        left_body: Any,
+        right_body: Any,
+        moment: datetime,
+    ) -> dict[str, Any]:
+        """Return topocentric apparent-of-date directions and spherical separation."""
+        event_time = cls._to_engine_time(moment)
+        topocenter = cls._ae_observer(observer)
+
+        def body_state(engine_body: Any) -> dict[str, Any]:
+            equator = ae.Equator(
+                engine_body,
+                event_time,
+                topocenter,
+                True,
+                True,
+            )
+            horizon = ae.Horizon(
+                event_time,
+                topocenter,
+                equator.ra,
+                equator.dec,
+                ae.Refraction.Normal,
+            )
+            return {
+                "right_ascension_hours": float(equator.ra),
+                "declination_deg": float(equator.dec),
+                "altitude_deg": float(horizon.altitude),
+                "azimuth_deg": float(horizon.azimuth),
+                "above_horizon": bool(horizon.altitude > 0.0),
+            }
+
+        left = body_state(left_body)
+        right = body_state(right_body)
+        separation = cls._angular_separation_deg(
+            left["right_ascension_hours"],
+            left["declination_deg"],
+            right["right_ascension_hours"],
+            right["declination_deg"],
+        )
+        return {
+            "separation_deg": separation,
+            "left": left,
+            "right": right,
+        }
+
+    @classmethod
+    def _refine_pair_minimum(
+        cls,
+        observer: ObserverContext,
+        left_body: Any,
+        right_body: Any,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[datetime, dict[str, Any]]:
+        """Golden-section search of a bracketed apparent angular minimum."""
+        if end <= start:
+            raise ValueError("conjunction refinement bracket must be increasing")
+
+        width = (end - start).total_seconds()
+        phi = (1.0 + math.sqrt(5.0)) / 2.0
+        left_seconds = 0.0
+        right_seconds = width
+
+        def evaluate(seconds: float) -> tuple[datetime, dict[str, Any]]:
+            moment = start + timedelta(seconds=seconds)
+            return moment, cls._apparent_pair_state(
+                observer,
+                left_body,
+                right_body,
+                moment,
+            )
+
+        c_seconds = right_seconds - (right_seconds - left_seconds) / phi
+        d_seconds = left_seconds + (right_seconds - left_seconds) / phi
+        c_moment, c_state = evaluate(c_seconds)
+        d_moment, d_state = evaluate(d_seconds)
+
+        for _ in range(80):
+            if right_seconds - left_seconds <= _CONJUNCTION_REFINEMENT_SECONDS:
+                break
+            if c_state["separation_deg"] <= d_state["separation_deg"]:
+                right_seconds = d_seconds
+                d_seconds, d_moment, d_state = c_seconds, c_moment, c_state
+                c_seconds = right_seconds - (right_seconds - left_seconds) / phi
+                c_moment, c_state = evaluate(c_seconds)
+            else:
+                left_seconds = c_seconds
+                c_seconds, c_moment, c_state = d_seconds, d_moment, d_state
+                d_seconds = left_seconds + (right_seconds - left_seconds) / phi
+                d_moment, d_state = evaluate(d_seconds)
+
+        best_seconds = (left_seconds + right_seconds) / 2.0
+        return evaluate(best_seconds)
+
+    def _apparent_conjunction_events(
+        self,
+        observer: ObserverContext,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> list[RawCalendarEvent]:
+        """Find Moon-planet and planet-planet apparent angular minima."""
+        if end_utc <= start_utc:
+            return []
+
+        result: list[RawCalendarEvent] = []
+        for (left_name, left_body), (right_name, right_body) in combinations(
+            _APPARENT_CONJUNCTION_BODIES,
+            2,
+        ):
+            samples: list[tuple[datetime, float]] = []
+            cursor = start_utc
+            while cursor < end_utc:
+                state = self._apparent_pair_state(
+                    observer,
+                    left_body,
+                    right_body,
+                    cursor,
+                )
+                samples.append((cursor, float(state["separation_deg"])))
+                cursor += _CONJUNCTION_SCAN_STEP
+            if not samples or samples[-1][0] < end_utc:
+                final_probe = min(end_utc, samples[-1][0] + _CONJUNCTION_SCAN_STEP)
+                if final_probe > samples[-1][0]:
+                    state = self._apparent_pair_state(
+                        observer,
+                        left_body,
+                        right_body,
+                        final_probe,
+                    )
+                    samples.append((final_probe, float(state["separation_deg"])))
+
+            for index in range(1, len(samples) - 1):
+                previous = samples[index - 1]
+                current = samples[index]
+                following = samples[index + 1]
+                if not (
+                    current[1] <= previous[1]
+                    and current[1] <= following[1]
+                ):
+                    continue
+
+                minimum_time, minimum = self._refine_pair_minimum(
+                    observer,
+                    left_body,
+                    right_body,
+                    previous[0],
+                    following[0],
+                )
+                separation = float(minimum["separation_deg"])
+                if separation > _CONJUNCTION_CANDIDATE_MAX_SEPARATION_DEG:
+                    continue
+                if not (start_utc <= minimum_time < end_utc):
+                    continue
+
+                pair = [left_name.value, right_name.value]
+                details = {
+                    "body_pair": pair,
+                    "minimum_separation_deg": separation,
+                    "left": dict(minimum["left"]),
+                    "right": dict(minimum["right"]),
+                    "both_above_horizon": bool(
+                        minimum["left"]["above_horizon"]
+                        and minimum["right"]["above_horizon"]
+                    ),
+                    "search_method": (
+                        "topocentric apparent angular minimum; "
+                        "12-hour deterministic scan + golden-section refinement"
+                    ),
+                    "coordinate_basis": "topocentric apparent equator/equinox of date",
+                    "horizon_refraction": "normal",
+                    "scan_step_seconds": _CONJUNCTION_SCAN_STEP.total_seconds(),
+                    "refinement_tolerance_seconds": (
+                        _CONJUNCTION_REFINEMENT_SECONDS
+                    ),
+                    "candidate_maximum_separation_deg": (
+                        _CONJUNCTION_CANDIDATE_MAX_SEPARATION_DEG
+                    ),
+                    "engine": ENGINE_NAME,
+                    "engine_version": ENGINE_VERSION,
+                }
+                result.append(
+                    RawCalendarEvent(
+                        event_type="apparent_conjunction",
+                        label_es=(
+                            f"Conjunción aparente de {left_name.value} "
+                            f"y {right_name.value}"
+                        ),
+                        time_utc=minimum_time,
+                        body=left_name.value,
+                        details=details,
+                    )
+                )
+
+        # A sampled flat minimum can create adjacent brackets. Collapse only
+        # numerical duplicates for the same pair, never distinct events.
+        result.sort(key=lambda event: event.time_utc)
+        deduplicated: list[RawCalendarEvent] = []
+        for event in result:
+            if deduplicated:
+                previous = deduplicated[-1]
+                if (
+                    previous.details.get("body_pair")
+                    == event.details.get("body_pair")
+                    and abs(
+                        (event.time_utc - previous.time_utc).total_seconds()
+                    )
+                    <= _CONJUNCTION_SCAN_STEP.total_seconds()
+                ):
+                    if (
+                        event.details["minimum_separation_deg"]
+                        < previous.details["minimum_separation_deg"]
+                    ):
+                        deduplicated[-1] = event
+                    continue
+            deduplicated.append(event)
+        return deduplicated
+
     def events_between(
         self,
         observer: ObserverContext,
         start_utc: datetime,
         end_utc: datetime,
     ) -> tuple[RawCalendarEvent, ...]:
-        if start_utc.tzinfo is None or end_utc.tzinfo is None:
+        if (
+            start_utc.tzinfo is None
+            or start_utc.utcoffset() is None
+            or end_utc.tzinfo is None
+            or end_utc.utcoffset() is None
+        ):
             raise ValueError("calendar boundaries must be timezone-aware")
         start_utc = start_utc.astimezone(UTC)
         end_utc = end_utc.astimezone(UTC)
@@ -272,6 +557,15 @@ class AstronomyEngineEventSource:
                 )
             )
 
+        if self._include_apparent_conjunctions:
+            events.extend(
+                self._apparent_conjunction_events(
+                    observer,
+                    start_utc,
+                    end_utc,
+                )
+            )
+
         deduplicated: dict[tuple[str, str | None, datetime], RawCalendarEvent] = {}
         for event in events:
             if start_utc <= event.time_utc < end_utc:
@@ -284,7 +578,7 @@ class AstronomyEngineEventSource:
 
 
 class EventCalendarService:
-    """Observer agenda with Madrid official time and deterministic ephemerides."""
+    """Observer-local agenda with separate official mainland-Spain presentation."""
 
     def __init__(
         self,
@@ -294,10 +588,8 @@ class EventCalendarService:
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.observer = observer
-        # Product time display is deliberately fixed to Spain's mainland
-        # official civil time. ZoneInfo applies CET/CEST dynamically from
-        # the IANA tz database; offsets are never hardcoded.
-        self._zone = MADRID_ZONE
+        self._observer_zone = ZoneInfo(observer.timezone)
+        self._madrid_zone = MADRID_ZONE
         self._source = source or AstronomyEngineEventSource()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
@@ -314,7 +606,7 @@ class EventCalendarService:
         value = moment if moment is not None else self._now_provider()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("agenda moment must be timezone-aware")
-        return value.astimezone(self._zone)
+        return value.astimezone(self._observer_zone)
 
     @staticmethod
     def _offset_text(value: datetime) -> str:
@@ -323,14 +615,37 @@ class EventCalendarService:
             return compact
         return f"{compact[:3]}:{compact[3:]}"
 
-    def _official_time_metadata(self, time_utc: datetime) -> dict[str, Any]:
-        madrid = time_utc.astimezone(self._zone)
+    def _time_metadata(
+        self,
+        time_utc: datetime,
+        *,
+        zone: ZoneInfo,
+        timezone_name: str,
+    ) -> dict[str, Any]:
+        local = time_utc.astimezone(zone)
         return {
-            "timezone": MADRID_TIMEZONE,
-            "abbreviation": madrid.tzname(),
-            "utc_offset": self._offset_text(madrid),
-            "iso8601": madrid.isoformat(),
+            "timezone": timezone_name,
+            "abbreviation": local.tzname(),
+            "utc_offset": self._offset_text(local),
+            "iso8601": local.isoformat(),
         }
+
+    def _official_time_metadata(self, time_utc: datetime) -> dict[str, Any]:
+        return self._time_metadata(
+            time_utc,
+            zone=self._madrid_zone,
+            timezone_name=MADRID_TIMEZONE,
+        )
+
+    def _observer_local_time_metadata(
+        self,
+        time_utc: datetime,
+    ) -> dict[str, Any]:
+        return self._time_metadata(
+            time_utc,
+            zone=self._observer_zone,
+            timezone_name=self.observer.timezone,
+        )
 
     def _ae_observer(self) -> Any:
         return ae.Observer(
@@ -411,7 +726,9 @@ class EventCalendarService:
             if abs((peak_utc - raw.time_utc).total_seconds()) > 3 * 86400:
                 return {
                     "status": "not_matched",
-                    "reason": "global eclipse search did not match local eclipse window",
+                    "reason": (
+                        "global eclipse search did not match local eclipse window"
+                    ),
                     "region_geographic": None,
                     "region_status": "NO_VERIFICADO",
                 }
@@ -424,7 +741,9 @@ class EventCalendarService:
             except (TypeError, ValueError):
                 latitude = math.nan
                 longitude = math.nan
-            coordinates_defined = math.isfinite(latitude) and math.isfinite(longitude)
+            coordinates_defined = (
+                math.isfinite(latitude) and math.isfinite(longitude)
+            )
             return {
                 "status": "available" if coordinates_defined else "not_defined",
                 "kind": eclipse.kind.name.lower(),
@@ -462,23 +781,146 @@ class EventCalendarService:
             "latitude_deg": None,
             "longitude_deg": None,
             "region_geographic": None,
-            "reason": "this event has no scientifically defined terrestrial maximum point",
+            "reason": (
+                "this event has no scientifically defined terrestrial maximum point"
+            ),
         }
 
+    def _canonical_quantity(
+        self,
+        *,
+        subject: str,
+        quantity: str,
+        epoch: str,
+        unit: str,
+        frame: str,
+        value: float,
+        display_precision: int | None,
+        provenance: dict[str, Any],
+    ) -> CanonicalScientificQuantity:
+        return CanonicalScientificQuantity(
+            subject=subject,
+            quantity=quantity,
+            epoch=epoch,
+            observer=self._observer_key(),
+            unit=unit,
+            frame=frame,
+            value=value,
+            uncertainty=None,
+            display_precision=display_precision,
+            source=ENGINE_SOURCE_ID,
+            provenance={
+                "engine": ENGINE_NAME,
+                "engine_version": ENGINE_VERSION,
+                "network_required": False,
+                "auto_publication": False,
+                **dict(provenance),
+            },
+        )
+
+    def _conjunction_quantities(
+        self,
+        raw: RawCalendarEvent,
+        *,
+        subject: str,
+        occurrence: str,
+    ) -> list[CanonicalScientificQuantity]:
+        if raw.event_type != "apparent_conjunction":
+            return []
+        pair = raw.details.get("body_pair")
+        left = raw.details.get("left")
+        right = raw.details.get("right")
+        if not (
+            isinstance(pair, list)
+            and len(pair) == 2
+            and isinstance(left, dict)
+            and isinstance(right, dict)
+        ):
+            return []
+
+        provenance = {
+            "event_type": raw.event_type,
+            "body_pair": list(pair),
+            "search_method": raw.details.get("search_method"),
+        }
+        quantities = [
+            self._canonical_quantity(
+                subject=subject,
+                quantity="minimum_apparent_separation",
+                epoch=occurrence,
+                unit="deg",
+                frame="TOPOCENTRIC_APPARENT_EQUATOR_OF_DATE",
+                value=float(raw.details["minimum_separation_deg"]),
+                display_precision=6,
+                provenance=provenance,
+            )
+        ]
+        for side_name, state in (("left", left), ("right", right)):
+            body = str(pair[0] if side_name == "left" else pair[1])
+            side_subject = f"{subject}:{body}"
+            quantities.extend(
+                (
+                    self._canonical_quantity(
+                        subject=side_subject,
+                        quantity="right_ascension",
+                        epoch=occurrence,
+                        unit="hour",
+                        frame="TOPOCENTRIC_APPARENT_EQUATOR_OF_DATE",
+                        value=float(state["right_ascension_hours"]),
+                        display_precision=6,
+                        provenance=provenance,
+                    ),
+                    self._canonical_quantity(
+                        subject=side_subject,
+                        quantity="declination",
+                        epoch=occurrence,
+                        unit="deg",
+                        frame="TOPOCENTRIC_APPARENT_EQUATOR_OF_DATE",
+                        value=float(state["declination_deg"]),
+                        display_precision=6,
+                        provenance=provenance,
+                    ),
+                    self._canonical_quantity(
+                        subject=side_subject,
+                        quantity="altitude",
+                        epoch=occurrence,
+                        unit="deg",
+                        frame="TOPOCENTRIC_HORIZON_REFRACTED",
+                        value=float(state["altitude_deg"]),
+                        display_precision=4,
+                        provenance=provenance,
+                    ),
+                    self._canonical_quantity(
+                        subject=side_subject,
+                        quantity="azimuth",
+                        epoch=occurrence,
+                        unit="deg",
+                        frame="TOPOCENTRIC_HORIZON_REFRACTED",
+                        value=float(state["azimuth_deg"]),
+                        display_precision=4,
+                        provenance=provenance,
+                    ),
+                )
+            )
+        return quantities
+
     def _to_calendar_event(self, raw: RawCalendarEvent) -> CalendarEvent:
-        official_time = raw.time_utc.astimezone(self._zone)
+        official_time = raw.time_utc.astimezone(self._madrid_zone)
         occurrence = raw.time_utc.isoformat()
         body_key = raw.body or "global"
+        subject = f"astronomy-event:{raw.event_type}:{body_key}:{occurrence}"
 
         local_circumstances, celestial_region = (
             self._local_and_celestial_metadata(raw)
         )
         global_maximum = self._global_maximum_metadata(raw)
         official_time_metadata = self._official_time_metadata(raw.time_utc)
+        observer_time_metadata = self._observer_local_time_metadata(raw.time_utc)
 
         details = dict(raw.details)
         details.update(
             {
+                "observer_local_time": observer_time_metadata,
                 "official_madrid_time": official_time_metadata,
                 "local_circumstances": local_circumstances,
                 "global_maximum": global_maximum,
@@ -486,20 +928,24 @@ class EventCalendarService:
             }
         )
 
-        canonical = CanonicalScientificQuantity(
-            subject=f"astronomy-event:{raw.event_type}:{body_key}:{occurrence}",
+        conjunction_quantities = self._conjunction_quantities(
+            raw,
+            subject=subject,
+            occurrence=occurrence,
+        )
+        details["canonical_scientific_quantities"] = [
+            item.as_dict() for item in conjunction_quantities
+        ]
+
+        canonical = self._canonical_quantity(
+            subject=subject,
             quantity="event_time",
             epoch=occurrence,
-            observer=self._observer_key(),
             unit="s",
             frame="UTC",
             value=raw.time_utc.timestamp(),
-            uncertainty=None,
             display_precision=0,
-            source=ENGINE_SOURCE_ID,
             provenance={
-                "engine": ENGINE_NAME,
-                "engine_version": ENGINE_VERSION,
                 "event_type": raw.event_type,
                 "body": raw.body,
                 "observer": {
@@ -508,15 +954,15 @@ class EventCalendarService:
                     "elevation_m": self.observer.elevation_m,
                     "timezone": self.observer.timezone,
                 },
+                "observer_local_time": observer_time_metadata,
                 "official_madrid_time": official_time_metadata,
                 "local_circumstances": local_circumstances,
                 "global_maximum": global_maximum,
                 "celestial_region": celestial_region,
-                "event_details": details,
-                "network_required": False,
-                "auto_publication": False,
+                "event_details": dict(details),
             },
         )
+
         return CalendarEvent(
             event_type=raw.event_type,
             label_es=raw.label_es,
@@ -555,11 +1001,15 @@ class EventCalendarService:
         moment: datetime | None = None,
     ) -> tuple[CalendarEvent, ...]:
         local = self._local_moment(moment)
-        start = datetime.combine(local.date(), time.min, tzinfo=self._zone)
+        start = datetime.combine(
+            local.date(),
+            time.min,
+            tzinfo=self._observer_zone,
+        )
         end = datetime.combine(
             local.date() + timedelta(days=1),
             time.min,
-            tzinfo=self._zone,
+            tzinfo=self._observer_zone,
         )
         return self.get_events_between(start, end)
 
@@ -568,21 +1018,37 @@ class EventCalendarService:
         moment: datetime | None = None,
     ) -> tuple[CalendarEvent, ...]:
         local = self._local_moment(moment)
-        start = datetime(local.year, local.month, 1, tzinfo=self._zone)
+        start = datetime(
+            local.year,
+            local.month,
+            1,
+            tzinfo=self._observer_zone,
+        )
         if local.month == 12:
-            end = datetime(local.year + 1, 1, 1, tzinfo=self._zone)
+            end = datetime(
+                local.year + 1,
+                1,
+                1,
+                tzinfo=self._observer_zone,
+            )
         else:
-            end = datetime(local.year, local.month + 1, 1, tzinfo=self._zone)
+            end = datetime(
+                local.year,
+                local.month + 1,
+                1,
+                tzinfo=self._observer_zone,
+            )
         return self.get_events_between(start, end)
 
     def get_events_next_365_days(
         self,
         moment: datetime | None = None,
     ) -> tuple[CalendarEvent, ...]:
+        """Return [instant, instant + 365*24h); this is not a calendar year."""
         local = self._local_moment(moment)
         start_utc = local.astimezone(UTC)
         end_utc = start_utc + timedelta(days=365)
         return self.get_events_between(
-            start_utc.astimezone(self._zone),
-            end_utc.astimezone(self._zone),
+            start_utc.astimezone(self._observer_zone),
+            end_utc.astimezone(self._observer_zone),
         )

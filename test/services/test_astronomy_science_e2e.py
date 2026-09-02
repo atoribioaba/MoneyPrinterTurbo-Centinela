@@ -77,12 +77,13 @@ def _calculate_both(payload: dict):
     start_utc = start_local.astimezone(UTC)
     end_utc = end_local.astimezone(UTC)
 
-    raw = AstronomyEngineEventSource().events_between(
+    source = AstronomyEngineEventSource(include_apparent_conjunctions=False)
+    raw = source.events_between(
         observer,
         start_utc,
         end_utc,
     )
-    calendar = EventCalendarService(observer).get_events_between(
+    calendar = EventCalendarService(observer, source=source).get_events_between(
         start_local,
         end_local,
     )
@@ -94,9 +95,11 @@ def _calculate_both(payload: dict):
     [
         "usno_2026_seasons.json",
         "usno_2026_moon_phases.json",
+        "naoj_2026_planetary_oppositions.json",
+        "naoj_2026_greatest_elongations.json",
     ],
 )
-def test_event_calendar_and_astronomy_engine_match_frozen_usno_controls(
+def test_event_calendar_and_astronomy_engine_match_frozen_primary_controls(
     monkeypatch: pytest.MonkeyPatch,
     fixture_name: str,
 ) -> None:
@@ -104,12 +107,29 @@ def test_event_calendar_and_astronomy_engine_match_frozen_usno_controls(
     payload = _load(fixture_name)
     observer, raw_events, calendar_events = _calculate_both(payload)
 
-    assert payload["control"]["provider"].startswith("U.S. Naval Observatory")
+    provider = payload["control"]["provider"]
+    assert provider.startswith(("U.S. Naval Observatory", "National Astronomical Observatory"))
     for reference in payload["events"]:
         raw = _match_event(raw_events, reference)
         calendar = _match_event(calendar_events, reference)
         _assert_time_close(raw.time_utc, reference)
         _assert_time_close(calendar.time_utc, reference)
+
+        if "expected_elongation_deg" in reference:
+            expected = float(reference["expected_elongation_deg"])
+            tolerance = float(reference["elongation_tolerance_deg"])
+            assert math.isclose(
+                abs(float(raw.details["elongation_deg"])),
+                expected,
+                rel_tol=0.0,
+                abs_tol=tolerance,
+            )
+            assert math.isclose(
+                abs(float(calendar.details["elongation_deg"])),
+                expected,
+                rel_tol=0.0,
+                abs_tol=tolerance,
+            )
 
         quantity = calendar.canonical_quantity
         assert quantity.quantity == "event_time"

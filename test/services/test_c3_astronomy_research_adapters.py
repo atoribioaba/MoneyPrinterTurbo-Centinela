@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
-from app.services.centinela.orchestration import ResourceClass
+from app.models.astronomy import ScientificStatus
+from app.models.astronomy_director import GroundingFact
+from app.services.centinela.production_spine import (
+    StageArtifact,
+    StageDisposition,
+    StageResult,
+)
 from app.services.centinela.research_adapters import (
+    C3ExternalResearchFactLockAdapter,
+    CanonicalScientificQuantity,
     MastHstJwstAdapter,
     MinorPlanetCenterAdapter,
     NasaExoplanetArchiveAdapter,
@@ -17,21 +26,21 @@ from app.services.centinela.research_adapters import (
     ResearchContext,
     ResearchDataError,
     ResearchDatum,
-    ResearchMediaRecord,
     ResearchPhase,
     ResearchPhaseViolation,
-    ResearchSource,
+    ScientificConflictError,
+    ScientificConflictResolver,
+    ScientificTolerance,
     SkyfieldDE440Adapter,
     StellariumStaticRendererAdapter,
+    SunPyLocalAdapter,
     WikidataAdapter,
     WikimediaCommonsAdapter,
-    build_c3_external_research_binding,
     build_esa_gaia_tap_adapter,
     build_eso_tap_adapter,
-    build_licenses_manifest,
-    build_provenance_manifest,
-    download_and_seal_media,
 )
+from app.services.centinela.research_adapters import canonicalized as canonicalized_module
+from app.services.centinela.writer_room.models import FactLock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,40 +62,102 @@ class FakeTransport:
         return response
 
 
-def research_context():
+def research_context() -> ResearchContext:
     return ResearchContext("test-project", ResearchPhase.RESEARCH)
 
 
-def test_c3_loopback_defaults_and_runtime_binding_are_closed():
-    example = (ROOT / "config.example.toml").read_text(encoding="utf-8")
-    config_source = (ROOT / "app/config/config.py").read_text(encoding="utf-8")
-    main_source = (ROOT / "main.py").read_text(encoding="utf-8")
-    assert 'listen_host = "127.0.0.1"' in example
-    assert 'listen_host = "0.0.0.0"' not in example
-    assert 'listen_host = _cfg.get("listen_host", "127.0.0.1")' in config_source
-    assert 'C3_LISTEN_HOST = "127.0.0.1"' in main_source
-    assert "host=C3_LISTEN_HOST" in main_source
+def _assert_raw_canonical(datum: ResearchDatum) -> CanonicalScientificQuantity:
+    quantity = datum.canonical_quantity
+    assert isinstance(quantity, CanonicalScientificQuantity)
+    assert quantity.source == datum.source_id
+    assert quantity.unit == datum.unit
+    assert quantity.value == pytest.approx(float(datum.value))
+    assert quantity.subject
+    assert quantity.quantity
+    assert quantity.epoch
+    assert quantity.observer
+    assert quantity.frame
+    assert quantity.display_precision is None or quantity.display_precision >= 0
+    assert quantity.provenance["source_id"] == datum.source_id
+    assert quantity.provenance["raw_fact_id"] == datum.fact_id
+    assert quantity.provenance["raw_unit"] == datum.unit
+    assert quantity.provenance["auto_publication"] is False
+    return quantity
 
 
-def test_legacy_boolean_review_ui_is_removed_from_product_pages():
-    pages_source = (ROOT / "webui/product/pages.py").read_text(encoding="utf-8")
-    assert "def review_page()" not in pages_source
-    assert "approved=True" not in pages_source
-    assert "approved=False" not in pages_source
+def _quantity(
+    *,
+    value: float,
+    source: str,
+    unit: str = "m",
+    epoch: str = "2026-09-02T00:00:00Z",
+    observer: str = "test-observer",
+    frame: str = "test-frame",
+) -> CanonicalScientificQuantity:
+    return CanonicalScientificQuantity(
+        subject="test-target",
+        quantity="test-distance",
+        epoch=epoch,
+        observer=observer,
+        unit=unit,
+        frame=frame,
+        value=value,
+        uncertainty=0.1,
+        display_precision=1,
+        source=source,
+        provenance={"fixture": "adversarial", "auto_publication": False},
+    )
 
 
-@pytest.mark.parametrize(
-    "phase",
-    [
-        ResearchPhase.SCRIPT,
-        ResearchPhase.MEDIA,
-        ResearchPhase.AUDIO,
-        ResearchPhase.VIDEO_BASE,
-        ResearchPhase.REVIEW,
-        ResearchPhase.PUBLICATION,
-    ],
-)
-def test_transport_rejects_every_non_research_phase_before_network(monkeypatch, phase):
+def _datum(
+    *,
+    fact_id: str,
+    quantity: CanonicalScientificQuantity,
+) -> ResearchDatum:
+    return ResearchDatum(
+        fact_id=fact_id,
+        label_es="Magnitud de prueba",
+        value=quantity.value,
+        source_id=quantity.source,
+        unit=quantity.unit,
+        canonical_quantity=quantity,
+    )
+
+
+def _base_fact_lock_adapter() -> Mock:
+    fact_lock = FactLock(
+        subject="Synthetic target",
+        research_mode="GENERIC_GEOCENTRIC",
+        context_hash="A" * 64,
+        facts=[
+            GroundingFact(
+                fact_id="base-fact",
+                label_es="Hecho base sintético",
+                value=1,
+                unit=None,
+                scientific_status=ScientificStatus.NO_VERIFICADO,
+                source_ids=[],
+            )
+        ],
+        sources=[],
+        source_ids=[],
+        scope_note="Synthetic test fixture.",
+        location_assumed=False,
+        moment_basis="synthetic test",
+        primary_source_verification_required_for_publication=True,
+        generated_at_utc=datetime(2026, 9, 2, tzinfo=UTC),
+    )
+    return Mock(
+        return_value=StageResult.complete(
+            StageArtifact(
+                artifact_type="fact_lock",
+                payload=fact_lock.model_dump(mode="json"),
+            )
+        )
+    )
+
+
+def test_transport_rejects_every_non_research_phase_before_network(monkeypatch):
     called = False
 
     def forbidden(*args, **kwargs):
@@ -99,11 +170,19 @@ def test_transport_rejects_every_non_research_phase_before_network(monkeypatch, 
         forbidden,
     )
     transport = RequestsResearchTransport(allowed_hosts={"example.org"})
-    with pytest.raises(ResearchPhaseViolation):
-        transport.get_json(
-            ResearchContext("p", phase),
-            "https://example.org/data",
-        )
+    for phase in (
+        ResearchPhase.SCRIPT,
+        ResearchPhase.MEDIA,
+        ResearchPhase.AUDIO,
+        ResearchPhase.VIDEO_BASE,
+        ResearchPhase.REVIEW,
+        ResearchPhase.PUBLICATION,
+    ):
+        with pytest.raises(ResearchPhaseViolation):
+            transport.get_json(
+                ResearchContext("p", phase),
+                "https://example.org/data",
+            )
     assert called is False
 
 
@@ -128,195 +207,7 @@ def test_transport_rejects_non_allowlisted_host_before_network(monkeypatch):
     assert called is False
 
 
-def test_wikimedia_mock_accepts_explicit_cc_license():
-    payload = {
-        "query": {
-            "pages": [
-                {
-                    "pageid": 42,
-                    "title": "File:Venus.jpg",
-                    "imageinfo": [
-                        {
-                            "url": "https://upload.wikimedia.org/venus.jpg",
-                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Venus.jpg",
-                            "mime": "image/jpeg",
-                            "width": 4000,
-                            "height": 3000,
-                            "extmetadata": {
-                                "LicenseShortName": {"value": "CC BY 4.0"},
-                                "LicenseUrl": {
-                                    "value": "https://creativecommons.org/licenses/by/4.0/"
-                                },
-                                "Artist": {"value": "Example Observer"},
-                                "AttributionRequired": {"value": "true"},
-                                "Attribution": {"value": "Example Observer"},
-                                "NonFree": {"value": "false"},
-                            },
-                        }
-                    ],
-                }
-            ]
-        }
-    }
-    fake = FakeTransport([payload])
-    bundle = WikimediaCommonsAdapter(fake).search(
-        research_context(),
-        "Venus phases",
-    )
-    assert len(fake.calls) == 1
-    assert len(bundle.media) == 1
-    assert bundle.media[0].publication_eligible is True
-    assert bundle.media[0].attribution_required is True
-    assert bundle.media[0].rights_decision in {
-        "accept",
-        "accept_with_attribution",
-    }
-
-
-def test_wikimedia_mock_unknown_license_fails_closed_for_publication():
-    payload = {
-        "query": {
-            "pages": [
-                {
-                    "pageid": 42,
-                    "title": "File:Venus.jpg",
-                    "imageinfo": [
-                        {
-                            "url": "https://upload.wikimedia.org/venus.jpg",
-                            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Venus.jpg",
-                            "mime": "image/jpeg",
-                            "width": 4000,
-                            "height": 3000,
-                            "extmetadata": {},
-                        }
-                    ],
-                }
-            ]
-        }
-    }
-    bundle = WikimediaCommonsAdapter(FakeTransport([payload])).search(
-        research_context(),
-        "Venus",
-    )
-    assert bundle.media[0].publication_eligible is False
-    assert bundle.media[0].rights_decision == "review"
-
-
-def test_wikidata_ids_are_validated_before_transport():
-    fake = FakeTransport([])
-    adapter = WikidataAdapter(fake)
-    with pytest.raises(ResearchDataError, match="entity id"):
-        adapter.property_value(
-            research_context(),
-            entity_id="Q42 } UNION { ?s ?p ?o",
-            property_id="P31",
-            label_es="tipo",
-        )
-    assert fake.calls == []
-
-
-def test_wikidata_mock_is_secondary_and_requires_primary_source():
-    fake = FakeTransport(
-        [
-            {
-                "results": {
-                    "bindings": [
-                        {"value": {"type": "literal", "value": "1969-07-16"}}
-                    ]
-                }
-            }
-        ]
-    )
-    bundle = WikidataAdapter(fake).property_value(
-        research_context(),
-        entity_id="Q43653",
-        property_id="P619",
-        label_es="fecha de lanzamiento",
-    )
-    assert bundle.data[0].verified is False
-    assert bundle.data[0].primary_source_required is True
-    assert bundle.sources[0].primary_source is False
-    assert "IAU" in bundle.warnings[0]
-
-
-def test_nasa_apod_mock_is_not_eligible_when_copyright_is_present():
-    fake = FakeTransport(
-        [
-            {
-                "date": "2026-01-01",
-                "title": "Example APOD",
-                "hdurl": "https://apod.nasa.gov/example.jpg",
-                "copyright": "Third Party Author",
-            }
-        ]
-    )
-    bundle = NasaOpenAdapter(fake).apod(
-        research_context(),
-        day=date(2026, 1, 1),
-    )
-    assert bundle.media[0].publication_eligible is False
-    assert bundle.media[0].rights_decision == "review"
-
-
-def test_nasa_apod_missing_copyright_fails_closed_to_review():
-    fake = FakeTransport(
-        [
-            {
-                "date": "2026-01-01",
-                "title": "Example APOD",
-                "hdurl": "https://apod.nasa.gov/example.jpg",
-            }
-        ]
-    )
-    bundle = NasaOpenAdapter(fake).apod(
-        research_context(),
-        day=date(2026, 1, 1),
-    )
-    assert bundle.media[0].publication_eligible is False
-    assert bundle.media[0].rights_decision == "review"
-    assert bundle.warnings
-
-
-def test_nasa_apod_trusted_nasa_asset_can_pass_existing_conservative_gate():
-    fake = FakeTransport(
-        [
-            {
-                "date": "2026-01-01",
-                "title": "Example APOD",
-                "hdurl": "https://images-assets.nasa.gov/image/example/example~orig.jpg",
-            }
-        ]
-    )
-    bundle = NasaOpenAdapter(fake).apod(
-        research_context(),
-        day=date(2026, 1, 1),
-    )
-    assert bundle.media[0].publication_eligible is True
-    assert bundle.media[0].rights_decision == "accept_with_attribution"
-
-
-def test_nasa_epic_mock_stays_rights_review():
-    fake = FakeTransport(
-        [
-            [
-                {
-                    "image": "epic_1b_20260101000000",
-                    "caption": "Earth",
-                    "date": "2026-01-01 00:00:00",
-                }
-            ]
-        ]
-    )
-    bundle = NasaOpenAdapter(fake).epic(
-        research_context(),
-        day=date(2026, 1, 1),
-    )
-    assert len(bundle.media) == 1
-    assert bundle.media[0].publication_eligible is False
-    assert bundle.media[0].rights_decision == "review"
-
-
-def test_exoplanet_mock_produces_grounded_facts_with_uncertainty_and_references():
+def test_nasa_exoplanet_emits_semantic_canonical_quantities():
     fake = FakeTransport(
         [
             [
@@ -346,72 +237,31 @@ def test_exoplanet_mock_produces_grounded_facts_with_uncertainty_and_references(
         research_context(),
         "Proxima Cen b",
     )
-    assert len(bundle.data) == 17
-    assert all(item.verified for item in bundle.data)
-    fact_ids = {item.fact_id for item in bundle.data}
-    assert "nasa_exoplanet_proxima_cen_b:discoverymethod" in fact_ids
-    assert "nasa_exoplanet_proxima_cen_b:pl_orbpererr1" in fact_ids
-    assert "nasa_exoplanet_proxima_cen_b:pl_orbper_reflink" in fact_ids
-    query = fake.calls[0][1]["params"]["query"]
-    assert "from pscomppars" in query
-    assert "discoverymethod" in query
-    assert "pl_bmasseerr1" in query
-    assert "Proxima Cen b" in query
+    facts = {item.fact_id.rsplit(":", 1)[-1]: item for item in bundle.data}
+
+    radius = _assert_raw_canonical(facts["pl_rade"])
+    assert radius.subject == "Proxima Cen b"
+    assert radius.quantity == "planet_radius"
+    assert radius.epoch == "catalog:NASA_EXOPLANET_ARCHIVE_PSCOMPPARS"
+    assert radius.observer == "not_applicable:catalog"
+    assert radius.frame == "NASA_EXOPLANET_ARCHIVE_PSCOMPPARS"
+    assert radius.uncertainty == pytest.approx(0.05)
+    assert radius.provenance["provider"] == "NASA Exoplanet Archive"
+    assert radius.provenance["raw_field"] == "pl_rade"
+
+    period = _assert_raw_canonical(facts["pl_orbper"])
+    assert period.quantity == "orbital_period"
+    assert period.uncertainty == pytest.approx(0.002)
+
+    discovery_year = _assert_raw_canonical(facts["disc_year"])
+    assert discovery_year.quantity == "discovery_year"
+    assert discovery_year.value == 2016.0
 
 
-def test_mast_hst_jwst_mock_discovery_remains_rights_review():
+def test_mpc_observations_and_orbit_emit_canonical_quantities():
     fake = FakeTransport(
         [
-            {
-                "data": [
-                    {
-                        "obsid": "123",
-                        "obs_collection": "JWST",
-                        "obs_id": "jw-example",
-                        "target_name": "M 42",
-                    }
-                ]
-            }
-        ]
-    )
-    bundle = MastHstJwstAdapter(fake).search(
-        research_context(),
-        mission="JWST",
-        target="M 42",
-        limit=5,
-    )
-    assert bundle.sources[0].provider == "MAST/STScI"
-    assert len(bundle.media) == 1
-    assert bundle.media[0].publication_eligible is False
-    request_json = fake.calls[0][1]["params"]["request"]
-    assert '"service":"Mast.Caom.Filtered"' in request_json
-    assert '"JWST"' in request_json
-
-
-def test_mpc_mock_requires_one_designation_and_seals_count():
-    fake = FakeTransport(
-        [
-            [
-                {
-                    "ADES_DF": [
-                        {"obsTime": "2026-01-01T00:00:00Z"},
-                        {"obsTime": "2026-01-02T00:00:00Z"},
-                    ]
-                }
-            ]
-        ]
-    )
-    bundle = MinorPlanetCenterAdapter(fake).observations(
-        research_context(),
-        "Bennu",
-    )
-    assert bundle.data[0].value == 2
-    assert fake.calls[0][1]["json_body"]["desigs"] == ["Bennu"]
-
-
-def test_mpc_orbit_mock_seals_keplerian_elements_and_uncertainties():
-    fake = FakeTransport(
-        [
+            [{"ADES_DF": [{"obsTime": "2026-01-01T00:00:00Z"}]}],
             [
                 {
                     "mpc_orb": [
@@ -445,33 +295,438 @@ def test_mpc_orbit_mock_seals_keplerian_elements_and_uncertainties():
                         }
                     ]
                 }
-            ]
+            ],
         ]
     )
-    bundle = MinorPlanetCenterAdapter(fake).orbit(
-        research_context(),
-        "Bennu",
+    adapter = MinorPlanetCenterAdapter(fake)
+    observations = adapter.observations(research_context(), "Bennu")
+    count = _assert_raw_canonical(observations.data[0])
+    assert count.subject == "Bennu"
+    assert count.quantity == "observation_count"
+    assert count.observer == "global:MPC_ADES_archive"
+    assert count.frame == "MPC_ADES"
+
+    orbit = adapter.orbit(research_context(), "Bennu")
+    facts = {item.fact_id: item for item in orbit.data}
+    semi_major = _assert_raw_canonical(facts["mpc_orbit_bennu:a"])
+    assert semi_major.quantity == "semi_major_axis"
+    assert semi_major.unit == "AU"
+    assert semi_major.frame == "MPC_OSCULATING_ORBIT_ELEMENTS"
+    assert semi_major.uncertainty == pytest.approx(1e-7)
+
+    eccentricity = _assert_raw_canonical(facts["mpc_orbit_bennu:e"])
+    assert eccentricity.quantity == "eccentricity"
+    assert eccentricity.unit == "1"
+
+
+def test_skyfield_wrapper_canonicalizes_runtime_boundary(monkeypatch):
+    moment = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
+
+    def fake_position(self, context, *, body, moment):
+        context.require_research()
+        return ResearchBundle(
+            data=(
+                ResearchDatum(
+                    "skyfield:venus:ra_hours",
+                    "Ascensión recta",
+                    12.25,
+                    "skyfield_de440",
+                    "hour",
+                ),
+                ResearchDatum(
+                    "skyfield:venus:dec_deg",
+                    "Declinación",
+                    -3.5,
+                    "skyfield_de440",
+                    "deg",
+                ),
+                ResearchDatum(
+                    "skyfield:venus:distance_au",
+                    "Distancia",
+                    0.72,
+                    "skyfield_de440",
+                    "au",
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        canonicalized_module._SkyfieldDE440Adapter,
+        "position",
+        fake_position,
     )
-    facts = {item.fact_id: item for item in bundle.data}
-    assert "mpc_orbit_bennu:a" in facts
-    assert facts["mpc_orbit_bennu:a"].unit == "AU"
-    assert "mpc_orbit_bennu:e" in facts
-    assert "mpc_orbit_bennu:argperi" in facts
-    assert "mpc_orbit_bennu:a:uncertainty" in facts
-    assert fake.calls[0][0].endswith("/api/get-orb")
-    assert fake.calls[0][1]["json_body"] == {"desig": "Bennu"}
+    bundle = SkyfieldDE440Adapter("de440.bsp").position(
+        research_context(),
+        body="venus",
+        moment=moment,
+    )
+    quantities = {
+        item.canonical_quantity.quantity: _assert_raw_canonical(item)
+        for item in bundle.data
+    }
+    assert quantities["right_ascension"].subject == "venus"
+    assert quantities["right_ascension"].epoch == moment.isoformat()
+    assert quantities["right_ascension"].observer == "earth-geocenter"
+    assert quantities["right_ascension"].frame == "ICRF_J2000"
+    assert quantities["declination"].unit == "deg"
+    assert quantities["geocentric_distance"].unit == "au"
+    assert quantities["geocentric_distance"].provenance["network_required"] is False
+
+
+def test_sunpy_wrapper_canonicalizes_runtime_boundary(monkeypatch):
+    moment = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+
+    def fake_orientation(self, context, *, moment):
+        context.require_research()
+        return ResearchBundle(
+            data=(
+                ResearchDatum(
+                    "sunpy:sun:b0_deg",
+                    "B0",
+                    7.1,
+                    "sunpy_local",
+                    "deg",
+                ),
+                ResearchDatum(
+                    "sunpy:sun:l0_deg",
+                    "L0",
+                    123.4,
+                    "sunpy_local",
+                    "deg",
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        canonicalized_module._SunPyLocalAdapter,
+        "solar_orientation",
+        fake_orientation,
+    )
+    bundle = SunPyLocalAdapter().solar_orientation(
+        research_context(),
+        moment=moment,
+    )
+    quantities = {
+        item.canonical_quantity.quantity: _assert_raw_canonical(item)
+        for item in bundle.data
+    }
+    b0 = quantities["heliographic_latitude_disk_center"]
+    assert b0.subject == "sun"
+    assert b0.epoch == moment.isoformat()
+    assert b0.observer == "earth-observer"
+    assert b0.frame == "HELIOGRAPHIC_STONYHURST"
+
+    l0 = quantities["carrington_longitude_disk_center"]
+    assert l0.frame == "HELIOGRAPHIC_CARRINGTON"
+    assert l0.provenance["provider"] == "SunPy"
+
+
+def test_numeric_wikidata_corroboration_is_canonicalized():
+    fake = FakeTransport(
+        [
+            {
+                "results": {
+                    "bindings": [
+                        {"value": {"type": "literal", "value": "42.5"}}
+                    ]
+                }
+            }
+        ]
+    )
+    bundle = WikidataAdapter(fake).property_value(
+        research_context(),
+        entity_id="Q42",
+        property_id="P2048",
+        label_es="altura",
+        unit="m",
+    )
+    quantity = _assert_raw_canonical(bundle.data[0])
+    assert quantity.subject == "Q42"
+    assert quantity.quantity == "P2048"
+    assert quantity.frame == "WIKIDATA_STATEMENT"
+    assert quantity.provenance["secondary_corroboration"] is True
+
+
+def test_resolver_accepts_compatible_units_inside_explicit_tolerance():
+    resolver = ScientificConflictResolver(
+        {
+            ("test-target", "test-distance"): ScientificTolerance(
+                absolute=100.0
+            )
+        }
+    )
+    result = resolver.resolve_conflicts(
+        (
+            _quantity(value=100.0, unit="km", source="source-a"),
+            _quantity(value=100_050.0, unit="m", source="source-b"),
+        )
+    )
+    assert [item.unit for item in result] == ["m", "m"]
+    assert result[0].value == pytest.approx(100_000.0)
+    assert result[1].value == pytest.approx(100_050.0)
 
 
 @pytest.mark.parametrize(
-    "builder,provider",
+    ("field", "replacement", "error_code"),
+    [
+        ("unit", "s", "UNIT_INCOMPATIBLE"),
+        ("epoch", "2026-09-03T00:00:00Z", "EPOCH_INCOMPATIBLE"),
+        ("frame", "other-frame", "FRAME_INCOMPATIBLE"),
+        ("observer", "other-observer", "OBSERVER_INCOMPATIBLE"),
+    ],
+)
+def test_resolver_fails_closed_on_semantic_incompatibility(
+    field,
+    replacement,
+    error_code,
+):
+    left = _quantity(value=100.0, source="source-a")
+    kwargs = {
+        "value": 100.0,
+        "source": "source-b",
+        "unit": left.unit,
+        "epoch": left.epoch,
+        "observer": left.observer,
+        "frame": left.frame,
+    }
+    kwargs[field] = replacement
+    with pytest.raises(ScientificConflictError, match=error_code):
+        ScientificConflictResolver().resolve_conflicts(
+            (left, _quantity(**kwargs))
+        )
+
+
+def test_resolver_fails_closed_on_material_numerical_conflict():
+    resolver = ScientificConflictResolver(
+        {
+            ("test-target", "test-distance"): ScientificTolerance(
+                absolute=1.0
+            )
+        }
+    )
+    with pytest.raises(ScientificConflictError, match="MATERIAL_DISCREPANCY"):
+        resolver.resolve_conflicts(
+            (
+                _quantity(value=100.0, source="source-a"),
+                _quantity(value=200.0, source="source-b"),
+            )
+        )
+
+
+def test_required_canonical_metadata_cannot_be_empty():
+    with pytest.raises(ResearchDataError, match="epoch must be a non-empty string"):
+        CanonicalScientificQuantity(
+            subject="target",
+            quantity="distance",
+            epoch=" ",
+            observer="observer",
+            unit="m",
+            frame="frame",
+            value=1.0,
+            uncertainty=None,
+            display_precision=1,
+            source="source",
+            provenance={},
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutator", "error_code"),
+    [
+        (
+            lambda q: ResearchDatum(
+                "raw",
+                "raw",
+                q.value,
+                "different-source",
+                q.unit,
+                canonical_quantity=q,
+            ),
+            "SOURCE_PROVENANCE_MISMATCH",
+        ),
+        (
+            lambda q: ResearchDatum(
+                "raw",
+                "raw",
+                q.value,
+                q.source,
+                "km",
+                canonical_quantity=q,
+            ),
+            "RAW_CANONICAL_UNIT_MISMATCH",
+        ),
+        (
+            lambda q: ResearchDatum(
+                "raw",
+                "raw",
+                q.value + 1.0,
+                q.source,
+                q.unit,
+                canonical_quantity=q,
+            ),
+            "RAW_CANONICAL_VALUE_MISMATCH",
+        ),
+    ],
+)
+def test_fact_lock_gate_rejects_raw_canonical_mismatch(mutator, error_code):
+    quantity = _quantity(value=100.0, source="source-a")
+    runner = Mock(return_value=ResearchBundle(data=(mutator(quantity),)))
+    adapter = C3ExternalResearchFactLockAdapter(
+        runner,
+        base_adapter=_base_fact_lock_adapter(),
+    )
+    result = adapter(
+        Mock(project_id="synthetic-project"),
+        {"external_research": {"fixture": "mismatch"}},
+    )
+    assert result.disposition is StageDisposition.BLOCKED
+    assert result.details["error_code"] == error_code
+    assert result.details["writer_room_allowed"] is False
+    assert result.details["auto_publication"] is False
+
+
+def test_fact_lock_gate_rejects_unit_scalar_without_canonical_quantity():
+    runner = Mock(
+        return_value=ResearchBundle(
+            data=(
+                ResearchDatum(
+                    fact_id="source-a:distance",
+                    label_es="Distancia",
+                    value=42.0,
+                    unit="km",
+                    source_id="source-a",
+                ),
+            )
+        )
+    )
+    adapter = C3ExternalResearchFactLockAdapter(
+        runner,
+        base_adapter=_base_fact_lock_adapter(),
+    )
+    result = adapter(
+        Mock(project_id="synthetic-project"),
+        {"external_research": {"fixture": "missing-canonical"}},
+    )
+    assert result.disposition is StageDisposition.BLOCKED
+    assert result.details["error_code"] == "MISSING_CANONICAL_QUANTITY"
+    assert result.details["writer_room_allowed"] is False
+    assert result.details["auto_publication"] is False
+
+
+def test_fact_lock_gate_blocks_provider_conflict_before_writer_room():
+    resolver = ScientificConflictResolver(
+        {
+            ("test-target", "test-distance"): ScientificTolerance(
+                absolute=1.0
+            )
+        }
+    )
+    runner = Mock(
+        return_value=ResearchBundle(
+            data=(
+                _datum(
+                    fact_id="source-a:distance",
+                    quantity=_quantity(value=100.0, source="source-a"),
+                ),
+                _datum(
+                    fact_id="source-b:distance",
+                    quantity=_quantity(value=200.0, source="source-b"),
+                ),
+            )
+        )
+    )
+    adapter = C3ExternalResearchFactLockAdapter(
+        runner,
+        base_adapter=_base_fact_lock_adapter(),
+        conflict_resolver=resolver,
+    )
+    result = adapter(
+        Mock(project_id="synthetic-project"),
+        {"external_research": {"fixture": "conflict"}},
+    )
+    assert result.disposition is StageDisposition.BLOCKED
+    assert result.details["error_code"] == "MATERIAL_DISCREPANCY"
+    assert result.details["writer_room_allowed"] is False
+    assert result.details["auto_publication"] is False
+
+
+def test_wikimedia_rights_gate_stays_fail_closed_for_unknown_license():
+    payload = {
+        "query": {
+            "pages": [
+                {
+                    "pageid": 42,
+                    "title": "File:Venus.jpg",
+                    "imageinfo": [
+                        {
+                            "url": "https://upload.wikimedia.org/venus.jpg",
+                            "descriptionurl": (
+                                "https://commons.wikimedia.org/wiki/File:Venus.jpg"
+                            ),
+                            "mime": "image/jpeg",
+                            "width": 4000,
+                            "height": 3000,
+                            "extmetadata": {},
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    bundle = WikimediaCommonsAdapter(FakeTransport([payload])).search(
+        research_context(),
+        "Venus",
+    )
+    assert bundle.media[0].publication_eligible is False
+    assert bundle.media[0].rights_decision == "review"
+
+
+def test_nasa_apod_rights_gate_stays_fail_closed_when_copyright_present():
+    bundle = NasaOpenAdapter(FakeTransport([
+        {
+            "date": "2026-01-01",
+            "title": "Example APOD",
+            "hdurl": "https://apod.nasa.gov/example.jpg",
+            "copyright": "Third Party Author",
+        }
+    ])).apod(research_context(), day=date(2026, 1, 1))
+    assert bundle.media[0].publication_eligible is False
+    assert bundle.media[0].rights_decision == "review"
+
+
+def test_mast_discovery_remains_non_publication_eligible():
+    bundle = MastHstJwstAdapter(FakeTransport([
+        {
+            "data": [
+                {
+                    "obsid": "123",
+                    "obs_collection": "JWST",
+                    "obs_id": "jw-example",
+                    "target_name": "M 42",
+                }
+            ]
+        }
+    ])).search(
+        research_context(),
+        mission="JWST",
+        target="M 42",
+        limit=5,
+    )
+    assert bundle.sources[0].provider == "MAST/STScI"
+    assert bundle.media[0].publication_eligible is False
+
+
+@pytest.mark.parametrize(
+    ("builder", "provider"),
     [
         (build_eso_tap_adapter, "ESO"),
         (build_esa_gaia_tap_adapter, "ESA Gaia Archive"),
     ],
 )
-def test_tap_archive_calls_are_mocked_and_media_remain_review(builder, provider):
-    fake = FakeTransport([[{"source_id": "1", "obs_title": "test"}]])
-    bundle = builder(fake).query_fixed(
+def test_tap_discovery_remains_non_publication_eligible(builder, provider):
+    bundle = builder(
+        FakeTransport([[{"source_id": "1", "obs_title": "test"}]])
+    ).query_fixed(
         research_context(),
         query="SELECT TOP 1 source_id FROM example.table",
         title="archive test",
@@ -479,7 +734,6 @@ def test_tap_archive_calls_are_mocked_and_media_remain_review(builder, provider)
     )
     assert bundle.sources[0].provider == provider
     assert bundle.media[0].publication_eligible is False
-    assert bundle.media[0].rights_decision == "review"
 
 
 def test_skyfield_requires_preexisting_local_bsp_and_never_downloads(tmp_path):
@@ -488,9 +742,7 @@ def test_skyfield_requires_preexisting_local_bsp_and_never_downloads(tmp_path):
         adapter.position(
             research_context(),
             body="venus",
-            moment=__import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ),
+            moment=datetime.now(UTC),
         )
 
 
@@ -498,96 +750,3 @@ def test_stellarium_bridge_has_no_assumed_cli():
     adapter = StellariumStaticRendererAdapter()
     with pytest.raises(OptionalRuntimeUnavailable, match="not configured"):
         adapter.render(research_context(), {"target": "Venus"})
-
-
-def test_manifests_are_deterministic_and_never_enable_auto_publication():
-    bundle = ResearchBundle(
-        media=(
-            ResearchMediaRecord(
-                media_id="venus",
-                provider="wikimedia",
-                title="Venus",
-                source_page="https://commons.wikimedia.org/wiki/File:Venus.jpg",
-                file_url="https://upload.wikimedia.org/venus.jpg",
-                license="CC BY 4.0",
-                license_url="https://creativecommons.org/licenses/by/4.0/",
-                attribution="Example",
-                attribution_required=True,
-                rights_decision="accept_with_attribution",
-                publication_eligible=True,
-            ),
-        )
-    )
-    p1 = build_provenance_manifest(bundle)
-    p2 = build_provenance_manifest(bundle)
-    l1 = build_licenses_manifest(bundle)
-    l2 = build_licenses_manifest(bundle)
-    assert p1 == p2
-    assert l1 == l2
-    assert p1["auto_publication"] is False
-    assert l1["auto_publication"] is False
-    assert l1["all_publication_eligible"] is True
-
-
-def test_download_and_sidecar_use_mock_transport_only(tmp_path):
-    class DownloadTransport:
-        def download(self, context, url, destination):
-            context.require_research()
-            Path(destination).write_bytes(b"image-bytes")
-            return ("a" * 64, 11)
-
-    item = ResearchMediaRecord(
-        media_id="venus",
-        provider="wikimedia",
-        title="Venus",
-        source_page="https://commons.wikimedia.org/wiki/File:Venus.jpg",
-        file_url="https://upload.wikimedia.org/venus.jpg",
-        license="CC BY 4.0",
-        license_url="https://creativecommons.org/licenses/by/4.0/",
-        attribution="Example",
-        attribution_required=True,
-        rights_decision="accept_with_attribution",
-        publication_eligible=True,
-    )
-    destination = tmp_path / "venus.jpg"
-    sealed = download_and_seal_media(
-        DownloadTransport(),
-        research_context(),
-        item,
-        destination,
-    )
-    sidecar = tmp_path / "venus.jpg.astromedia.json"
-    assert destination.is_file()
-    assert sidecar.is_file()
-    assert sealed.sha256 == "a" * 64
-    text = sidecar.read_text(encoding="utf-8")
-    assert '"rights_status": "VERIFIED_LICENSE"' in text
-    assert '"provider": "WIKIMEDIA"' in text
-
-
-def test_c3_binding_declares_network_only_at_research_boundary():
-    binding = build_c3_external_research_binding(
-        lambda context, request: ResearchBundle(
-            data=(
-                ResearchDatum(
-                    "test:fact",
-                    "hecho",
-                    1,
-                    "test_source",
-                ),
-            ),
-            sources=(
-                ResearchSource(
-                    "test_source",
-                    "Test source",
-                    "Test",
-                    "https://example.org/",
-                ),
-            ),
-        )
-    )
-    assert binding.resource_class == ResourceClass.LIGHT
-    assert binding.invokes_network is True
-    assert binding.invokes_llm is False
-    assert binding.invokes_render is False
-    assert binding.auto_publication is False

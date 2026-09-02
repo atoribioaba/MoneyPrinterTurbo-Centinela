@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "dataset_id": "naoj-greatest-elongations-2026-v1",
+  "control": {
+    "provider": "National Astronomical Observatory of Japan, Ephemeris Computation Office",
+    "source_url": "https://eco.mtk.nao.ac.jp/cgi-bin/koyomi/cande/phenomena_fy_en.cgi",
+    "source_kind": "independent frozen primary-source control",
+    "published_timescale": "JST (UT+9)",
+    "comparison_timescale": "UTC",
+    "retrieved_on": "2026-09-02",
+    "note": "NAOJ rounds greatest-elongation event times to the hour; UTC values are JST minus nine hours, therefore the control uses a 90-minute time tolerance."
+  },
+  "observer": {
+    "latitude_deg": 41.6523,
+    "longitude_deg": -4.7245,
+    "elevation_m": 698.0,
+    "timezone": "Europe/Madrid",
+    "name": "Valladolid science fixture"
+  },
+  "window": {
+    "start_local": "2026-01-01T00:00:00+01:00",
+    "end_local": "2027-01-01T00:00:00+01:00"
+  },
+  "events": [
+    {
+      "event_type": "planet_max_elongation",
+      "body": "mercury",
+      "expected_utc": "2026-02-19T18:00:00Z",
+      "expected_elongation_deg": 18.1166666667,
+      "elongation_tolerance_deg": 0.2,
+      "tolerance": {"absolute_seconds": 5400.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_max_elongation",
+      "body": "mercury",
+      "expected_utc": "2026-04-03T22:00:00Z",
+      "expected_elongation_deg": 27.8166666667,
+      "elongation_tolerance_deg": 0.2,
+      "tolerance": {"absolute_seconds": 5400.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_max_elongation",
+      "body": "venus",
+      "expected_utc": "2026-08-15T06:00:00Z",
+      "expected_elongation_deg": 45.8833333333,
+      "elongation_tolerance_deg": 0.2,
+      "tolerance": {"absolute_seconds": 5400.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_max_elongation",
+      "body": "mercury",
+      "expected_utc": "2026-10-12T10:00:00Z",
+      "expected_elongation_deg": 25.1666666667,
+      "elongation_tolerance_deg": 0.2,
+      "tolerance": {"absolute_seconds": 5400.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_max_elongation",
+      "body": "mercury",
+      "expected_utc": "2026-11-20T23:00:00Z",
+      "expected_elongation_deg": 19.6166666667,
+      "elongation_tolerance_deg": 0.2,
+      "tolerance": {"absolute_seconds": 5400.0, "relative": 1e-12}
+    }
+  ]
+}

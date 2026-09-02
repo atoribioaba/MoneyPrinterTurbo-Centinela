@@ -1,4 +1,21 @@
+from .canonicalized import (
+    MinorPlanetCenterAdapter,
+    NasaExoplanetArchiveAdapter,
+    SkyfieldDE440Adapter,
+    SunPyLocalAdapter,
+    WikidataAdapter,
+)
+from .conflict_gate import (
+    C3ExternalResearchFactLockAdapter,
+    build_c3_external_research_binding,
+)
+from .conflict_resolver import (
+    ScientificConflictError,
+    ScientificConflictResolver,
+    ScientificTolerance,
+)
 from .contracts import (
+    CanonicalScientificQuantity,
     OptionalRuntimeUnavailable,
     ResearchAdapterError,
     ResearchBundle,
@@ -13,17 +30,12 @@ from .contracts import (
 from .integration import C3ResearchControlCenter
 from .local import (
     PoliastroCompatibilityAdapter,
-    SkyfieldDE440Adapter,
     StellariumStaticRendererAdapter,
-    SunPyLocalAdapter,
 )
 from .remote import (
     MastHstJwstAdapter,
-    MinorPlanetCenterAdapter,
-    NasaExoplanetArchiveAdapter,
     NasaOpenAdapter,
     TapArchiveAdapter,
-    WikidataAdapter,
     WikimediaCommonsAdapter,
     build_esa_gaia_tap_adapter,
     build_eso_tap_adapter,
@@ -37,17 +49,14 @@ from .service import (
     with_download,
     write_astromedia_sidecar,
 )
-from .spine_adapter import (
-    C3ExternalResearchFactLockAdapter,
-    build_c3_external_research_binding,
-    compose_runners,
-)
+from .spine_adapter import compose_runners
 from .transport import RequestsResearchTransport
 
 __all__ = [
     "C3AstronomyResearchRouter",
     "C3ExternalResearchFactLockAdapter",
     "C3ResearchControlCenter",
+    "CanonicalScientificQuantity",
     "DEFAULT_RESEARCH_HOSTS",
     "MastHstJwstAdapter",
     "MinorPlanetCenterAdapter",
@@ -65,6 +74,9 @@ __all__ = [
     "ResearchPhase",
     "ResearchPhaseViolation",
     "ResearchSource",
+    "ScientificConflictError",
+    "ScientificConflictResolver",
+    "ScientificTolerance",
     "SkyfieldDE440Adapter",
     "StellariumStaticRendererAdapter",
     "SunPyLocalAdapter",
@@ -76,8 +88,8 @@ __all__ = [
     "build_eso_tap_adapter",
     "build_licenses_manifest",
     "build_provenance_manifest",
-    "download_and_seal_media",
     "compose_runners",
+    "download_and_seal_media",
     "merge_bundles",
     "with_download",
     "write_astromedia_sidecar",
