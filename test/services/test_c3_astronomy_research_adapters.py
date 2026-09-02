@@ -44,6 +44,7 @@ from app.services.centinela.writer_room.models import FactLock
 
 
 ROOT = Path(__file__).resolve().parents[2]
+_RAW_UNIT_UNCHANGED = object()
 
 
 class FakeTransport:
@@ -66,7 +67,11 @@ def research_context() -> ResearchContext:
     return ResearchContext("test-project", ResearchPhase.RESEARCH)
 
 
-def _assert_raw_canonical(datum: ResearchDatum) -> CanonicalScientificQuantity:
+def _assert_raw_canonical(
+    datum: ResearchDatum,
+    *,
+    expected_raw_unit: object = _RAW_UNIT_UNCHANGED,
+) -> CanonicalScientificQuantity:
     quantity = datum.canonical_quantity
     assert isinstance(quantity, CanonicalScientificQuantity)
     assert quantity.source == datum.source_id
@@ -80,7 +85,9 @@ def _assert_raw_canonical(datum: ResearchDatum) -> CanonicalScientificQuantity:
     assert quantity.display_precision is None or quantity.display_precision >= 0
     assert quantity.provenance["source_id"] == datum.source_id
     assert quantity.provenance["raw_fact_id"] == datum.fact_id
-    assert quantity.provenance["raw_unit"] == datum.unit
+    if expected_raw_unit is _RAW_UNIT_UNCHANGED:
+        expected_raw_unit = datum.unit
+    assert quantity.provenance["raw_unit"] == expected_raw_unit
     assert quantity.provenance["auto_publication"] is False
     return quantity
 
@@ -314,9 +321,13 @@ def test_mpc_observations_and_orbit_emit_canonical_quantities():
     assert semi_major.frame == "MPC_OSCULATING_ORBIT_ELEMENTS"
     assert semi_major.uncertainty == pytest.approx(1e-7)
 
-    eccentricity = _assert_raw_canonical(facts["mpc_orbit_bennu:e"])
+    eccentricity = _assert_raw_canonical(
+        facts["mpc_orbit_bennu:e"],
+        expected_raw_unit=None,
+    )
     assert eccentricity.quantity == "eccentricity"
     assert eccentricity.unit == "1"
+    assert eccentricity.provenance["raw_unit"] is None
 
 
 def test_skyfield_wrapper_canonicalizes_runtime_boundary(monkeypatch):
