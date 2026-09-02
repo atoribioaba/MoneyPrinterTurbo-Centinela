@@ -108,12 +108,31 @@ def test_event_calendar_and_astronomy_engine_match_frozen_primary_controls(
     observer, raw_events, calendar_events = _calculate_both(payload)
 
     provider = payload["control"]["provider"]
-    assert provider.startswith(("U.S. Naval Observatory", "National Astronomical Observatory"))
+    assert provider.startswith(
+        ("U.S. Naval Observatory", "National Astronomical Observatory")
+    )
     for reference in payload["events"]:
         raw = _match_event(raw_events, reference)
         calendar = _match_event(calendar_events, reference)
         _assert_time_close(raw.time_utc, reference)
         _assert_time_close(calendar.time_utc, reference)
+
+        if reference["event_type"] == "planet_opposition":
+            for event in (raw, calendar):
+                assert event.details["opposition_definition"] == (
+                    "geocentric apparent ecliptic longitude difference "
+                    "planet-minus-Sun = 180 deg"
+                )
+                assert event.details["observer_basis"] == "geocenter"
+                assert event.details["coordinate_basis"] == (
+                    "geocentric apparent true ecliptic/equinox of date"
+                )
+                assert event.details["apparent"] is True
+                assert event.details["light_time_correction"] is True
+                assert event.details["aberration_correction"] is True
+                assert event.details["longitude_difference_target_deg"] == 180.0
+                assert event.details["computational_tolerance_seconds"] == 0.1
+                assert event.details["scientific_display_resolution_seconds"] == 60
 
         if "expected_elongation_deg" in reference:
             expected = float(reference["expected_elongation_deg"])

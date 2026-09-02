@@ -59,6 +59,15 @@ _CONJUNCTION_REFINEMENT_SECONDS = 1.0
 # uncertainty.
 _CONJUNCTION_CANDIDATE_MAX_SEPARATION_DEG = 8.0
 
+# G-003 canonical opposition contract:
+# apparent geocentric ecliptic longitude(planet) - longitude(Sun) = 180 deg.
+# SearchRelativeLongitude remains useful only as a deterministic nearby seed because
+# its documented geometry is heliocentric and therefore is not itself the event.
+_OPPOSITION_TARGET_DEG = 180.0
+_OPPOSITION_SEARCH_TOLERANCE_SECONDS = 0.1
+_OPPOSITION_MAX_BRACKET_DAYS = 4.0
+_OPPOSITION_SCIENTIFIC_DISPLAY_RESOLUTION_SECONDS = 60
+
 
 @dataclass(frozen=True, slots=True)
 class RawCalendarEvent:
@@ -203,6 +212,157 @@ class AstronomyEngineEventSource:
                     )
                 )
             cursor = self._to_engine_time(event_utc + timedelta(seconds=1))
+        return result
+
+    @classmethod
+    def _apparent_geocentric_opposition_state(
+        cls,
+        engine_body: Any,
+        moment: datetime,
+    ) -> dict[str, float]:
+        """Return geocentric apparent true-ecliptic-of-date opposition geometry."""
+        event_time = cls._to_engine_time(moment)
+        planet = ae.Ecliptic(ae.GeoVector(engine_body, event_time, True))
+        sun = ae.Ecliptic(ae.GeoVector(ae.Body.Sun, event_time, True))
+        difference = (float(planet.elon) - float(sun.elon)) % 360.0
+        offset = ((difference - _OPPOSITION_TARGET_DEG + 180.0) % 360.0) - 180.0
+        return {
+            "planet_ecliptic_longitude_deg": float(planet.elon),
+            "sun_ecliptic_longitude_deg": float(sun.elon),
+            "longitude_difference_deg": difference,
+            "target_offset_deg": offset,
+        }
+
+    @classmethod
+    def _refine_apparent_geocentric_opposition(
+        cls,
+        engine_body: Any,
+        seed_utc: datetime,
+    ) -> tuple[datetime, dict[str, float]]:
+        """Refine a heliocentric seed to the canonical geocentric apparent root."""
+        bracket: tuple[datetime, datetime, float, float] | None = None
+        for half_days in (1.0, 2.0, _OPPOSITION_MAX_BRACKET_DAYS):
+            left = seed_utc - timedelta(days=half_days)
+            right = seed_utc + timedelta(days=half_days)
+            left_value = cls._apparent_geocentric_opposition_state(
+                engine_body,
+                left,
+            )["target_offset_deg"]
+            right_value = cls._apparent_geocentric_opposition_state(
+                engine_body,
+                right,
+            )["target_offset_deg"]
+            if left_value == 0.0:
+                return left, cls._apparent_geocentric_opposition_state(
+                    engine_body,
+                    left,
+                )
+            if right_value == 0.0:
+                return right, cls._apparent_geocentric_opposition_state(
+                    engine_body,
+                    right,
+                )
+            if left_value * right_value < 0.0:
+                bracket = (left, right, left_value, right_value)
+                break
+
+        if bracket is None:
+            raise RuntimeError(
+                "canonical geocentric apparent opposition root was not bracketed "
+                f"within +/-{_OPPOSITION_MAX_BRACKET_DAYS:g} days of the "
+                "Astronomy Engine heliocentric seed"
+            )
+
+        left, right, left_value, _ = bracket
+        for _ in range(80):
+            if (right - left).total_seconds() <= _OPPOSITION_SEARCH_TOLERANCE_SECONDS:
+                break
+            midpoint = left + (right - left) / 2
+            midpoint_value = cls._apparent_geocentric_opposition_state(
+                engine_body,
+                midpoint,
+            )["target_offset_deg"]
+            if midpoint_value == 0.0:
+                left = midpoint
+                right = midpoint
+                break
+            if left_value * midpoint_value <= 0.0:
+                right = midpoint
+            else:
+                left = midpoint
+                left_value = midpoint_value
+
+        event_utc = left + (right - left) / 2
+        return (
+            event_utc,
+            cls._apparent_geocentric_opposition_state(engine_body, event_utc),
+        )
+
+    def _opposition_events(
+        self,
+        *,
+        body_name: AstronomyBody,
+        engine_body: Any,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> list[RawCalendarEvent]:
+        """Find canonical geocentric apparent oppositions for a superior planet."""
+        result: list[RawCalendarEvent] = []
+        cursor = self._to_engine_time(start_utc)
+        for _ in range(8):
+            # Astronomy Engine documents SearchRelativeLongitude as a heliocentric
+            # planet/Earth longitude search. It is deliberately used only to find
+            # a nearby deterministic seed, never as the canonical opposition time.
+            seed = ae.SearchRelativeLongitude(engine_body, 0.0, cursor)
+            seed_utc = self._from_engine_time(seed)
+            if seed_utc > end_utc + timedelta(days=_OPPOSITION_MAX_BRACKET_DAYS):
+                break
+
+            event_utc, state = self._refine_apparent_geocentric_opposition(
+                engine_body,
+                seed_utc,
+            )
+            if event_utc >= end_utc:
+                break
+            if event_utc >= start_utc:
+                result.append(
+                    RawCalendarEvent(
+                        event_type="planet_opposition",
+                        label_es=f"Oposición de {body_name.value}",
+                        time_utc=event_utc,
+                        body=body_name.value,
+                        details={
+                            "opposition_definition": (
+                                "geocentric apparent ecliptic longitude difference "
+                                "planet-minus-Sun = 180 deg"
+                            ),
+                            "observer_basis": "geocenter",
+                            "coordinate_basis": (
+                                "geocentric apparent true ecliptic/equinox of date"
+                            ),
+                            "apparent": True,
+                            "light_time_correction": True,
+                            "aberration_correction": True,
+                            "longitude_difference_target_deg": _OPPOSITION_TARGET_DEG,
+                            **state,
+                            "search_method": (
+                                "Astronomy Engine heliocentric SearchRelativeLongitude "
+                                "seed + deterministic bisection of geocentric apparent "
+                                "true-ecliptic-of-date longitude difference"
+                            ),
+                            "computational_tolerance_seconds": (
+                                _OPPOSITION_SEARCH_TOLERANCE_SECONDS
+                            ),
+                            "scientific_display_resolution_seconds": (
+                                _OPPOSITION_SCIENTIFIC_DISPLAY_RESOLUTION_SECONDS
+                            ),
+                            "engine": ENGINE_NAME,
+                            "engine_version": ENGINE_VERSION,
+                        },
+                    )
+                )
+
+            cursor = self._to_engine_time(seed_utc + timedelta(seconds=1))
         return result
 
     def _max_elongation_events(
@@ -503,12 +663,9 @@ class AstronomyEngineEventSource:
 
         for body_name, engine_body in self._SUPERIOR_PLANETS:
             events.extend(
-                self._relative_longitude_events(
+                self._opposition_events(
                     body_name=body_name,
                     engine_body=engine_body,
-                    target_deg=0.0,
-                    event_type="planet_opposition",
-                    label_es=f"Oposición de {body_name.value}",
                     start_utc=start_utc,
                     end_utc=end_utc,
                 )
