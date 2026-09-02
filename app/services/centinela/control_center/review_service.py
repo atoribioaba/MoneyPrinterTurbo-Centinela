@@ -1,28 +1,22 @@
 from __future__ import annotations
 
-from typing import Any
-
 from app.models.finalization_e2e import HumanFinalReviewRecord
 
-from .service import CentinelaControlCenter as _LegacyCentinelaControlCenter
+from .service import CentinelaControlCenter as _BaseCentinelaControlCenter
 
 
-class CentinelaControlCenter(_LegacyCentinelaControlCenter):
-    """Control Center facade with the structured human-review contract."""
+class CentinelaControlCenter(_BaseCentinelaControlCenter):
+    """Public Control Center facade exposing only structured human review."""
 
     def review(
         self,
         project_id: str,
         *,
-        review: HumanFinalReviewRecord | dict[str, Any] | None = None,
-        approved: bool | None = None,
-        reviewer: str | None = None,
-        notes: str | None = None,
+        review: HumanFinalReviewRecord,
     ):
+        if not isinstance(review, HumanFinalReviewRecord):
+            raise TypeError("review must be a HumanFinalReviewRecord")
         return self.spine.record_human_review(
             project_id,
             review=review,
-            approved=approved,
-            reviewer=reviewer,
-            notes=notes,
         )
