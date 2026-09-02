@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,8 +31,16 @@ from app.services.centinela.media_resolver import (
     SceneMediaEvidence,
     SemanticEvidence,
 )
-from app.services.centinela.orchestration import ProjectState, ProjectStateMachine
-from app.services.centinela.production_spine import ProductionSpine
+from app.services.centinela.orchestration import JobStatus, ProjectState, ProjectStateMachine
+from app.services.centinela.production_spine import (
+    STAGE_DESCRIPTORS,
+    ProductionSpine,
+    SpineStage,
+    StageArtifact,
+    StageBinding,
+    StageResult,
+    StageStateError,
+)
 from app.services.centinela.project_foundation import ArtifactStore
 from app.services.finalization_e2e import build_finalization_e2e
 
@@ -47,6 +56,13 @@ REVIEW_FIELDS = (
 )
 
 
+class _NoopResourceLease:
+    @staticmethod
+    def acquire(component, resource_class, timeout_seconds):
+        _ = component, resource_class, timeout_seconds
+        return nullcontext()
+
+
 def _review(**overrides) -> HumanFinalReviewRecord:
     gates = {field: True for field in REVIEW_FIELDS}
     gates.update(overrides)
@@ -59,22 +75,76 @@ def _review(**overrides) -> HumanFinalReviewRecord:
     )
 
 
-def _advance_to_review(machine: ProjectStateMachine, project_id: str) -> None:
-    for state in (
-        ProjectState.RESEARCH_READY,
-        ProjectState.SCRIPT_READY,
-        ProjectState.SCENES_READY,
-        ProjectState.MEDIA_READY,
-        ProjectState.AUDIO_READY,
-        ProjectState.VIDEO_BASE_READY,
-        ProjectState.READY_FOR_HUMAN_REVIEW,
-    ):
-        machine.transition(
-            project_id,
-            state,
-            reason=f"G002 fixture advance to {state.value}",
-            actor="g002-test",
+def _fixture_stage_binding(stage: SpineStage) -> StageBinding:
+    descriptor = STAGE_DESCRIPTORS[stage]
+
+    def handler(context, payload):
+        return StageResult.complete(
+            *(
+                StageArtifact(
+                    artifact_type=artifact_type,
+                    payload={
+                        "fixture": "G002",
+                        "stage": stage.value,
+                        "project_id": context.project_id,
+                        "request": payload,
+                    },
+                )
+                for artifact_type in descriptor.required_artifact_types
+            ),
+            message=f"{stage.value} fixture complete",
         )
+
+    return StageBinding(
+        adapter_id=f"g002_{stage.value.lower()}_fixture",
+        handler=handler,
+        resource_class=descriptor.minimum_resource_class,
+    )
+
+
+def _advance_via_spine(
+    store: ArtifactStore,
+    machine: ProjectStateMachine,
+    project_id: str,
+    *,
+    include_review_prep: bool = True,
+) -> None:
+    stages = [
+        SpineStage.RESEARCH,
+        SpineStage.SCRIPT,
+        SpineStage.SCENES,
+        SpineStage.MEDIA,
+        SpineStage.AUDIO,
+        SpineStage.VIDEO_BASE,
+    ]
+    if include_review_prep:
+        stages.append(SpineStage.REVIEW_PREP)
+
+    spine = ProductionSpine(
+        store,
+        state_machine=machine,
+        resource_lease=_NoopResourceLease(),
+    )
+    try:
+        for stage in stages:
+            spine.register_adapter(stage, _fixture_stage_binding(stage))
+            schedule = spine.schedule_stage(
+                project_id,
+                stage,
+                request={"fixture": "G002", "stage": stage.value},
+            )
+            assert schedule.job_id is not None
+            record = spine.wait(schedule.job_id, timeout=10)
+            assert record.status == JobStatus.SUCCEEDED
+
+        expected = (
+            ProjectState.READY_FOR_HUMAN_REVIEW
+            if include_review_prep
+            else ProjectState.VIDEO_BASE_READY
+        )
+        assert machine.current_state(project_id) == expected
+    finally:
+        spine.shutdown(wait=True)
 
 
 def _fake_probe(path: Path) -> dict:
@@ -123,12 +193,22 @@ def _video_base_e2e_pass() -> VideoBaseE2EPlan:
     )
 
 
-def _fixture(tmp_path: Path, *, rights_ready: bool = True):
+def _fixture(
+    tmp_path: Path,
+    *,
+    rights_ready: bool = True,
+    review_ready: bool = True,
+):
     store = ArtifactStore(tmp_path / "store")
     manifest = store.create_project("G-002 final renderer")
     project_id = manifest.project_id
     machine = ProjectStateMachine(store)
-    _advance_to_review(machine, project_id)
+    _advance_via_spine(
+        store,
+        machine,
+        project_id,
+        include_review_prep=review_ready,
+    )
 
     material_ref = store.put_json(
         project_id,
@@ -362,44 +442,17 @@ def _fixture(tmp_path: Path, *, rights_ready: bool = True):
 
 def _approve(env) -> HumanFinalReviewRecord:
     record = _review()
-    spine = ProductionSpine(env["store"], state_machine=env["machine"])
+    spine = ProductionSpine(
+        env["store"],
+        state_machine=env["machine"],
+        resource_lease=_NoopResourceLease(),
+    )
     try:
         spine.record_human_review(env["project_id"], review=record)
     finally:
         spine.shutdown(wait=True)
     assert env["machine"].current_state(env["project_id"]) == ProjectState.FINAL_APPROVED
     return record
-
-
-def _force_final_approved(
-    env,
-    *,
-    persisted_review: HumanFinalReviewRecord | None = None,
-) -> None:
-    metadata = {"fixture": "compromised-state-precondition"}
-    if persisted_review is not None:
-        ref = env["store"].put_json(
-            env["project_id"],
-            "human_final_review_record",
-            persisted_review.model_dump(mode="json"),
-            producer="g002-test",
-            artifact_id="g002-forged-review",
-        )
-        metadata = {
-            "human_review": True,
-            "structured_review": True,
-            "decision_artifact_id": ref.artifact_id,
-            "decision": persisted_review.decision.value,
-            "approved": True,
-        }
-    env["machine"].transition(
-        env["project_id"],
-        ProjectState.FINAL_APPROVED,
-        reason="G002 adversarial state fixture",
-        actor="g002-test",
-        metadata=metadata,
-        expected_state=ProjectState.READY_FOR_HUMAN_REVIEW,
-    )
 
 
 def _service(env, calls: list[list[str]] | None = None):
@@ -458,11 +511,36 @@ def test_final_approved_renders_master_social_and_finalization_passes(tmp_path):
 
 @pytest.mark.parametrize("case", ["pre_review", "six_of_seven", "missing_record"])
 def test_final_render_preconditions_fail_closed(tmp_path, case):
-    env = _fixture(tmp_path)
-    if case == "six_of_seven":
-        _force_final_approved(env, persisted_review=_review(science_passed=False))
-    elif case == "missing_record":
-        _force_final_approved(env)
+    env = _fixture(tmp_path, review_ready=case != "pre_review")
+    if case == "pre_review":
+        assert env["machine"].current_state(env["project_id"]) == ProjectState.VIDEO_BASE_READY
+    elif case == "six_of_seven":
+        spine = ProductionSpine(
+            env["store"],
+            state_machine=env["machine"],
+            resource_lease=_NoopResourceLease(),
+        )
+        try:
+            with pytest.raises(StageStateError, match="all seven"):
+                spine.record_human_review(
+                    env["project_id"],
+                    review=_review(science_passed=False),
+                )
+        finally:
+            spine.shutdown(wait=True)
+        assert (
+            env["machine"].current_state(env["project_id"])
+            == ProjectState.READY_FOR_HUMAN_REVIEW
+        )
+    else:
+        assert (
+            env["machine"].current_state(env["project_id"])
+            == ProjectState.READY_FOR_HUMAN_REVIEW
+        )
+        assert not env["store"].list_artifacts(
+            env["project_id"],
+            artifact_type="human_final_review_record",
+        )
 
     with pytest.raises(FinalRenderBlockedError):
         _service(env).render(env["project_id"], work_dir=tmp_path / "work")
