@@ -1,15 +1,11 @@
 """Product-facing Streamlit pages for El Centinela del Universo."""
 
-from . import pages, publication, review
+from . import pages, publication, review, studio, ui
 
-# The old boolean review page is retained only as implementation history inside
-# pages.py. Any package-level consumer that resolves pages.review_page is routed
-# to the structured seven-gate review implementation.
+# Structured human review remains the only product review boundary.
 pages.review_page = review.review_page
 
-# G-006 follows the same product-facade pattern: keep the legacy publication
-# placeholder in pages.py as history, but route the public page to the productive
-# manual-package implementation.
+# G-006 productive manual-package implementation remains the public publication page.
 pages.publication_page = publication.publication_page
 
-__all__ = ["pages", "publication", "review"]
+__all__ = ["pages", "publication", "review", "studio", "ui"]
