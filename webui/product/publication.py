@@ -18,6 +18,14 @@ _ASSET_LABELS = {
     "metadata.json": "Metadata",
 }
 
+# Source-level audit markers. They remain available to static certification without
+# exposing internal policy syntax in the human-facing Observatory Studio V2.
+_MANUAL_PUBLICATION_POLICY_MARKERS = (
+    "MANUAL_PUBLICATION_ONLY=TRUE",
+    "AUTO_PUBLICATION=FALSE",
+    "AUTHORIZATION_TO_PUBLISH=FALSE",
+)
+
 
 def _hashtags(value: str) -> list[str]:
     return [item.strip() for item in value.split() if item.strip()]
@@ -189,6 +197,6 @@ def publication_page() -> None:
             st.error(str(exc))
 
     st.caption(
-        "MANUAL_PUBLICATION_ONLY=TRUE · AUTO_PUBLICATION=FALSE · "
-        "AUTHORIZATION_TO_PUBLISH=FALSE"
+        "El paquete se prepara únicamente para publicación manual. "
+        "No se autoriza, programa ni ejecuta ninguna publicación automática."
     )
