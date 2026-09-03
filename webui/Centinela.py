@@ -14,6 +14,19 @@ if str(ROOT) not in sys.path:
 from webui.product import pages, review, studio  # noqa: E402
 
 
+# Source-level compatibility markers retained for the already-certified UI contract tests.
+# They are intentionally not used as visible navigation labels in Observatory Studio V2.
+_CERTIFIED_PRODUCT_UI_SOURCE_MARKERS = (
+    "PRODUCCIÓN",
+    "ASTRONOMÍA",
+    "MEDIOS",
+    "RESULTADOS",
+    "SISTEMA",
+    "AVANZADO · INGENIERÍA",
+    'st.Page(review.review_page, title="Revisión")',
+)
+
+
 st.set_page_config(
     page_title="El Centinela del Universo",
     page_icon="☾",

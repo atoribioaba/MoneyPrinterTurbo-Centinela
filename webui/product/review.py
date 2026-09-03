@@ -216,6 +216,6 @@ def review_page() -> None:
             st.error(str(exc))
 
     st.caption(
-        "Aprobar habilita la preparación final del proyecto. No autoriza ni ejecuta "
-        "publicación automática en ninguna plataforma."
+        "Aprobar habilita la preparación final del proyecto. "
+        "No autoriza ni ejecuta publicación automática en ninguna plataforma."
     )
