@@ -623,7 +623,7 @@ def test_materializer_happy_path_has_exact_eight_assets_and_safety_flags(tmp_pat
     assert result.reused is False
     assert manifest["asset_count"] == 8
     assert {row["logical_name"] for row in manifest["assets"]} == set(env["sources"])
-    assert not (result.package_dir / "manifest.json") in [
+    assert (result.package_dir / "manifest.json") not in [
         result.package_dir / row["relative_path"] for row in manifest["assets"]
     ]
     assert manifest["manual_publication_only"] is True
