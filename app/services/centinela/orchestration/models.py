@@ -21,6 +21,7 @@ _SECRET_KEY_FRAGMENTS = (
     "cookie",
     "credential",
 )
+_NON_SECRET_POLICY_KEYS = frozenset({"authorization_to_publish"})
 
 
 class ProjectState(StrEnum):
@@ -117,7 +118,10 @@ def assert_no_secret_keys(value: Any, path: str = "root") -> None:
                 "_",
                 str(key).lower(),
             ).strip("_")
-            if any(fragment in key_text for fragment in _SECRET_KEY_FRAGMENTS):
+            if (
+                key_text not in _NON_SECRET_POLICY_KEYS
+                and any(fragment in key_text for fragment in _SECRET_KEY_FRAGMENTS)
+            ):
                 raise ValueError(f"secret-like key is forbidden in persisted orchestration data: {path}.{key}")
             assert_no_secret_keys(item, f"{path}.{key}")
     elif isinstance(value, list):
