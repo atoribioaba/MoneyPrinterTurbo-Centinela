@@ -4,11 +4,30 @@ import streamlit as st
 
 from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE
-from webui.product import pages
+from webui.product import pages, ui
+
+
+_ASSET_LABELS = {
+    "master_2160x3840.mp4": "Vídeo máster",
+    "social_1080x1920.mp4": "Vídeo social",
+    "thumbnail.jpg": "Miniatura",
+    "subtitles-es.srt": "Subtítulos",
+    "sources-licenses-provenance.json": "Fuentes, licencias y procedencia",
+    "publication-checklist.json": "Checklist de publicación",
+    "caption.txt": "Caption",
+    "metadata.json": "Metadata",
+}
 
 
 def _hashtags(value: str) -> list[str]:
     return [item.strip() for item in value.split() if item.strip()]
+
+
+def _asset_label(row: dict) -> str:
+    logical_name = str(row.get("logical_name") or "")
+    relative_path = str(row.get("relative_path") or "")
+    filename = relative_path.replace("\\", "/").rsplit("/", 1)[-1]
+    return _ASSET_LABELS.get(logical_name) or _ASSET_LABELS.get(filename) or logical_name or filename or "Asset"
 
 
 def _render_ready_package(service, project_id: str) -> None:
@@ -27,39 +46,84 @@ def _render_ready_package(service, project_id: str) -> None:
         return
 
     st.success("LISTO PARA PUBLICACIÓN MANUAL")
-    st.write(f"**Ruta del paquete:** `{ref.provenance.get('package_dir', '—')}`")
-    st.write(f"**Review 7/7:** `{manifest.get('human_review_artifact_id', '—')}`")
-    st.write(f"**Assets contractuales:** `{manifest.get('asset_count', 0)}/8`")
-    assets = manifest.get("assets") or []
-    st.dataframe(
-        [
-            {
-                "Asset": row.get("logical_name"),
-                "Ruta": row.get("relative_path"),
-                "SHA256": row.get("sha256"),
-                "Source artifact": row.get("source_artifact_id"),
-                "Source SHA256": row.get("source_sha256"),
-            }
-            for row in assets
-        ],
-        use_container_width=True,
-        hide_index=True,
+    st.markdown(
+        "El paquete final está preparado. **Nada se ha subido ni publicado automáticamente.**"
     )
+
+    package_dir = ref.provenance.get("package_dir", "—")
+    review_id = manifest.get("human_review_artifact_id", "—")
+    asset_count = int(manifest.get("asset_count", 0) or 0)
+
+    c1, c2 = st.columns(2)
+    c1.metric("Entregables", f"{asset_count}/8")
+    c2.metric("Publicación", "MANUAL")
+
+    st.markdown("**Carpeta preparada**")
+    st.code(str(package_dir), language=None)
+
+    ui.render_section_heading(
+        "Paquete final",
+        "Los ocho entregables contractuales preparados para la publicación manual.",
+        eyebrow="ENTREGABLES",
+    )
+
+    assets = list(manifest.get("assets") or [])
+    for row in assets:
+        with st.container(border=True):
+            st.markdown(f"**✓ {_asset_label(row)}**")
+            relative_path = row.get("relative_path")
+            if relative_path:
+                st.caption(str(relative_path))
+
+    with st.expander("Trazabilidad y detalles técnicos"):
+        st.markdown("**Review humano 7/7**")
+        st.code(str(review_id), language=None)
+        st.markdown("**Manifest del paquete**")
+        st.code(str(ref.artifact_id), language=None)
+        st.dataframe(
+            [
+                {
+                    "Asset": row.get("logical_name"),
+                    "Ruta": row.get("relative_path"),
+                    "SHA256": row.get("sha256"),
+                    "Source artifact": row.get("source_artifact_id"),
+                    "Source SHA256": row.get("source_sha256"),
+                }
+                for row in assets
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
     st.caption(
-        "Derechos/provenance y checklist forman parte de los ocho assets. "
-        "La publicación sigue siendo manual: no hay upload, OAuth, scheduler, webhook ni autoposting."
+        "Derechos, licencias, procedencia y checklist forman parte del paquete. "
+        "No hay upload, OAuth, scheduler, webhook ni autoposting."
     )
 
 
 def publication_page() -> None:
     service = pages._service()
-    pages._header(
-        "Publicación",
-        "Preparación física del paquete final; la publicación continúa siendo manual.",
+
+    ui.render_brand_hero(
+        "Preparar la salida final",
+        "Reúne vídeo, miniatura, subtítulos, copy, metadatos y trazabilidad en un paquete "
+        "listo para que tú decidas cuándo y dónde publicarlo.",
+        eyebrow="PUBLICACIÓN",
+        action_hint="EL CENTINELA PREPARA · TÚ PUBLICAS",
     )
+
     project = pages._project_selector(service, "publication-selector")
     if project is None:
+        ui.render_empty_state(
+            "No hay un proyecto preparado",
+            "La publicación manual aparecerá cuando una historia complete su revisión final.",
+        )
         return
+
+    with st.container(border=True):
+        st.markdown(f"## {project.title}")
+        ui.render_state_badge(project.state)
+        ui.render_project_timeline(project)
 
     if project.state == ProjectState.PUBLICATION_PACKAGE_READY:
         _render_ready_package(service, project.project_id)
@@ -67,14 +131,16 @@ def publication_page() -> None:
 
     if project.state != ProjectState.FINAL_APPROVED:
         st.info(
-            f"Este proyecto está en **{project.state_label}**. "
-            "La preparación se habilita únicamente después de Review 7/7 y FINAL_APPROVED."
+            f"Este proyecto está en **{ui.state_display(project.state)}**. "
+            "La preparación del paquete se habilitará después de completar la revisión humana 7/7."
         )
         return
 
-    st.warning(
-        "Esta acción prepara archivos locales para publicación manual. "
-        "No autoriza ni ejecuta ninguna publicación automática."
+    ui.render_manual_publication_notice()
+
+    ui.render_section_heading(
+        "Contenido editorial",
+        "Completa los elementos que acompañarán al paquete final.",
     )
     thumbnail = st.file_uploader(
         "Miniatura aprobada (JPEG)",
@@ -82,7 +148,11 @@ def publication_page() -> None:
         key="publication-thumbnail",
     )
     title = st.text_input("Título de publicación", value=project.title)
-    caption = st.text_area("Caption aprobado", key="publication-caption")
+    caption = st.text_area(
+        "Caption aprobado",
+        key="publication-caption",
+        height=130,
+    )
     hashtags_text = st.text_input(
         "Hashtags",
         placeholder="#astronomia #astrofotografia",
@@ -91,12 +161,13 @@ def publication_page() -> None:
     youtube_description = st.text_area(
         "Descripción de YouTube (opcional)",
         key="publication-youtube-description",
+        height=130,
     )
 
     if st.button(
         "Preparar paquete para publicación manual",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     ):
         if thumbnail is None:
             st.error("Selecciona la miniatura JPEG que ya fue aprobada en Review 7/7.")
@@ -112,10 +183,8 @@ def publication_page() -> None:
                 youtube_description=youtube_description,
             )
             schedule = service.schedule_publication_package(project.project_id)
-            st.success(
-                "Paquete en preparación mediante PUBLICATION_PACKAGE con request={}. "
-                f"Job: {schedule.job_id or 'reutilizado'}."
-            )
+            st.success("El paquete final ha entrado en preparación.")
+            st.caption(f"Proceso interno: {schedule.job_id or 'reutilizado'}")
         except Exception as exc:
             st.error(str(exc))
 
