@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "dataset_id": "usno-moon-phases-2026-v1",
+  "control": {
+    "provider": "U.S. Naval Observatory, Astronomical Applications Department",
+    "source_url": "https://aa.usno.navy.mil/calculated/moon/phases?year=2026",
+    "source_kind": "independent frozen control",
+    "timescale": "UT",
+    "retrieved_on": "2026-09-01",
+    "note": "USNO publishes primary Moon phases to the minute; tolerance includes source rounding and independent ephemeris-model differences."
+  },
+  "observer": {
+    "latitude_deg": 41.6523,
+    "longitude_deg": -4.7245,
+    "elevation_m": 698.0,
+    "timezone": "Europe/Madrid",
+    "name": "Valladolid science fixture"
+  },
+  "window": {
+    "start_local": "2026-08-01T00:00:00+02:00",
+    "end_local": "2026-09-01T00:00:00+02:00"
+  },
+  "events": [
+    {
+      "event_type": "moon_third_quarter",
+      "body": "moon",
+      "expected_utc": "2026-08-06T02:21:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    },
+    {
+      "event_type": "moon_new",
+      "body": "moon",
+      "expected_utc": "2026-08-12T17:37:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    },
+    {
+      "event_type": "moon_first_quarter",
+      "body": "moon",
+      "expected_utc": "2026-08-20T02:46:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    },
+    {
+      "event_type": "moon_full",
+      "body": "moon",
+      "expected_utc": "2026-08-28T04:18:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    }
+  ]
+}

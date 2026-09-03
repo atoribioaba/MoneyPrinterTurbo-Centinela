@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "dataset_id": "naoj-planetary-oppositions-2026-v1",
+  "control": {
+    "provider": "National Astronomical Observatory of Japan, Ephemeris Computation Office",
+    "source_url": "https://eco.mtk.nao.ac.jp/cgi-bin/koyomi/cande/phenomena_fy_en.cgi",
+    "source_kind": "independent frozen primary-source control",
+    "published_timescale": "JST (UT+9)",
+    "comparison_timescale": "UTC",
+    "retrieved_on": "2026-09-02",
+    "note": "NAOJ 2026 Celestial Phenomena Long Term Edition; published JST values converted to UTC by subtracting nine hours."
+  },
+  "observer": {
+    "latitude_deg": 41.6523,
+    "longitude_deg": -4.7245,
+    "elevation_m": 698.0,
+    "timezone": "Europe/Madrid",
+    "name": "Valladolid science fixture"
+  },
+  "window": {
+    "start_local": "2026-01-01T00:00:00+01:00",
+    "end_local": "2027-01-01T00:00:00+01:00"
+  },
+  "events": [
+    {
+      "event_type": "planet_opposition",
+      "body": "jupiter",
+      "expected_utc": "2026-01-10T08:42:00Z",
+      "tolerance": {"absolute_seconds": 600.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_opposition",
+      "body": "neptune",
+      "expected_utc": "2026-09-26T01:36:00Z",
+      "tolerance": {"absolute_seconds": 600.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_opposition",
+      "body": "saturn",
+      "expected_utc": "2026-10-04T12:29:00Z",
+      "tolerance": {"absolute_seconds": 600.0, "relative": 1e-12}
+    },
+    {
+      "event_type": "planet_opposition",
+      "body": "uranus",
+      "expected_utc": "2026-11-25T22:41:00Z",
+      "tolerance": {"absolute_seconds": 600.0, "relative": 1e-12}
+    }
+  ]
+}

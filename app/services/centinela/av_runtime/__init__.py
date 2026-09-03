@@ -1,4 +1,10 @@
 from .audio import AudioExecutionError, AudioStageAdapter, build_audio_stage_binding
+from .final_renderer import (
+    FinalRenderBlockedError,
+    FinalRenderError,
+    FinalRenderService,
+    build_finalization_request,
+)
 from .models import (
     R7_AV_RUNTIME_VERSION,
     AudioBundle,
@@ -24,6 +30,9 @@ __all__ = [
     "AudioExecutionError",
     "AudioSceneTiming",
     "AudioStageAdapter",
+    "FinalRenderBlockedError",
+    "FinalRenderError",
+    "FinalRenderService",
     "SceneAdapterError",
     "SceneStageAdapter",
     "SubtitleCue",
@@ -31,6 +40,7 @@ __all__ = [
     "VideoBaseStageAdapter",
     "VideoExecutionError",
     "build_audio_stage_binding",
+    "build_finalization_request",
     "build_scene_plan",
     "build_scene_stage_binding",
     "build_video_base_stage_binding",

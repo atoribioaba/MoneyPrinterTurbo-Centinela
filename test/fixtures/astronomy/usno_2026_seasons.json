@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "dataset_id": "usno-seasons-2026-v1",
+  "control": {
+    "provider": "U.S. Naval Observatory, Astronomical Applications Department",
+    "source_url": "https://aa.usno.navy.mil/calculated/seasons?dst=false&submit=Get+Data&tz=0&tz_label=true&tz_sign=1&year=2026",
+    "source_kind": "independent frozen control",
+    "timescale": "UT",
+    "retrieved_on": "2026-09-01",
+    "note": "USNO publishes these season times to the minute; tolerance includes source rounding and independent ephemeris-model differences."
+  },
+  "observer": {
+    "latitude_deg": 41.6523,
+    "longitude_deg": -4.7245,
+    "elevation_m": 698.0,
+    "timezone": "Europe/Madrid",
+    "name": "Valladolid science fixture"
+  },
+  "window": {
+    "start_local": "2026-01-01T00:00:00+01:00",
+    "end_local": "2027-01-01T00:00:00+01:00"
+  },
+  "events": [
+    {
+      "event_type": "march_equinox",
+      "body": "sun",
+      "expected_utc": "2026-03-20T14:46:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    },
+    {
+      "event_type": "june_solstice",
+      "body": "sun",
+      "expected_utc": "2026-06-21T08:24:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    },
+    {
+      "event_type": "september_equinox",
+      "body": "sun",
+      "expected_utc": "2026-09-23T00:05:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    },
+    {
+      "event_type": "december_solstice",
+      "body": "sun",
+      "expected_utc": "2026-12-21T20:50:00Z",
+      "tolerance": {
+        "absolute_seconds": 300.0,
+        "relative": 1e-12
+      }
+    }
+  ]
+}
