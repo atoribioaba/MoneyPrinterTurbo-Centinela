@@ -32,16 +32,21 @@ _STATE_TONES = {
     "NEEDS_INPUT": "warning",
 }
 
-_PIPELINE = (
-    ("Idea", ("NEW", "NEEDS_INPUT")),
-    ("Investigación", ("RESEARCH", "RESEARCHING")),
-    ("Guion", ("SCRIPT", "SCRIPTING")),
-    ("Materiales", ("MEDIA",)),
-    ("Producción", ("VOICE", "TTS", "AUDIO", "VIDEO", "VIDEO_BASE", "FINAL_RENDER")),
-    ("Revisión", ("READY_FOR_HUMAN_REVIEW", "FINAL_APPROVED", "CHANGES_REQUESTED")),
-    ("Paquete", ("PUBLICATION_PACKAGE",)),
-    ("Publicación manual", ("PUBLICATION_PACKAGE_READY",)),
+_PRODUCT_PIPELINE = (
+    ("Investigación", ("NEW", "NEEDS_INPUT", "RESEARCH", "RESEARCHING")),
+    ("Guion", ("SCRIPT", "SCRIPTING", "SCENES")),
+    ("Medios", ("MEDIA",)),
+    ("Voz", ("VOICE", "TTS", "AUDIO")),
+    ("Vídeo", ("VIDEO", "VIDEO_BASE", "FINAL_RENDER", "REVIEW_PREP")),
+    ("Revisión", ("READY_FOR_HUMAN_REVIEW", "CHANGES_REQUESTED")),
+    ("Publicación", ("FINAL_APPROVED", "PUBLICATION_PACKAGE", "PUBLICATION_PACKAGE_READY")),
 )
+
+_PRODUCT_NAVIGATION: dict[str, Any] = {}
+
+
+def configure_product_navigation(**pages_by_name: Any) -> None:
+    _PRODUCT_NAVIGATION.update(pages_by_name)
 
 
 def _enum_value(value: Any) -> str:
@@ -61,6 +66,66 @@ def short_identifier(value: Any, *, head: int = 8, tail: int = 6) -> str:
     return f"{text[:head]}…{text[-tail:]}"
 
 
+def _brand_mark_markup(*, large: bool = False) -> str:
+    modifier = " centinela-brand-mark--large" if large else ""
+    return f"""
+    <span class="centinela-brand-mark{modifier}" aria-hidden="true">
+      <svg viewBox="0 0 64 64" role="img" focusable="false">
+        <circle class="centinela-brand-mark__orbit" cx="32" cy="32" r="27" />
+        <path class="centinela-brand-mark__horizon" d="M9 40.5h46" />
+        <path class="centinela-brand-mark__scope" d="M17 35.5 37.5 20l10 5.8-20.6 15.5z" />
+        <path class="centinela-brand-mark__stand" d="m27 39-7 13M34 36.5 41 52M23.5 46.5h14" />
+        <circle class="centinela-brand-mark__star" cx="45.5" cy="15.5" r="1.8" />
+      </svg>
+    </span>
+    """
+
+
+def render_brand_lockup(*, compact: bool = False) -> None:
+    modifier = " centinela-lockup--compact" if compact else ""
+    st.html(
+        f"""
+        <div class="centinela-lockup{modifier}">
+          {_brand_mark_markup()}
+          <div class="centinela-lockup__copy">
+            <strong>EL CENTINELA DEL UNIVERSO</strong>
+            <span>Studio de producción astronómica</span>
+          </div>
+        </div>
+        """
+    )
+
+
+def render_brand_manifesto() -> None:
+    st.html(
+        f"""
+        <section class="centinela-manifesto" aria-label="Identidad de producto">
+          <div class="centinela-manifesto__brand">
+            {_brand_mark_markup(large=True)}
+            <div>
+              <div class="centinela-manifesto__title">EL CENTINELA DEL UNIVERSO</div>
+              <div class="centinela-manifesto__subtitle">STUDIO DE PRODUCCIÓN ASTRONÓMICA</div>
+            </div>
+          </div>
+          <div class="centinela-manifesto__panel">
+            <strong>VISIÓN</strong>
+            <p>Observar. Comprender. Contar el cielo.</p>
+            <p>Transformamos fenómenos del Universo en historias visuales con rigor y belleza.</p>
+          </div>
+          <div class="centinela-manifesto__panel">
+            <strong>PRINCIPIOS</strong>
+            <ul>
+              <li>Cinematográfico y elegante</li>
+              <li>Ciencia rigurosa</li>
+              <li>Producción audiovisual profesional</li>
+              <li>Claro, privado y seguro</li>
+            </ul>
+          </div>
+        </section>
+        """
+    )
+
+
 def render_brand_hero(
     title: str,
     subtitle: str,
@@ -71,6 +136,28 @@ def render_brand_hero(
     safe_eyebrow = escape(eyebrow)
     safe_title = escape(title)
     safe_subtitle = escape(subtitle)
+    is_home = eyebrow.strip().upper().startswith("INICIO")
+    if not is_home:
+        hint = (
+            f'<div class="centinela-work-header__hint">{escape(action_hint)}</div>'
+            if action_hint
+            else ""
+        )
+        st.html(
+            f"""
+            <section class="centinela-work-header">
+              <div class="centinela-work-header__glow" aria-hidden="true"></div>
+              <div class="centinela-work-header__content">
+                <div class="centinela-eyebrow">{safe_eyebrow}</div>
+                <h1>{safe_title}</h1>
+                <p>{safe_subtitle}</p>
+                {hint}
+              </div>
+            </section>
+            """
+        )
+        return
+
     hint = (
         f'<div class="centinela-hero__hint">{escape(action_hint)}</div>'
         if action_hint
@@ -78,8 +165,9 @@ def render_brand_hero(
     )
     st.html(
         f"""
-        <section class="centinela-hero">
-          <div class="centinela-hero__sky" aria-hidden="true"></div>
+        <section class="centinela-hero centinela-hero--home">
+          <div class="centinela-hero__stars" aria-hidden="true"></div>
+          <div class="centinela-hero__horizon" aria-hidden="true"></div>
           <div class="centinela-hero__content">
             <div class="centinela-eyebrow">{safe_eyebrow}</div>
             <h1>{safe_title}</h1>
@@ -89,6 +177,39 @@ def render_brand_hero(
         </section>
         """
     )
+
+
+def render_navigation_cta(
+    page_name: str,
+    label: str,
+    *,
+    icon: str | None = None,
+) -> None:
+    target = _PRODUCT_NAVIGATION.get(page_name)
+    if target is None:
+        st.caption(label)
+        return
+    st.page_link(target, label=label, icon=icon, width="stretch")
+
+
+def select_project(service: Any, key: str) -> Any | None:
+    projects = list(service.projects())
+    if not projects:
+        return None
+    mapping = {item.project_id: item for item in projects}
+    preferred = st.session_state.get("centinela_project_id")
+    index = 0
+    if preferred in mapping:
+        index = list(mapping).index(preferred)
+    selected = st.selectbox(
+        "Proyecto",
+        options=list(mapping),
+        index=index,
+        format_func=lambda value: f"{mapping[value].title} · {mapping[value].state_label}",
+        key=key,
+    )
+    st.session_state["centinela_project_id"] = selected
+    return service.project(selected)
 
 
 def render_section_heading(
@@ -117,6 +238,20 @@ def render_state_badge(value: Any) -> None:
     )
 
 
+def render_ai_classification_badge() -> None:
+    st.html(
+        '<span class="centinela-badge centinela-badge--ai">'
+        "RECREACIÓN VISUAL</span>"
+    )
+
+
+def render_format_chips(items: Iterable[str]) -> None:
+    markup = "".join(
+        f'<span class="centinela-chip">{escape(str(item))}</span>' for item in items
+    )
+    st.html(f'<div class="centinela-chip-row">{markup}</div>')
+
+
 def render_empty_state(title: str, message: str, *, action: str | None = None) -> None:
     action_markup = (
         f'<div class="centinela-empty__action">{escape(action)}</div>' if action else ""
@@ -135,55 +270,68 @@ def render_empty_state(title: str, message: str, *, action: str | None = None) -
     )
 
 
-def render_project_timeline(project: Any) -> None:
-    """Render the production path with native Streamlit elements.
-
-    This intentionally avoids user-visible raw HTML. The prior grid implementation was
-    vulnerable to mobile Markdown/HTML rendering quirks and could expose markup literally.
-    """
+def _pipeline_position(project: Any) -> tuple[int, int]:
     state = _enum_value(getattr(project, "state", ""))
     next_stage = _enum_value(getattr(project, "next_stage", ""))
     current_index = 0
 
-    for index, (_, markers) in enumerate(_PIPELINE):
+    for index, (_, markers) in enumerate(_PRODUCT_PIPELINE):
         if state in markers or next_stage in markers:
             current_index = index
             break
-    else:
-        if state == "FINAL_APPROVED":
-            current_index = 6
-        elif state == "PUBLICATION_PACKAGE_READY":
-            current_index = 7
+
+    if state == "FINAL_APPROVED":
+        current_index = 6
+    elif state == "PUBLICATION_PACKAGE_READY":
+        current_index = 6
 
     completed_through = max(-1, current_index - 1)
     if state == "FINAL_APPROVED":
-        completed_through = max(completed_through, 5)
+        completed_through = 5
     elif state == "PUBLICATION_PACKAGE_READY":
-        completed_through = 7
+        completed_through = 6
+    return current_index, completed_through
 
-    current_label = _PIPELINE[current_index][0]
-    completed_count = min(len(_PIPELINE), completed_through + 1)
-    if state == "PUBLICATION_PACKAGE_READY":
-        completed_count = len(_PIPELINE)
 
-    st.caption("Flujo de producción")
-    st.progress(
-        completed_count / len(_PIPELINE),
-        text=f"Etapa {current_index + 1} de {len(_PIPELINE)} · {current_label}",
+def render_project_timeline(project: Any) -> None:
+    current_index, completed_through = _pipeline_position(project)
+    steps = []
+    for index, (label, _) in enumerate(_PRODUCT_PIPELINE):
+        if index <= completed_through:
+            tone = "completed"
+            glyph = "✓"
+            status = "Completado"
+        elif index == current_index:
+            tone = "current"
+            glyph = "●"
+            status = "Etapa actual"
+        else:
+            tone = "future"
+            glyph = "○"
+            status = "Pendiente"
+        steps.append(
+            f"""
+            <div class="centinela-stepper__item centinela-stepper__item--{tone}"
+                 role="listitem" aria-label="{escape(label)} · {status}">
+              <span class="centinela-stepper__dot" aria-hidden="true">{glyph}</span>
+              <span class="centinela-stepper__label">{escape(label)}</span>
+            </div>
+            """
+        )
+    current_label = _PRODUCT_PIPELINE[current_index][0]
+    st.html(
+        f"""
+        <div class="centinela-stepper-wrap">
+          <div class="centinela-stepper__meta">
+            <span>FLUJO DE PRODUCCIÓN</span>
+            <strong>{escape(current_label)}</strong>
+          </div>
+          <div class="centinela-stepper" role="list" aria-label="Flujo de producción">
+            {''.join(steps)}
+          </div>
+        </div>
+        """
     )
-
-    with st.expander("Ver etapas del flujo", expanded=False):
-        for index, (label, _) in enumerate(_PIPELINE):
-            if index <= completed_through:
-                glyph = "✓"
-                status = "Completado"
-            elif index == current_index:
-                glyph = "●"
-                status = "Etapa actual"
-            else:
-                glyph = "○"
-                status = "Pendiente"
-            st.write(f"{glyph} **{label}** · {status}")
 
 
 def render_kpi_card(
@@ -193,6 +341,7 @@ def render_kpi_card(
     detail: str | None = None,
     tone: str = "neutral",
 ) -> None:
+    del tone
     with st.container(border=True):
         st.caption(label.upper())
         st.markdown(f"### {value}")
@@ -215,6 +364,45 @@ def render_key_value_card(
             st.markdown(f"**{value if value not in {None, ''} else '—'}**")
         if detail:
             st.caption(detail)
+
+
+def render_runtime_status_card(
+    display_name: str,
+    *,
+    ready: bool,
+    enabled: bool,
+    adapter_registered: bool,
+    weights_available: bool,
+    hardware_certified: bool,
+) -> None:
+    tone = "success" if ready else "warning"
+    state_label = "Preparado" if ready else "Pendiente de activación"
+    st.html(
+        f"""
+        <div class="centinela-runtime centinela-runtime--{tone}">
+          <div>
+            <span class="centinela-runtime__eyebrow">MOTOR</span>
+            <strong>{escape(display_name)}</strong>
+          </div>
+          <span class="centinela-runtime__state">{escape(state_label)}</span>
+          <p>{
+              "El runtime local está certificado para esta operación."
+              if ready
+              else "El motor está integrado, pero necesita el runtime local certificado."
+          }</p>
+        </div>
+        """
+    )
+    with st.expander("Detalles técnicos del motor", expanded=False):
+        rows = (
+            ("Contrato", True),
+            ("Motor habilitado", enabled),
+            ("Adaptador", adapter_registered),
+            ("Pesos", weights_available),
+            ("Hardware", hardware_certified),
+        )
+        for label, value in rows:
+            st.write(f"{'✓' if value else '—'} **{label}**")
 
 
 def render_capability_card(
@@ -265,7 +453,7 @@ def render_manual_publication_notice() -> None:
         <div class="centinela-notice centinela-notice--manual">
           <div class="centinela-notice__icon" aria-hidden="true">◈</div>
           <div>
-            <strong>Publicación manual</strong>
+            <strong>PUBLICACIÓN MANUAL</strong>
             <p>El Centinela prepara los archivos. Tú decides cuándo y dónde publicarlos.</p>
             <p><strong>Esto no publica nada automáticamente.</strong></p>
           </div>

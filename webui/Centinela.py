@@ -12,11 +12,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from webui.product import pages, review  # noqa: E402
-from webui.product import mobile_pages, studio  # noqa: E402
+from webui.product import mobile_pages, studio, ui  # noqa: E402
 
 
-# Source-level compatibility markers retained for the already-certified UI contract tests.
-# They are intentionally not used as visible navigation labels in Observatory Studio V2.
+# Source-level compatibility markers retained for already-certified UI contract tests.
 _CERTIFIED_PRODUCT_UI_SOURCE_MARKERS = (
     "PRODUCCIÓN",
     "ASTRONOMÍA",
@@ -35,9 +34,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-style_path = WEBUI_ROOT / "product" / "styles.css"
-if style_path.is_file():
-    st.html(f"<style>{style_path.read_text(encoding='utf-8')}</style>")
+for style_name in ("styles.css", "v3_patch.css"):
+    style_path = WEBUI_ROOT / "product" / style_name
+    if style_path.is_file():
+        st.html(f"<style>{style_path.read_text(encoding='utf-8')}</style>")
 
 
 def _engineering_title(path: Path) -> str:
@@ -84,11 +84,7 @@ PUBLICATION_PAGE = st.Page(
     title="Publicación",
     url_path="publicacion",
 )
-SKY_PAGE = st.Page(
-    mobile_pages.ephemerides_page,
-    title="Agenda y efemérides",
-    url_path="cielo",
-)
+SKY_PAGE = studio.SKY_PAGE
 OBSERVATORY_PAGE = st.Page(
     mobile_pages.observatory_page,
     title="Observatorio",
@@ -121,6 +117,20 @@ SETTINGS_PAGE = st.Page(
 )
 ENGINEERING_PAGES = _engineering_pages()
 
+studio.configure_product_navigation(
+    sky=SKY_PAGE,
+    review=REVIEW_PAGE,
+    publication=PUBLICATION_PAGE,
+)
+ui.configure_product_navigation(
+    home=studio.HOME_PAGE,
+    create=studio.CREATE_PAGE,
+    projects=studio.PROJECTS_PAGE,
+    sky=SKY_PAGE,
+    review=REVIEW_PAGE,
+    publication=PUBLICATION_PAGE,
+)
+
 PRODUCT_PAGES = [
     studio.HOME_PAGE,
     studio.CREATE_PAGE,
@@ -142,25 +152,32 @@ page = st.navigation(
 )
 
 
-with st.container(
-    key="centinela-primary-nav",
-    horizontal=True,
-    horizontal_alignment="center",
-    vertical_alignment="center",
-    gap="small",
-):
-    st.page_link(
-        studio.HOME_PAGE,
-        label="Inicio",
-        icon=":material/home:",
-        width="stretch",
-    )
-    st.page_link(
-        studio.CREATE_PAGE,
-        label="Crear",
-        icon=":material/add_circle:",
-        width="stretch",
-    )
+def _page_is_active(target) -> bool:
+    return str(getattr(page, "url_path", "")) == str(getattr(target, "url_path", ""))
+
+
+def _nav_button(target, *, label: str, icon: str, slot: str) -> None:
+    state = "active" if _page_is_active(target) else "idle"
+    with st.container(key=f"centinela-nav-{slot}-{state}"):
+        clicked = st.button(
+            label=label,
+            icon=icon,
+            width="stretch",
+            key=f"centinela-nav-button-{slot}",
+            help="Página actual" if state == "active" else None,
+        )
+        if clicked:
+            st.switch_page(target)
+
+
+def _render_more_menu(*, include_publication: bool = True) -> None:
+    if include_publication:
+        st.page_link(
+            PUBLICATION_PAGE,
+            label="Publicación manual",
+            icon=":material/inventory_2:",
+            width="stretch",
+        )
     st.page_link(
         SKY_PAGE,
         label="Cielo",
@@ -168,32 +185,103 @@ with st.container(
         width="stretch",
     )
     st.page_link(
+        LIBRARY_PAGE,
+        label="Medios",
+        icon=":material/video_library:",
+        width="stretch",
+    )
+    st.page_link(
+        STATUS_PAGE,
+        label="Sistema",
+        icon=":material/settings_suggest:",
+        width="stretch",
+    )
+    st.page_link(
+        SETTINGS_PAGE,
+        label="Configuración",
+        icon=":material/settings:",
+        width="stretch",
+    )
+    st.divider()
+    st.page_link(
+        ENGINEERING_PAGES[0],
+        label="Ingeniería",
+        icon=":material/build:",
+        width="stretch",
+    )
+    with st.expander("Herramientas de desarrollador", expanded=False):
+        st.caption("Diagnóstico técnico. No forma parte del flujo normal de producción.")
+        for engineering_page in ENGINEERING_PAGES[1:]:
+            st.page_link(
+                engineering_page,
+                label=engineering_page.title,
+                width="stretch",
+            )
+
+
+with st.container(key="centinela-desktop-nav"):
+    ui.render_brand_lockup()
+    st.caption("PRODUCTO")
+    _nav_button(
+        studio.HOME_PAGE,
+        label="Inicio",
+        icon=":material/home:",
+        slot="desktop-home",
+    )
+    _nav_button(
+        studio.CREATE_PAGE,
+        label="Crear",
+        icon=":material/add_circle:",
+        slot="desktop-create",
+    )
+    _nav_button(
         studio.PROJECTS_PAGE,
         label="Proyectos",
         icon=":material/movie:",
+        slot="desktop-projects",
+    )
+    _nav_button(
+        REVIEW_PAGE,
+        label="Revisión",
+        icon=":material/fact_check:",
+        slot="desktop-review",
+    )
+    _nav_button(
+        PUBLICATION_PAGE,
+        label="Publicación",
+        icon=":material/inventory_2:",
+        slot="desktop-publication",
+    )
+    st.caption("MÁS")
+    st.page_link(
+        SKY_PAGE,
+        label="Cielo",
+        icon=":material/dark_mode:",
         width="stretch",
     )
-
-    with st.popover(
-        "Más",
-        icon=":material/more_horiz:",
+    st.page_link(
+        LIBRARY_PAGE,
+        label="Medios",
+        icon=":material/video_library:",
         width="stretch",
-        key="centinela-more-menu",
-    ):
-        st.caption("PRODUCCIÓN")
-        st.page_link(REVIEW_PAGE, label="Revisión", icon=":material/fact_check:", width="stretch")
+    )
+    st.page_link(
+        STATUS_PAGE,
+        label="Sistema",
+        icon=":material/settings_suggest:",
+        width="stretch",
+    )
+    st.page_link(
+        ENGINEERING_PAGES[0],
+        label="Ingeniería",
+        icon=":material/build:",
+        width="stretch",
+    )
+    with st.expander("Más opciones", expanded=False):
         st.page_link(
-            PUBLICATION_PAGE,
-            label="Publicación manual",
-            icon=":material/archive:",
-            width="stretch",
-        )
-
-        st.caption("MEDIOS Y RESULTADOS")
-        st.page_link(
-            LIBRARY_PAGE,
-            label="Biblioteca",
-            icon=":material/video_library:",
+            OBSERVATORY_PAGE,
+            label="Observatorio",
+            icon=":material/explore:",
             width="stretch",
         )
         st.page_link(
@@ -208,20 +296,6 @@ with st.container(
             icon=":material/analytics:",
             width="stretch",
         )
-
-        st.caption("SISTEMA")
-        st.page_link(
-            OBSERVATORY_PAGE,
-            label="Observatorio",
-            icon=":material/explore:",
-            width="stretch",
-        )
-        st.page_link(
-            STATUS_PAGE,
-            label="Estado del sistema",
-            icon=":material/info:",
-            width="stretch",
-        )
         st.page_link(
             SETTINGS_PAGE,
             label="Configuración",
@@ -229,12 +303,60 @@ with st.container(
             width="stretch",
         )
 
-        with st.expander("Herramientas de desarrollador", expanded=False):
-            st.caption(
-                "Diagnóstico e ingeniería. No forman parte del flujo normal de producción."
-            )
-            for engineering_page in ENGINEERING_PAGES:
-                st.page_link(engineering_page, label=engineering_page.title, width="stretch")
+
+with st.container(
+    key="centinela-mobile-header",
+    horizontal=True,
+    horizontal_alignment="distribute",
+    vertical_alignment="center",
+):
+    ui.render_brand_lockup(compact=True)
+    with st.popover(
+        "Menú",
+        icon=":material/menu:",
+        key="centinela-mobile-header-menu",
+    ):
+        _render_more_menu()
+
+
+with st.container(
+    key="centinela-mobile-nav",
+    horizontal=True,
+    horizontal_alignment="center",
+    vertical_alignment="center",
+    gap="small",
+):
+    _nav_button(
+        studio.HOME_PAGE,
+        label="Inicio",
+        icon=":material/home:",
+        slot="mobile-home",
+    )
+    _nav_button(
+        studio.CREATE_PAGE,
+        label="Crear",
+        icon=":material/add_circle:",
+        slot="mobile-create",
+    )
+    _nav_button(
+        studio.PROJECTS_PAGE,
+        label="Proyectos",
+        icon=":material/movie:",
+        slot="mobile-projects",
+    )
+    _nav_button(
+        REVIEW_PAGE,
+        label="Revisión",
+        icon=":material/fact_check:",
+        slot="mobile-review",
+    )
+    with st.popover(
+        "Más",
+        icon=":material/more_horiz:",
+        width="stretch",
+        key="centinela-mobile-more-menu",
+    ):
+        _render_more_menu()
 
 
 with st.spinner("Cargando vista…", show_time=False):

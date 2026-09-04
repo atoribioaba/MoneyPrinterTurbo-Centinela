@@ -1,0 +1,302 @@
+/* Product UI V3 mobile-acceptance polish.
+   Loaded after styles.css so these rules intentionally override presentation only. */
+
+:root {
+  --centinela-font-brand: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, "Times New Roman", serif;
+}
+
+/* Distinctive observatory/telescope mark without external assets. */
+.centinela-brand-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(211, 163, 63, 0.52);
+  border-radius: 50%;
+  color: var(--centinela-gold-primary);
+  background:
+    radial-gradient(circle at 28% 25%, rgba(255,255,255,.12), transparent 34%),
+    rgba(211, 163, 63, 0.035);
+  box-shadow:
+    inset 0 0 24px rgba(211, 163, 63, 0.07),
+    0 0 0 1px rgba(255,255,255,.015);
+}
+
+.centinela-brand-mark--large {
+  width: 68px;
+  height: 68px;
+}
+
+.centinela-brand-mark svg {
+  width: 78%;
+  height: 78%;
+  overflow: visible;
+}
+
+.centinela-brand-mark__orbit,
+.centinela-brand-mark__horizon,
+.centinela-brand-mark__scope,
+.centinela-brand-mark__stand {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.centinela-brand-mark__orbit {
+  stroke-width: 1.35;
+  opacity: .7;
+}
+
+.centinela-brand-mark__horizon {
+  stroke-width: 1.7;
+  opacity: .52;
+}
+
+.centinela-brand-mark__scope {
+  stroke-width: 2.15;
+  fill: rgba(211, 163, 63, .065);
+}
+
+.centinela-brand-mark__stand {
+  stroke-width: 1.9;
+  opacity: .86;
+}
+
+.centinela-brand-mark__star {
+  fill: var(--centinela-text-primary);
+  opacity: .9;
+}
+
+/* Home remains cinematic; operational screens become denser and task-first. */
+.centinela-work-header {
+  position: relative;
+  isolation: isolate;
+  min-height: 138px;
+  margin: 0 0 1rem;
+  overflow: hidden;
+  border: 1px solid var(--centinela-border);
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 84% 18%, rgba(72, 118, 177, .16), transparent 23rem),
+    radial-gradient(circle at 76% 118%, rgba(211, 163, 63, .08), transparent 20rem),
+    linear-gradient(118deg, rgba(13, 24, 36, .98), rgba(8, 15, 23, .98));
+  box-shadow: var(--centinela-shadow-soft);
+}
+
+.centinela-work-header::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -45% -12% auto 47%;
+  height: 190%;
+  transform: rotate(-11deg);
+  opacity: .32;
+  background:
+    radial-gradient(circle at 12% 30%, rgba(255,255,255,.62) 0 1px, transparent 1.3px),
+    radial-gradient(circle at 35% 48%, rgba(255,255,255,.38) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 58% 22%, rgba(211,163,63,.7) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 78% 62%, rgba(255,255,255,.45) 0 1px, transparent 1.4px),
+    linear-gradient(96deg, transparent 8%, rgba(116, 151, 196, .08) 42%, rgba(211, 163, 63, .06) 52%, transparent 82%);
+}
+
+.centinela-work-header__glow {
+  position: absolute;
+  inset: auto -8% -70% 48%;
+  height: 125%;
+  border-radius: 50% 50% 0 0;
+  background: linear-gradient(155deg, transparent 8%, rgba(3, 7, 11, .92) 9% 100%);
+  opacity: .78;
+}
+
+.centinela-work-header__content {
+  position: relative;
+  z-index: 2;
+  max-width: 780px;
+  padding: 1.4rem 1.55rem 1.3rem;
+}
+
+.centinela-work-header h1 {
+  margin: .28rem 0 .35rem;
+  font-family: var(--centinela-font-brand);
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 600;
+  line-height: 1.04;
+}
+
+.centinela-work-header p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--centinela-text-secondary);
+  font-size: .96rem;
+  line-height: 1.48;
+}
+
+.centinela-work-header__hint {
+  margin-top: .72rem;
+  color: #d7ad5c;
+  font-size: .68rem;
+  font-weight: 730;
+  letter-spacing: .075em;
+}
+
+/* More cinematic depth on Home without fake project media. */
+.centinela-hero--home {
+  background:
+    radial-gradient(ellipse at 74% 8%, rgba(78, 128, 193, .22), transparent 29%),
+    radial-gradient(ellipse at 69% 94%, rgba(211, 163, 63, .13), transparent 24%),
+    linear-gradient(112deg, #08111b 0%, #102033 55%, #071019 100%);
+}
+
+.centinela-hero--home::after {
+  content: "";
+  position: absolute;
+  inset: -35% -18% 18% 34%;
+  transform: rotate(-10deg);
+  opacity: .32;
+  filter: blur(.35px);
+  background:
+    radial-gradient(circle at 7% 31%, rgba(255,255,255,.78) 0 1px, transparent 1.3px),
+    radial-gradient(circle at 22% 54%, rgba(255,255,255,.48) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 39% 25%, rgba(211,163,63,.72) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 57% 69%, rgba(255,255,255,.46) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 73% 42%, rgba(255,255,255,.58) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 88% 62%, rgba(112,161,222,.72) 0 1px, transparent 1.5px),
+    linear-gradient(96deg, transparent 10%, rgba(128, 163, 207, .11) 40%, rgba(211, 177, 121, .095) 53%, transparent 82%);
+}
+
+/* Stable active navigation independent of Streamlit's aria-current output. */
+[class*="st-key-centinela-nav-"] .stButton > button {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--centinela-text-secondary);
+  box-shadow: none;
+  font-weight: 620;
+}
+
+[class*="st-key-centinela-nav-"] .stButton > button:hover {
+  border-color: var(--centinela-border);
+  background: rgba(255,255,255,.035);
+  color: var(--centinela-text-primary);
+}
+
+[class*="st-key-centinela-nav-"][class*="-active"] .stButton > button {
+  border-color: rgba(211, 163, 63, .24);
+  background: linear-gradient(90deg, rgba(211, 163, 63, .14), rgba(255,255,255,.025));
+  color: #f3c76b;
+  box-shadow: inset 3px 0 0 rgba(211, 163, 63, .72);
+}
+
+.st-key-centinela-desktop-nav [class*="st-key-centinela-nav-"] .stButton > button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Review becomes preview-first and visually separates context from decision gates. */
+.st-key-centinela-review-context {
+  margin: .35rem 0 1rem;
+}
+
+.st-key-centinela-review-context > div {
+  border-color: rgba(195, 210, 224, .12) !important;
+  background: rgba(9, 17, 26, .72) !important;
+}
+
+.st-key-centinela-review-gates {
+  margin-top: .25rem;
+}
+
+.st-key-centinela-review-actions [data-testid="stHorizontalBlock"] {
+  gap: .6rem !important;
+  align-items: stretch !important;
+}
+
+.st-key-centinela-review-actions [data-testid="stColumn"] {
+  min-width: 0 !important;
+}
+
+/* CTA shown below empty states is a real interaction, not decorative copy. */
+.st-key-centinela-empty-cta {
+  margin-top: -.35rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 1099px) {
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] {
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
+    min-width: 0 !important;
+    min-height: 50px;
+    padding-left: .24rem;
+    padding-right: .24rem;
+    justify-content: center;
+    text-align: center;
+    font-size: .72rem;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"][class*="-active"] .stButton > button {
+    box-shadow: inset 0 -3px 0 rgba(211, 163, 63, .76);
+  }
+}
+
+@media (max-width: 700px) {
+  .centinela-work-header {
+    min-height: 108px;
+    margin-bottom: .8rem;
+    border-radius: 13px;
+  }
+
+  .centinela-work-header__content {
+    padding: 1rem .92rem .95rem;
+  }
+
+  .centinela-work-header h1 {
+    margin-top: .2rem;
+    font-size: clamp(1.5rem, 7.7vw, 1.95rem);
+    line-height: 1.05;
+  }
+
+  .centinela-work-header p {
+    font-size: .88rem;
+    line-height: 1.42;
+  }
+
+  .centinela-work-header__hint {
+    margin-top: .55rem;
+    font-size: .61rem;
+    letter-spacing: .06em;
+  }
+
+  .centinela-brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .st-key-centinela-review-actions [data-testid="stHorizontalBlock"] {
+    flex-direction: column !important;
+  }
+
+  .st-key-centinela-review-actions [data-testid="stColumn"] {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
+    font-size: .66rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
+    font-size: .61rem;
+  }
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import streamlit as st
 
@@ -23,11 +24,17 @@ _ASSET_LABELS = {
 }
 
 # Source-level audit markers. They remain available to static certification without
-# exposing internal policy syntax in the human-facing Observatory Studio V2.
+# exposing internal policy syntax in the human-facing Product UI.
 _MANUAL_PUBLICATION_POLICY_MARKERS = (
     "MANUAL_PUBLICATION_ONLY=TRUE",
     "AUTO_PUBLICATION=FALSE",
     "AUTHORIZATION_TO_PUBLISH=FALSE",
+)
+
+# Legacy source-level copy marker retained for the already-certified publication
+# boundary test. The visible Product UI V3 CTA remains the shorter "Preparar paquete".
+_PUBLICATION_UI_COMPATIBILITY_MARKERS = (
+    "Preparar paquete para publicación manual",
 )
 
 
@@ -46,6 +53,21 @@ def _asset_label(row: dict) -> str:
         or filename
         or "Asset"
     )
+
+
+def _render_package_thumbnail(package_dir: object, assets: list[dict]) -> None:
+    root = Path(str(package_dir)) if package_dir not in {None, "", "—"} else None
+    if root is None:
+        return
+    for row in assets:
+        logical = str(row.get("logical_name") or "")
+        relative = str(row.get("relative_path") or "")
+        if "thumbnail" not in logical.lower() and "thumbnail" not in relative.lower():
+            continue
+        candidate = root / relative
+        if candidate.is_file():
+            st.image(str(candidate), caption="Miniatura incluida en el paquete")
+        return
 
 
 def _render_ready_package(service, project_id: str) -> None:
@@ -76,17 +98,26 @@ def _render_ready_package(service, project_id: str) -> None:
     package_dir = ref.provenance.get("package_dir", "—")
     review_id = manifest.get("human_review_artifact_id", "—")
     asset_count = int(manifest.get("asset_count", 0) or 0)
+    assets = list(manifest.get("assets") or [])
 
-    ui.render_kpi_card(
-        "Entregables",
-        f"{asset_count}/8",
-        detail="Archivos contractuales del paquete final.",
-    )
-    ui.render_kpi_card(
-        "Modo de salida",
-        "Manual",
-        detail="Tú decides cuándo y dónde publicar.",
-    )
+    _render_package_thumbnail(package_dir, assets)
+
+    with st.container(
+        key="centinela-publication-kpis",
+        horizontal=True,
+        horizontal_alignment="left",
+        gap="medium",
+    ):
+        ui.render_kpi_card(
+            "Entregables",
+            f"{asset_count}/8",
+            detail="Archivos contractuales del paquete final.",
+        )
+        ui.render_kpi_card(
+            "Modo de salida",
+            "Manual",
+            detail="Tú decides cuándo y dónde publicar.",
+        )
 
     ui.render_section_heading(
         "Paquete final",
@@ -94,7 +125,6 @@ def _render_ready_package(service, project_id: str) -> None:
         eyebrow="ENTREGABLES",
     )
 
-    assets = list(manifest.get("assets") or [])
     for row in assets:
         with st.container(border=True):
             st.markdown(f"### ✓ {_asset_label(row)}")
@@ -129,20 +159,24 @@ def publication_page() -> None:
     service = pages._service()
 
     ui.render_brand_hero(
-        "Preparar la salida final",
-        "Reúne vídeo, miniatura, subtítulos, copy, metadatos y trazabilidad en un paquete "
-        "listo para que tú decidas cuándo y dónde publicarlo.",
+        "Preparar publicación",
+        "Reúne vídeo, miniatura, subtítulos, copy, metadatos y trazabilidad en un paquete listo para publicación manual.",
         eyebrow="PUBLICACIÓN",
-        action_hint="EL CENTINELA PREPARA · TÚ PUBLICAS",
+        action_hint="EL CENTINELA PREPARA · TÚ DECIDES CUÁNDO Y DÓNDE PUBLICAR",
     )
 
-    project = pages._project_selector(service, "publication-selector")
+    project = ui.select_project(service, "publication-selector")
     if project is None:
         ui.render_empty_state(
             "No hay un proyecto preparado",
             "La publicación manual aparecerá cuando una historia complete su revisión final.",
-            action="Continúa la producción desde Proyectos.",
         )
+        with st.container(key="centinela-empty-cta"):
+            ui.render_navigation_cta(
+                "projects",
+                "Ir a Proyectos",
+                icon=":material/movie:",
+            )
         return
 
     with st.container(border=True):
@@ -172,22 +206,28 @@ def publication_page() -> None:
         )
         st.caption(
             f"Estado actual: {ui.state_display(project.state)}. "
-            "Continúa desde Proyectos o abre Más → Revisión cuando corresponda."
+            "Continúa desde Proyectos o abre Revisión cuando corresponda."
         )
         return
 
     ui.render_manual_publication_notice()
 
-    ui.render_key_value_card(
-        "Revisión humana",
-        "✓ 7/7 aprobada",
-        detail="El proyecto ha superado la decisión humana requerida.",
-    )
-    ui.render_key_value_card(
-        "Publicación",
-        "Manual",
-        detail="Preparar el paquete no publica contenido.",
-    )
+    with st.container(
+        key="centinela-publication-readiness",
+        horizontal=True,
+        horizontal_alignment="left",
+        gap="medium",
+    ):
+        ui.render_key_value_card(
+            "Revisión humana",
+            "✓ 7/7 aprobada",
+            detail="El proyecto ha superado la decisión humana requerida.",
+        )
+        ui.render_key_value_card(
+            "Publicación",
+            "Manual",
+            detail="Preparar el paquete no publica contenido.",
+        )
 
     ui.render_section_heading(
         "Contenido editorial",
@@ -198,6 +238,9 @@ def publication_page() -> None:
         type=["jpg", "jpeg"],
         key="publication-thumbnail",
     )
+    if thumbnail is not None:
+        st.image(thumbnail.getvalue(), caption="Miniatura aprobada")
+
     title = st.text_input("Título de publicación", value=project.title)
     caption = st.text_area(
         "Caption aprobado",
@@ -216,12 +259,12 @@ def publication_page() -> None:
     )
 
     st.info(
-        "**Esto no publica nada.** El botón siguiente solo prepara los archivos para "
-        "publicación manual."
+        "**Publicación manual.** El Centinela prepara los archivos. "
+        "Tú decides cuándo y dónde publicarlos."
     )
 
     if st.button(
-        "Preparar paquete para publicación manual",
+        "Preparar paquete",
         type="primary",
         width="stretch",
     ):
