@@ -8,7 +8,7 @@ import streamlit as st
 
 from app.services.centinela.orchestration import JobStatus, ProjectState
 
-from . import pages, ui
+from . import pages, ui, visual_generation
 
 
 LOGGER = logging.getLogger(__name__)
@@ -282,6 +282,8 @@ def projects_page() -> None:
         len(active_jobs),
         detail="Trabajos en cola o ejecución.",
     )
+
+    visual_generation.render_visual_generation_workspace(service, project)
 
     with st.expander("Detalles avanzados y trazabilidad"):
         st.markdown("#### Artefactos")
