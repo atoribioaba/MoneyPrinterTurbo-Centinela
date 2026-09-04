@@ -1,0 +1,47 @@
+/* Product UI V3 mobile patch M1.2.
+   Additive, presentation-only overrides loaded after v3_patch.css. */
+
+@media (max-width: 430px) {
+  /* Keep mobile navigation labels intact. The icon moves above the label so
+     Proyectos/Revisión fit without arbitrary mid-word wrapping. */
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
+    flex-direction: column !important;
+    gap: .06rem !important;
+    padding: .1rem .02rem !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button p,
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button [data-testid="stMarkdownContainer"] p {
+    margin: 0 !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    hyphens: none !important;
+    font-size: .58rem !important;
+    line-height: 1.05 !important;
+  }
+
+  /* Home command centre becomes a readable mobile stack instead of two
+     narrow desktop-style columns. */
+  .st-key-centinela-home-grid [data-testid="stHorizontalBlock"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: .65rem !important;
+  }
+
+  .st-key-centinela-home-grid [data-testid="stColumn"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: 1 1 auto !important;
+  }
+}
+
+/* Create is a non-destructive primary action. Target the form-submit widget
+   directly because Streamlit uses a dedicated form-submit button kind. */
+.st-key-create-video-v2 [data-testid="stFormSubmitButton"] button {
+  border-color: #b8872f !important;
+  background: linear-gradient(135deg, #b9872f, var(--centinela-gold-primary)) !important;
+  color: #151008 !important;
+  box-shadow: 0 8px 24px rgba(211, 163, 63, .18) !important;
+}
