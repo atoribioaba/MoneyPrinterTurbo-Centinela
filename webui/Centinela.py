@@ -11,7 +11,8 @@ WEBUI_ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from webui.product import mobile_pages, pages, review, studio  # noqa: E402
+from webui.product import pages, review  # noqa: E402
+from webui.product import mobile_pages, studio  # noqa: E402
 
 
 # Source-level compatibility markers retained for the already-certified UI contract tests.
