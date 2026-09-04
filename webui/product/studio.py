@@ -36,14 +36,7 @@ def _agenda_preview() -> tuple[Any, ...]:
 
 
 def _event_time_label(event: Any) -> str:
-    try:
-        official = event.canonical_quantity.provenance.get("official_madrid_time") or {}
-        iso = str(official.get("iso8601") or "")
-        if iso:
-            return iso.replace("T", " ")[:16]
-    except Exception:
-        pass
-    return "Hora pendiente de consulta"
+    return mobile_pages.event_time_es(event)
 
 
 def _artifact_count(project: Any, *tokens: str) -> int:
@@ -132,7 +125,7 @@ def home_page() -> None:
     ):
         st.page_link(
             CREATE_PAGE,
-            label="＋ Crear una historia",
+            label="Crear una historia",
             icon=":material/add_circle:",
             width="stretch",
         )
@@ -187,9 +180,9 @@ def home_page() -> None:
                     )
             else:
                 event = events[0]
-                st.markdown(f"### {getattr(event, 'label_es', 'Evento astronómico')}")
+                st.markdown(f"### {mobile_pages.event_title_es(event)}")
                 st.caption(_event_time_label(event))
-                body = str(getattr(event, "body", "") or "").strip()
+                body = mobile_pages.body_label_es(getattr(event, "body", ""))
                 if body:
                     st.write(body)
                 sky_page = _nav_page("sky")

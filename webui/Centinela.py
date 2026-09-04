@@ -304,59 +304,61 @@ with st.container(key="centinela-desktop-nav"):
         )
 
 
-with st.container(
-    key="centinela-mobile-header",
-    horizontal=True,
-    horizontal_alignment="distribute",
-    vertical_alignment="center",
-):
-    ui.render_brand_lockup(compact=True)
-    with st.popover(
-        "Menú",
-        icon=":material/menu:",
-        key="centinela-mobile-header-menu",
-    ):
-        _render_more_menu()
+# M1: columns are the layout authority on mobile. The previous nested horizontal
+# containers depended on Streamlit's internal DOM and could wrap into two rows.
+with st.container(key="centinela-mobile-header"):
+    mobile_brand, mobile_menu = st.columns([9, 1], gap="small")
+    with mobile_brand:
+        ui.render_brand_lockup(compact=True)
+    with mobile_menu:
+        with st.popover(
+            "Menú",
+            icon=":material/menu:",
+            key="centinela-mobile-header-menu",
+        ):
+            _render_more_menu()
 
 
-with st.container(
-    key="centinela-mobile-nav",
-    horizontal=True,
-    horizontal_alignment="center",
-    vertical_alignment="center",
-    gap="small",
-):
-    _nav_button(
-        studio.HOME_PAGE,
-        label="Inicio",
-        icon=":material/home:",
-        slot="mobile-home",
-    )
-    _nav_button(
-        studio.CREATE_PAGE,
-        label="Crear",
-        icon=":material/add_circle:",
-        slot="mobile-create",
-    )
-    _nav_button(
-        studio.PROJECTS_PAGE,
-        label="Proyectos",
-        icon=":material/movie:",
-        slot="mobile-projects",
-    )
-    _nav_button(
-        REVIEW_PAGE,
-        label="Revisión",
-        icon=":material/fact_check:",
-        slot="mobile-review",
-    )
-    with st.popover(
-        "Más",
-        icon=":material/more_horiz:",
-        width="stretch",
-        key="centinela-mobile-more-menu",
-    ):
-        _render_more_menu()
+# M1: five explicit equal columns keep the bottom navigation compact even when
+# Streamlit changes wrapper markup around buttons or popovers.
+with st.container(key="centinela-mobile-nav"):
+    mobile_slots = st.columns(5, gap="small")
+    with mobile_slots[0]:
+        _nav_button(
+            studio.HOME_PAGE,
+            label="Inicio",
+            icon=":material/home:",
+            slot="mobile-home",
+        )
+    with mobile_slots[1]:
+        _nav_button(
+            studio.CREATE_PAGE,
+            label="Crear",
+            icon=":material/add_circle:",
+            slot="mobile-create",
+        )
+    with mobile_slots[2]:
+        _nav_button(
+            studio.PROJECTS_PAGE,
+            label="Proyectos",
+            icon=":material/movie:",
+            slot="mobile-projects",
+        )
+    with mobile_slots[3]:
+        _nav_button(
+            REVIEW_PAGE,
+            label="Revisión",
+            icon=":material/fact_check:",
+            slot="mobile-review",
+        )
+    with mobile_slots[4]:
+        with st.popover(
+            "Más",
+            icon=":material/more_horiz:",
+            width="stretch",
+            key="centinela-mobile-more-menu",
+        ):
+            _render_more_menu()
 
 
 with st.spinner("Cargando vista…", show_time=False):

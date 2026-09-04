@@ -3,6 +3,9 @@
 
 :root {
   --centinela-font-brand: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, "Times New Roman", serif;
+  --centinela-mobile-header-height: 60px;
+  --centinela-mobile-nav-height: 64px;
+  --centinela-mobile-fixed-gap: 12px;
 }
 
 /* Distinctive observatory/telescope mark without external assets. */
@@ -225,28 +228,271 @@
   margin-bottom: 1rem;
 }
 
+/* M1 event presentation: readable data hierarchy without altering evidence. */
+.centinela-event-heading {
+  margin: .05rem 0 .55rem;
+}
+
+.centinela-event-heading__eyebrow {
+  color: var(--centinela-gold-primary);
+  font-size: .66rem;
+  font-weight: 760;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.centinela-event-heading h3 {
+  margin: .28rem 0 .18rem;
+  color: var(--centinela-text-primary);
+  font-size: 1.9rem;
+  line-height: 1.12;
+}
+
+.centinela-event-heading p {
+  margin: 0;
+  color: #b8c2cc;
+  font-size: .88rem;
+}
+
+.centinela-event-time {
+  margin: .45rem 0 .58rem;
+  color: var(--centinela-text-primary);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.centinela-event-visibility {
+  margin: .55rem 0 .35rem;
+  padding: .68rem .78rem;
+  border: 1px solid rgba(217, 164, 65, .22);
+  border-radius: 10px;
+  background: rgba(217, 164, 65, .07);
+}
+
+.centinela-event-visibility--visible {
+  border-color: rgba(47, 163, 107, .24);
+  background: rgba(47, 163, 107, .075);
+}
+
+.centinela-event-visibility strong {
+  display: block;
+  color: #e4b852;
+  font-size: .78rem;
+  letter-spacing: .055em;
+}
+
+.centinela-event-visibility--visible strong {
+  color: #72d09a;
+}
+
+.centinela-event-visibility span {
+  display: block;
+  margin-top: .18rem;
+  color: var(--centinela-text-secondary);
+  font-size: .86rem;
+}
+
+.centinela-science-rows {
+  display: grid;
+  gap: .08rem;
+}
+
+.centinela-science-row {
+  display: grid;
+  grid-template-columns: minmax(112px, .72fr) minmax(0, 1fr);
+  gap: .7rem;
+  padding: .56rem 0;
+  border-bottom: 1px solid rgba(195, 210, 224, .09);
+}
+
+.centinela-science-row:last-child {
+  border-bottom: 0;
+}
+
+.centinela-science-row span {
+  color: #aab6c1;
+  font-size: .82rem;
+}
+
+.centinela-science-row strong {
+  color: var(--centinela-text-primary);
+  font-size: .86rem;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1099px) {
   .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] {
     min-width: 0 !important;
-    flex: 1 1 0 !important;
+    width: 100% !important;
   }
 
   .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
     min-width: 0 !important;
     min-height: 50px;
-    padding-left: .24rem;
-    padding-right: .24rem;
+    padding-left: .18rem;
+    padding-right: .18rem;
     justify-content: center;
     text-align: center;
-    font-size: .72rem;
+    font-size: .7rem;
   }
 
   .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"][class*="-active"] .stButton > button {
-    box-shadow: inset 0 -3px 0 rgba(211, 163, 63, .76);
+    border-color: transparent !important;
+    background: rgba(211, 163, 63, .115) !important;
+    color: #e5b85d !important;
+    box-shadow: none !important;
   }
 }
 
 @media (max-width: 700px) {
+  /* M1 fixed-shell contract: actual header/nav dimensions drive content offsets. */
+  .block-container,
+  div[data-testid="stMainBlockContainer"] {
+    padding-top: calc(var(--centinela-mobile-header-height) + var(--centinela-mobile-fixed-gap) + .7rem) !important;
+    padding-bottom: calc(var(--centinela-mobile-nav-height) + env(safe-area-inset-bottom) + 1.7rem) !important;
+    scroll-padding-top: calc(var(--centinela-mobile-header-height) + 1rem);
+    scroll-padding-bottom: calc(var(--centinela-mobile-nav-height) + env(safe-area-inset-bottom) + 1rem);
+  }
+
+  h1, h2, h3, [tabindex] {
+    scroll-margin-top: calc(var(--centinela-mobile-header-height) + 1rem);
+    scroll-margin-bottom: calc(var(--centinela-mobile-nav-height) + env(safe-area-inset-bottom) + 1rem);
+  }
+
+  .st-key-centinela-mobile-header {
+    box-sizing: border-box;
+    height: var(--centinela-mobile-header-height);
+    min-height: var(--centinela-mobile-header-height);
+    max-height: var(--centinela-mobile-header-height);
+    padding: .32rem .45rem !important;
+  }
+
+  .st-key-centinela-mobile-header > div,
+  .st-key-centinela-mobile-header [data-testid="stHorizontalBlock"] {
+    height: 100%;
+    min-height: 0;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .st-key-centinela-mobile-header [data-testid="stColumn"] {
+    min-width: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .st-key-centinela-mobile-header [data-testid="stColumn"]:last-child {
+    justify-content: flex-end !important;
+  }
+
+  .st-key-centinela-mobile-header .centinela-lockup {
+    width: 100%;
+    margin: 0 !important;
+    gap: .48rem;
+    flex-wrap: nowrap;
+  }
+
+  .st-key-centinela-mobile-header .centinela-brand-mark,
+  .st-key-centinela-mobile-header .centinela-lockup__mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .st-key-centinela-mobile-header .centinela-lockup__copy strong {
+    max-width: none;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: clamp(.68rem, 3.4vw, .82rem);
+    letter-spacing: .035em;
+  }
+
+  .st-key-centinela-mobile-header .centinela-lockup__copy span {
+    display: none !important;
+  }
+
+  .st-key-centinela-mobile-header [data-testid="stPopover"] button {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+  }
+
+  /* Keep the accessible Menú label in the DOM but collapse it visually. */
+  .st-key-centinela-mobile-header [data-testid="stPopover"] button p {
+    width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+  }
+
+  .st-key-centinela-mobile-nav {
+    box-sizing: border-box;
+    height: var(--centinela-mobile-nav-height);
+    min-height: var(--centinela-mobile-nav-height);
+    max-height: var(--centinela-mobile-nav-height);
+    padding: .28rem !important;
+    border-color: rgba(195, 210, 224, .12) !important;
+    border-radius: 14px !important;
+  }
+
+  .st-key-centinela-mobile-nav > div,
+  .st-key-centinela-mobile-nav [data-testid="stHorizontalBlock"] {
+    height: 100%;
+    min-height: 0;
+    flex-wrap: nowrap !important;
+    gap: .12rem !important;
+    align-items: stretch !important;
+  }
+
+  .st-key-centinela-mobile-nav [data-testid="stColumn"] {
+    width: 20% !important;
+    min-width: 0 !important;
+    flex: 1 1 20% !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] {
+    height: 100%;
+    margin: 0 !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] > div {
+    height: 100%;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton,
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button,
+  .st-key-centinela-mobile-nav [data-testid="stPopover"],
+  .st-key-centinela-mobile-nav [data-testid="stPopover"] > button {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button,
+  .st-key-centinela-mobile-nav [data-testid="stPopover"] > button {
+    border: 0 !important;
+    border-radius: 9px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: .16rem .08rem !important;
+    color: var(--centinela-text-secondary) !important;
+    font-size: .66rem !important;
+    justify-content: center !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"][class*="-active"] .stButton > button {
+    background: rgba(211, 163, 63, .12) !important;
+    color: #e5b85d !important;
+  }
+
   .centinela-work-header {
     min-height: 108px;
     margin-bottom: .8rem;
@@ -279,6 +525,25 @@
     height: 34px;
   }
 
+  .centinela-hero--home h1 {
+    font-size: clamp(1.65rem, 8.2vw, 2.1rem) !important;
+  }
+
+  /* Explicit URL targeting prevents Streamlit wrapper structure from making both Home CTAs primary. */
+  .st-key-centinela-hero-actions a[href$="/crear"] {
+    border-color: #b8872f !important;
+    background: linear-gradient(135deg, #b9872f, var(--centinela-gold-primary)) !important;
+    color: #151008 !important;
+    box-shadow: 0 8px 24px rgba(211, 163, 63, .18) !important;
+  }
+
+  .st-key-centinela-hero-actions a[href$="/cielo"] {
+    border-color: var(--centinela-border) !important;
+    background: rgba(10, 18, 27, .82) !important;
+    color: var(--centinela-text-primary) !important;
+    box-shadow: none !important;
+  }
+
   .st-key-centinela-review-actions [data-testid="stHorizontalBlock"] {
     flex-direction: column !important;
   }
@@ -287,16 +552,59 @@
     width: 100% !important;
     flex: 1 1 auto !important;
   }
+
+  .centinela-event-heading {
+    margin-bottom: .4rem;
+  }
+
+  .centinela-event-heading h3 {
+    font-size: clamp(1.65rem, 7.7vw, 1.82rem);
+    line-height: 1.12;
+  }
+
+  .centinela-event-heading p {
+    color: #bdc6ce;
+  }
+
+  .centinela-event-time {
+    margin: .35rem 0 .45rem;
+  }
+
+  .centinela-science-row {
+    grid-template-columns: minmax(105px, .7fr) minmax(0, 1fr);
+    padding: .48rem 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .st-key-centinela-hero-actions [data-testid="stHorizontalBlock"] {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: .45rem !important;
+  }
+
+  .st-key-centinela-hero-actions [data-testid="stPageLink"] {
+    width: 100% !important;
+    max-width: none !important;
+    flex: none !important;
+  }
 }
 
 @media (max-width: 390px) {
-  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
-    font-size: .66rem;
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button,
+  .st-key-centinela-mobile-nav [data-testid="stPopover"] > button {
+    font-size: .62rem !important;
+  }
+
+  .centinela-science-row {
+    grid-template-columns: 1fr;
+    gap: .16rem;
   }
 }
 
 @media (max-width: 360px) {
-  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button {
-    font-size: .61rem;
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"] .stButton > button,
+  .st-key-centinela-mobile-nav [data-testid="stPopover"] > button {
+    font-size: .58rem !important;
   }
 }
