@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from webui.product import pages, review  # noqa: E402
 from webui.product import mobile_pages, studio, ui  # noqa: E402
+from webui.product import mobile_patch_m1_1  # noqa: E402
 
 
 # Source-level compatibility markers retained for already-certified UI contract tests.
@@ -38,6 +39,8 @@ for style_name in ("styles.css", "v3_patch.css"):
     style_path = WEBUI_ROOT / "product" / style_name
     if style_path.is_file():
         st.html(f"<style>{style_path.read_text(encoding='utf-8')}</style>")
+
+mobile_patch_m1_1.install_ui_overrides(ui)
 
 
 def _engineering_title(path: Path) -> str:
@@ -162,12 +165,28 @@ def _nav_button(target, *, label: str, icon: str, slot: str) -> None:
         clicked = st.button(
             label=label,
             icon=icon,
+            type="primary" if state == "active" else "secondary",
             width="stretch",
             key=f"centinela-nav-button-{slot}",
             help="Página actual" if state == "active" else None,
         )
         if clicked:
             st.switch_page(target)
+
+
+def _more_is_active() -> bool:
+    more_pages = (
+        PUBLICATION_PAGE,
+        SKY_PAGE,
+        OBSERVATORY_PAGE,
+        LIBRARY_PAGE,
+        SOURCES_PAGE,
+        ANALYTICS_PAGE,
+        STATUS_PAGE,
+        SETTINGS_PAGE,
+        *ENGINEERING_PAGES,
+    )
+    return any(_page_is_active(target) for target in more_pages)
 
 
 def _render_more_menu(*, include_publication: bool = True) -> None:
@@ -304,23 +323,18 @@ with st.container(key="centinela-desktop-nav"):
         )
 
 
-# M1: columns are the layout authority on mobile. The previous nested horizontal
-# containers depended on Streamlit's internal DOM and could wrap into two rows.
 with st.container(key="centinela-mobile-header"):
     mobile_brand, mobile_menu = st.columns([9, 1], gap="small")
     with mobile_brand:
         ui.render_brand_lockup(compact=True)
     with mobile_menu:
         with st.popover(
-            "Menú",
-            icon=":material/menu:",
+            "☰",
             key="centinela-mobile-header-menu",
         ):
             _render_more_menu()
 
 
-# M1: five explicit equal columns keep the bottom navigation compact even when
-# Streamlit changes wrapper markup around buttons or popovers.
 with st.container(key="centinela-mobile-nav"):
     mobile_slots = st.columns(5, gap="small")
     with mobile_slots[0]:
@@ -352,13 +366,15 @@ with st.container(key="centinela-mobile-nav"):
             slot="mobile-review",
         )
     with mobile_slots[4]:
-        with st.popover(
-            "Más",
-            icon=":material/more_horiz:",
-            width="stretch",
-            key="centinela-mobile-more-menu",
-        ):
-            _render_more_menu()
+        more_state = "active" if _more_is_active() else "idle"
+        with st.container(key=f"centinela-nav-mobile-more-{more_state}"):
+            with st.popover(
+                "Más",
+                icon=":material/more_horiz:",
+                width="stretch",
+                key="centinela-mobile-more-menu",
+            ):
+                _render_more_menu()
 
 
 with st.spinner("Cargando vista…", show_time=False):
