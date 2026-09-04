@@ -104,8 +104,8 @@ def _latest_real_video(service, project_id: str) -> tuple[Path, object] | None:
 def _render_review_preview(service, project) -> None:
     ui.render_section_heading(
         "Preview final",
-        "Revisa el corte real materializado. Si todavía no existe, el estado se muestra sin simulación.",
-        eyebrow="REVISIÓN",
+        "Revisa el corte real materializado antes de mirar los controles operativos.",
+        eyebrow="VISIONADO",
     )
     real_video = _latest_real_video(service, project.project_id)
     with st.container(border=True):
@@ -132,24 +132,29 @@ def review_page() -> None:
         action_hint="7/7 CONTROLES · DECISIÓN HUMANA · SIN AUTOPUBLICACIÓN",
     )
 
-    project = pages._project_selector(service, "review-selector")
+    project = ui.select_project(service, "review-selector")
     if project is None:
         ui.render_empty_state(
             "No hay un proyecto para revisar",
             "La sala de revisión se activará cuando una producción llegue a su corte final.",
-            action="Continúa el proyecto desde Proyectos.",
         )
+        with st.container(key="centinela-empty-cta"):
+            ui.render_navigation_cta(
+                "create",
+                "Crear una historia",
+                icon=":material/add_circle:",
+            )
         return
 
-    with st.container(border=True):
+    _render_review_preview(service, project)
+
+    with st.container(key="centinela-review-context", border=True):
         st.markdown(f"## {project.title}")
         ui.render_state_badge(project.state)
         st.caption(f"Actualizado: {project.updated_at}")
         ui.render_project_timeline(project)
         st.markdown("### Qué necesita de ti")
         st.write(project.next_action)
-
-    _render_review_preview(service, project)
 
     if project.state != ProjectState.READY_FOR_HUMAN_REVIEW:
         st.warning(
@@ -160,6 +165,12 @@ def review_page() -> None:
             "Completa la siguiente etapa desde Proyectos. No se crea ni aprueba ningún "
             "resultado de forma artificial."
         )
+        with st.container(key="centinela-empty-cta"):
+            ui.render_navigation_cta(
+                "projects",
+                "Volver al proyecto",
+                icon=":material/movie:",
+            )
         return
 
     ui.render_section_heading(
@@ -170,41 +181,42 @@ def review_page() -> None:
 
     progress_slot = st.empty()
 
-    science_passed = _gate_checkbox(
-        "1 · Rigor científico",
-        "Datos, afirmaciones, cifras y contexto astronómico verificados.",
-        key="review-science",
-    )
-    visual_passed = _gate_checkbox(
-        "2 · Imagen y montaje visual",
-        "Selección de planos, continuidad, encuadre y montaje revisados.",
-        key="review-visual",
-    )
-    audio_passed = _gate_checkbox(
-        "3 · Audio y locución",
-        "Voz, mezcla, niveles y escucha final revisados.",
-        key="review-audio",
-    )
-    subtitles_passed = _gate_checkbox(
-        "4 · Subtítulos",
-        "Texto, sincronía y legibilidad revisados.",
-        key="review-subtitles",
-    )
-    rights_passed = _gate_checkbox(
-        "5 · Derechos y licencias",
-        "Procedencia y derechos de los medios confirmados.",
-        key="review-rights",
-    )
-    thumbnail_passed = _gate_checkbox(
-        "6 · Miniatura",
-        "Portada final revisada y aprobada.",
-        key="review-thumbnail",
-    )
-    copy_passed = _gate_checkbox(
-        "7 · Título, caption y textos",
-        "Copy editorial final revisado.",
-        key="review-copy",
-    )
+    with st.container(key="centinela-review-gates"):
+        science_passed = _gate_checkbox(
+            "1 · Rigor científico",
+            "Datos, afirmaciones, cifras y contexto astronómico verificados.",
+            key="review-science",
+        )
+        visual_passed = _gate_checkbox(
+            "2 · Imagen y montaje visual",
+            "Selección de planos, continuidad, encuadre y montaje revisados.",
+            key="review-visual",
+        )
+        audio_passed = _gate_checkbox(
+            "3 · Audio y locución",
+            "Voz, mezcla, niveles y escucha final revisados.",
+            key="review-audio",
+        )
+        subtitles_passed = _gate_checkbox(
+            "4 · Subtítulos",
+            "Texto, sincronía y legibilidad revisados.",
+            key="review-subtitles",
+        )
+        rights_passed = _gate_checkbox(
+            "5 · Derechos y licencias",
+            "Procedencia y derechos de los medios confirmados.",
+            key="review-rights",
+        )
+        thumbnail_passed = _gate_checkbox(
+            "6 · Miniatura",
+            "Portada final revisada y aprobada.",
+            key="review-thumbnail",
+        )
+        copy_passed = _gate_checkbox(
+            "7 · Título, caption y textos",
+            "Copy editorial final revisado.",
+            key="review-copy",
+        )
 
     gates = (
         science_passed,
@@ -233,11 +245,27 @@ def review_page() -> None:
     )
 
     can_decide = bool(reviewer.strip() and notes.strip())
-    if st.button(
-        "Solicitar cambios",
-        width="stretch",
-        disabled=not can_decide,
+    approve_enabled = can_decide and passed_count == 7
+
+    with st.container(
+        key="centinela-review-actions",
+        horizontal=True,
+        horizontal_alignment="left",
+        gap="medium",
     ):
+        request_changes = st.button(
+            "Solicitar cambios",
+            width="stretch",
+            disabled=not can_decide,
+        )
+        approve_project = st.button(
+            "Aprobar proyecto",
+            type="primary",
+            width="stretch",
+            disabled=not approve_enabled,
+        )
+
+    if request_changes:
         try:
             review = _review_record(
                 decision=HumanFinalReviewDecision.CHANGES_REQUESTED,
@@ -263,13 +291,7 @@ def review_page() -> None:
                 technical_detail=exc,
             )
 
-    approve_enabled = can_decide and passed_count == 7
-    if st.button(
-        "Aprobar proyecto",
-        type="primary",
-        width="stretch",
-        disabled=not approve_enabled,
-    ):
+    if approve_project:
         try:
             review = _review_record(
                 decision=HumanFinalReviewDecision.APPROVE,
