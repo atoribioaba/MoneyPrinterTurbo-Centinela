@@ -45,3 +45,60 @@
   color: #151008 !important;
   box-shadow: 0 8px 24px rgba(211, 163, 63, .18) !important;
 }
+
+/* M1.3: real-mobile corrective selectors.
+   Streamlit places keyed classes on the interactive block itself in some
+   widgets, so same-element selectors are required in addition to descendants. */
+@media (max-width: 430px) {
+  /* The inactive labels already fit. Normalize only the active button's
+     inherited primary-button typography so the active label stays on one line. */
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"][class*="-active"] .stButton > button {
+    min-width: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    font-size: .58rem !important;
+    letter-spacing: 0 !important;
+  }
+
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"][class*="-active"] .stButton > button [data-testid="stMarkdownContainer"],
+  .st-key-centinela-mobile-nav [class*="st-key-centinela-nav-"][class*="-active"] .stButton > button [data-testid="stMarkdownContainer"] * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    hyphens: none !important;
+    font-size: inherit !important;
+    line-height: 1.05 !important;
+  }
+
+  /* st.container(horizontal=True, key=...) may carry the key class on the
+     horizontal block itself; cover both same-element and nested DOM shapes. */
+  .st-key-centinela-home-grid,
+  .st-key-centinela-home-grid[data-testid="stHorizontalBlock"],
+  .st-key-centinela-home-grid > [data-testid="stHorizontalBlock"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    flex-wrap: nowrap !important;
+    gap: .65rem !important;
+  }
+
+  .st-key-centinela-home-grid > [data-testid="stColumn"],
+  .st-key-centinela-home-grid [data-testid="stColumn"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+}
+
+/* The keyed form can itself be data-testid=stForm, so include the
+   same-element form selector that the real Streamlit DOM requires. */
+.st-key-create-video-v2[data-testid="stForm"] [data-testid="stFormSubmitButton"] button,
+.st-key-create-video-v2 [data-testid="stFormSubmitButton"] button {
+  border-color: #b8872f !important;
+  background: linear-gradient(135deg, #b9872f, var(--centinela-gold-primary)) !important;
+  color: #151008 !important;
+  box-shadow: 0 8px 24px rgba(211, 163, 63, .18) !important;
+}
