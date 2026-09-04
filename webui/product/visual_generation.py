@@ -68,6 +68,11 @@ MODE_LABELS = {
     VisualGenerationMode.IMAGE_TO_VIDEO: "Imagen → vídeo",
     VisualGenerationMode.TEXT_TO_VIDEO: "Texto → vídeo",
 }
+MODE_PANEL_TITLES = {
+    VisualGenerationMode.TEXT_TO_IMAGE: "GENERAR IMAGEN",
+    VisualGenerationMode.IMAGE_TO_VIDEO: "ANIMAR IMAGEN",
+    VisualGenerationMode.TEXT_TO_VIDEO: "CREAR VÍDEO DESDE TEXTO",
+}
 QUALITY_LABELS = {
     GenerationQuality.PREVIEW: "PREVIEW",
     GenerationQuality.STANDARD: "STANDARD",
@@ -216,9 +221,7 @@ def correlate_scene_contexts(
     for scene in plan.scenes:
         evidence = by_number.get(scene.scene_number)
         if evidence is None:
-            raise ValueError(
-                f"media_resolution missing scene {scene.scene_number}"
-            )
+            raise ValueError(f"media_resolution missing scene {scene.scene_number}")
         scene_id = str(evidence.scene_key or "").strip()
         if not scene_id or scene_id in seen_ids:
             raise ValueError("scene_key must be present and unique")
@@ -238,7 +241,10 @@ def correlate_scene_contexts(
     return tuple(contexts)
 
 
-def load_scene_visual_contexts(service: Any, project_id: str) -> tuple[SceneVisualContext, ...]:
+def load_scene_visual_contexts(
+    service: Any,
+    project_id: str,
+) -> tuple[SceneVisualContext, ...]:
     scene_ref = service.store.get_latest_artifact(project_id, "scene_plan")
     media_ref = service.store.get_latest_artifact(project_id, "media_resolution")
     plan = AstronomyVideoPlan.model_validate(
@@ -334,39 +340,33 @@ def _runtime_states() -> dict[str, ProviderRuntimeState]:
 
 
 def _runtime_status(provider: Any, state: ProviderRuntimeState) -> None:
+    ui.render_runtime_status_card(
+        provider.display_name,
+        ready=state.ready,
+        enabled=state.enabled,
+        adapter_registered=state.adapter_registered,
+        weights_available=state.weights_available,
+        hardware_certified=state.hardware_certified,
+    )
     if state.ready:
         st.success("Motor local preparado para esta operación.")
     else:
-        st.warning(
-            "Generación local pendiente de certificación. La configuración está "
-            "preparada, pero este motor necesita el runtime local y el hardware "
-            "certificado antes de poder generar contenido."
-        )
-
-    with st.expander("Ver requisitos para activar", expanded=False):
-        st.write(f"**Motor:** {provider.display_name}")
-        st.write("✓ Contrato disponible")
-        st.write(
-            f"{'✓' if state.enabled else '—'} Motor habilitado"
-        )
-        st.write(
-            f"{'✓' if state.adapter_registered else '—'} Adaptador registrado"
-        )
-        st.write(
-            f"{'✓' if state.weights_available else '—'} Pesos disponibles"
-        )
-        st.write(
-            f"{'✓' if state.hardware_certified else '—'} Hardware certificado"
+        st.caption(
+            "Generación local pendiente de certificación. La configuración está preparada, "
+            "pero este motor necesita el runtime local y el hardware certificado antes de "
+            "poder generar contenido."
         )
         if not state.hardware_certified:
             st.caption("RTX 2060: certificación pendiente en el PC.")
 
 
 def _science_notice() -> None:
-    st.info(
-        "RECREACIÓN VISUAL · El contenido generado o transformado mediante IA "
-        "no constituye evidencia observacional directa."
-    )
+    ui.render_ai_classification_badge()
+    with st.expander("Qué significa RECREACIÓN VISUAL", expanded=False):
+        st.write(
+            "Contenido generado o transformado mediante IA. No constituye evidencia "
+            "observacional directa."
+        )
 
 
 def _seed_value(key: str) -> int | None:
@@ -385,7 +385,7 @@ def _seed_value(key: str) -> int | None:
 
 
 def _advanced_generation_fields(key: str) -> tuple[int | None, str]:
-    with st.expander("Configuración avanzada", expanded=False):
+    with st.expander("Opciones avanzadas", expanded=False):
         seed = _seed_value(key)
         negative_prompt = st.text_area(
             "Negative prompt · opcional",
@@ -408,14 +408,13 @@ def _render_existing_source(scene: SceneVisualContext, source: str) -> None:
     if not matches:
         ui.render_empty_state(
             "No hay material elegible en esta categoría",
-            "La selección automática actual no contiene candidatos que cumplan "
-            "este origen y estado de derechos.",
+            "La selección actual no contiene candidatos que cumplan este origen y estado de derechos.",
         )
         return
 
     for candidate in matches[:4]:
         with st.container(border=True):
-            st.markdown(f"**{candidate.title or candidate.media_id}**")
+            st.markdown(f"### {candidate.title or candidate.media_id}")
             st.caption(
                 f"{candidate.provider.value} · {candidate.media_type.value} · "
                 f"{candidate.rights_status.value}"
@@ -448,11 +447,12 @@ def _show_safe_provenance(
         st.write(f"**Proveedor:** {record.get('provider', asset.provider_id)}")
         st.write(f"**Modelo:** {record.get('model', asset.model_id)}")
         st.write(f"**Clasificación:** {record.get('scientific_status')}")
-        st.write(f"**SHA-256:** {ui.short_identifier(record.get('sha256'))}")
-        st.write(f"**Prompt SHA-256:** {ui.short_identifier(record.get('prompt_sha256'))}")
+        st.code(ui.short_identifier(record.get("sha256")), language=None)
+        st.caption(f"Asset SHA · {ui.short_identifier(record.get('sha256'))}")
+        st.caption(f"Prompt SHA · {ui.short_identifier(record.get('prompt_sha256'))}")
         if record.get("source_image_sha256"):
-            st.write(
-                "**Imagen origen SHA-256:** "
+            st.caption(
+                "Source SHA · "
                 f"{ui.short_identifier(record.get('source_image_sha256'))}"
             )
         if record.get("seed") is not None:
@@ -502,28 +502,45 @@ def _select_for_mpt(
         st.success("Asset seleccionado para esta escena y validado por el bridge MPT.")
 
 
+def _prepare_i2v_from_asset(scene_id: str, asset_id: str) -> None:
+    st.session_state[f"visual-mode-{scene_id}"] = VisualGenerationMode.IMAGE_TO_VIDEO
+    st.session_state[
+        f"visual-{scene_id}-{VisualGenerationMode.IMAGE_TO_VIDEO.value}-source"
+    ] = f"generated:{asset_id}"
+
+
 def _render_asset_history(scene: SceneVisualContext, asset_index: SceneAssetIndex) -> None:
     assets = asset_index.for_scene(scene.scene_id)
+    ui.render_section_heading(
+        "Versiones de la escena",
+        "Las versiones anteriores se conservan y la trazabilidad técnica permanece plegada.",
+        eyebrow="HISTORIAL",
+    )
     if not assets:
+        ui.render_empty_state(
+            "Todavía no hay visuales generados para esta escena.",
+            "Cuando exista un asset real aparecerá aquí con versión, clasificación y trazabilidad.",
+        )
         return
 
-    ui.render_section_heading(
-        "Versiones generadas",
-        "Las versiones anteriores se conservan; seleccionar una no borra las demás.",
-    )
     requests = _session_mapping(ASSET_REQUESTS_SESSION_KEY)
     source_hashes = _session_mapping(SOURCE_HASHES_SESSION_KEY)
     selected = _session_mapping(SELECTED_ASSETS_SESSION_KEY).get(scene.scene_id)
 
     for version, asset in enumerate(assets, start=1):
         with st.container(border=True):
-            suffix = " · SELECCIONADO" if selected == asset.asset_id else ""
-            st.markdown(f"### v{version}{suffix}")
-            st.caption(
-                f"{asset.media_type.value.upper()} · {asset.provider_id} · {asset.model_id}"
+            st.caption(f"v{version}")
+            title = (
+                "Vídeo generado"
+                if asset.media_type is GeneratedMediaType.VIDEO
+                else "Imagen generada"
             )
-            st.write(f"**Clasificación:** {asset.scientific_status.value}")
-            st.write(f"**SHA-256:** {ui.short_identifier(asset.sha256)}")
+            st.markdown(f"### {title}")
+            st.caption(f"{asset.provider_id} · {asset.model_id}")
+            ui.render_ai_classification_badge()
+            st.code(ui.short_identifier(asset.sha256), language=None)
+            if selected == asset.asset_id:
+                st.success("● Seleccionado")
             if asset.generation_seconds is not None:
                 st.caption(f"Generación: {asset.generation_seconds:.2f} s")
 
@@ -541,8 +558,14 @@ def _render_asset_history(scene: SceneVisualContext, asset_index: SceneAssetInde
 
             if asset.media_type is GeneratedMediaType.IMAGE:
                 st.caption(
-                    "Para utilizar esta imagen en el vídeo final, conviértela mediante "
-                    "Imagen → vídeo."
+                    "Esta imagen debe pasar por Imagen → vídeo antes de entrar en el montaje."
+                )
+                st.button(
+                    "Animar para vídeo",
+                    key=f"animate-generated-{scene.scene_id}-{asset.asset_id}",
+                    use_container_width=True,
+                    on_click=_prepare_i2v_from_asset,
+                    args=(scene.scene_id, asset.asset_id),
                 )
             else:
                 _select_for_mpt(scene, asset, request, source_sha256)
@@ -565,8 +588,7 @@ def _execute_request(
     delegate = adapters.get(provider.provider_id)
     if delegate is None:
         ui.render_error_state(
-            "El estado indica que el adaptador está registrado, pero no está disponible "
-            "en esta sesión.",
+            "El estado indica que el adaptador está registrado, pero no está disponible en esta sesión.",
             action="No se ha ejecutado ninguna generación.",
         )
         return
@@ -586,7 +608,7 @@ def _execute_request(
     except VisualOutOfMemoryError as exc:
         attempted = quality_attempts_label(observed.qualities)
         ui.render_error_state(
-            "La generación agotó el único reintento de calidad permitido por memoria.",
+            "No se pudo completar la generación con la memoria disponible.",
             action=(
                 f"Intentos: {attempted or QUALITY_LABELS[request.quality]}. "
                 "No se han realizado más intentos ni se ha cambiado de proveedor."
@@ -619,159 +641,169 @@ def _render_generation_panel(
     scene: SceneVisualContext,
     asset_index: SceneAssetIndex,
 ) -> None:
-    _science_notice()
+    with st.container(border=True):
+        st.caption("GENERACIÓN VISUAL")
+        _science_notice()
 
-    mode = st.radio(
-        "Modo",
-        options=list(VisualGenerationMode),
-        format_func=lambda value: MODE_LABELS[value],
-        key=f"visual-mode-{scene.scene_id}",
-    )
-    provider = provider_for_mode(mode)
-    state = runtime_state_for(provider.provider_id, _runtime_states())
+        mode = st.radio(
+            "Modo",
+            options=list(VisualGenerationMode),
+            format_func=lambda value: MODE_LABELS[value],
+            key=f"visual-mode-{scene.scene_id}",
+            horizontal=True,
+        )
+        st.markdown(f"### {MODE_PANEL_TITLES[mode]}")
 
-    key = f"visual-{scene.scene_id}-{mode.value}"
-    source_option: SourceImageOption | None = None
+        provider = provider_for_mode(mode)
+        state = runtime_state_for(provider.provider_id, _runtime_states())
 
-    if mode is VisualGenerationMode.IMAGE_TO_VIDEO:
-        source_options = image_source_options(scene, asset_index)
-        if source_options:
-            source_map = {item.option_id: item for item in source_options}
-            selected_source = st.selectbox(
-                "Imagen de origen",
-                options=list(source_map),
-                format_func=lambda value: source_map[value].label,
-                key=f"{key}-source",
-            )
-            source_option = source_map[selected_source]
-        else:
-            st.warning(
-                "Imagen → vídeo necesita una imagen real o generada asociada a esta escena."
-            )
+        key = f"visual-{scene.scene_id}-{mode.value}"
+        source_option: SourceImageOption | None = None
 
-    prompt_label = (
-        "Prompt de movimiento"
-        if mode is VisualGenerationMode.IMAGE_TO_VIDEO
-        else "Prompt"
-    )
-    prompt = st.text_area(
-        prompt_label,
-        placeholder=(
-            "Describe el movimiento de forma contenida y coherente con la escena."
+        if mode is VisualGenerationMode.IMAGE_TO_VIDEO:
+            source_options = image_source_options(scene, asset_index)
+            if source_options:
+                source_map = {item.option_id: item for item in source_options}
+                selected_source = st.selectbox(
+                    "Imagen maestra",
+                    options=list(source_map),
+                    format_func=lambda value: source_map[value].label,
+                    key=f"{key}-source",
+                )
+                source_option = source_map[selected_source]
+                source_path = Path(source_option.local_path)
+                if source_path.is_file():
+                    st.image(str(source_path), caption="Imagen maestra seleccionada")
+            else:
+                st.warning(
+                    "Imagen → vídeo necesita una imagen real o generada asociada a esta escena."
+                )
+
+        prompt_label = (
+            "Movimiento"
             if mode is VisualGenerationMode.IMAGE_TO_VIDEO
-            else "Describe el visual que debe representar esta escena."
-        ),
-        key=f"{key}-prompt",
-        height=118,
-    )
+            else "Prompt"
+        )
+        prompt = st.text_area(
+            prompt_label,
+            placeholder=(
+                "Describe un movimiento contenido, cinematográfico y coherente con la escena."
+                if mode is VisualGenerationMode.IMAGE_TO_VIDEO
+                else "Describe el visual que debe representar esta escena."
+            ),
+            key=f"{key}-prompt",
+            height=132,
+        )
 
-    quality = st.selectbox(
-        "Calidad",
-        options=list(GenerationQuality),
-        index=1,
-        format_func=lambda value: QUALITY_LABELS[value],
-        key=f"{key}-quality",
-    )
-    aspect_ratio = st.selectbox(
-        "Formato",
-        options=["9:16"],
-        key=f"{key}-aspect",
-    )
+        quality = st.radio(
+            "Calidad",
+            options=list(GenerationQuality),
+            index=1,
+            format_func=lambda value: QUALITY_LABELS[value].title(),
+            key=f"{key}-quality",
+            horizontal=True,
+        )
 
-    duration_seconds: float | None = None
-    if mode is not VisualGenerationMode.TEXT_TO_IMAGE:
-        duration_seconds = float(
-            st.number_input(
-                "Duración (s)",
-                min_value=0.5,
-                max_value=45.0,
-                value=float(scene.duration_seconds),
-                step=0.5,
-                key=f"{key}-duration",
+        st.caption("Formato")
+        ui.render_format_chips(("9:16",))
+        aspect_ratio = "9:16"
+
+        duration_seconds: float | None = None
+        if mode is not VisualGenerationMode.TEXT_TO_IMAGE:
+            duration_seconds = float(
+                st.number_input(
+                    "Duración (s)",
+                    min_value=0.5,
+                    max_value=45.0,
+                    value=float(scene.duration_seconds),
+                    step=0.5,
+                    key=f"{key}-duration",
+                )
             )
+
+        seed, negative_prompt = _advanced_generation_fields(key)
+        _runtime_status(provider, state)
+
+        request: VisualGenerationRequest | None = None
+        validation_error: Exception | None = None
+        if prompt.strip():
+            try:
+                request = build_visual_request(
+                    scene_id=scene.scene_id,
+                    mode=mode,
+                    prompt=prompt,
+                    quality=quality,
+                    aspect_ratio=aspect_ratio,
+                    source_image=source_option.local_path if source_option else None,
+                    negative_prompt=negative_prompt,
+                    seed=seed,
+                    duration_seconds=duration_seconds,
+                )
+            except ValueError as exc:
+                validation_error = exc
+
+        if validation_error is not None:
+            st.warning(str(validation_error))
+
+        source_missing = (
+            mode is VisualGenerationMode.IMAGE_TO_VIDEO and source_option is None
         )
-
-    seed, negative_prompt = _advanced_generation_fields(key)
-    _runtime_status(provider, state)
-
-    request: VisualGenerationRequest | None = None
-    validation_error: Exception | None = None
-    if prompt.strip():
-        try:
-            request = build_visual_request(
-                scene_id=scene.scene_id,
-                mode=mode,
-                prompt=prompt,
-                quality=quality,
-                aspect_ratio=aspect_ratio,
-                source_image=source_option.local_path if source_option else None,
-                negative_prompt=negative_prompt,
-                seed=seed,
-                duration_seconds=duration_seconds,
+        disabled = (
+            not state.ready
+            or request is None
+            or validation_error is not None
+            or source_missing
+        )
+        button_label = (
+            "Generar imagen"
+            if mode is VisualGenerationMode.TEXT_TO_IMAGE
+            else "Generar vídeo"
+        )
+        clicked = st.button(
+            button_label,
+            type="primary",
+            disabled=disabled,
+            key=f"{key}-generate",
+            use_container_width=True,
+        )
+        if clicked and request is not None:
+            _execute_request(
+                request,
+                provider=provider,
+                state=state,
+                source_sha256=source_option.sha256 if source_option else None,
+                asset_index=asset_index,
             )
-        except ValueError as exc:
-            validation_error = exc
 
-    if validation_error is not None:
-        st.warning(str(validation_error))
-
-    source_missing = (
-        mode is VisualGenerationMode.IMAGE_TO_VIDEO and source_option is None
-    )
-    disabled = (
-        not state.ready
-        or request is None
-        or validation_error is not None
-        or source_missing
-    )
-    clicked = st.button(
-        "Generar",
-        type="primary",
-        disabled=disabled,
-        key=f"{key}-generate",
-        use_container_width=True,
-    )
-    if clicked and request is not None:
-        _execute_request(
-            request,
-            provider=provider,
-            state=state,
-            source_sha256=source_option.sha256 if source_option else None,
-            asset_index=asset_index,
-        )
-
-    if not state.ready:
-        st.caption(
-            "El botón permanece deshabilitado hasta que enabled + adapter_registered + "
-            "weights_available + hardware_certified sean TRUE."
-        )
+        if not state.ready:
+            st.caption("Generación local pendiente de certificación.")
 
 
 def _render_upscale_status() -> None:
-    with st.expander("Upscale", expanded=False):
+    with st.expander("Funciones adicionales", expanded=False):
+        st.markdown("**Upscale**")
         if current_upscale_contract_supported():
             st.info("Capacidad declarada; la ejecución depende del runtime certificado.")
         else:
+            st.caption("Próximamente / runtime no disponible")
             st.caption(
-                "El catálogo general reconoce UPSCALE, pero los providers visuales V1 "
-                "actuales no lo declaran y VisualGenerationRequest no tiene un modo "
-                "Upscale. No se simula ninguna ejecución."
+                "Los providers visuales V1 actuales no declaran Upscale y "
+                "VisualGenerationRequest no expone ese modo. No existe CTA operativo."
             )
 
 
 def render_visual_generation_workspace(service: Any, project: Any) -> None:
     ui.render_section_heading(
         "Visuales por escena",
-        "Elige qué tipo de material utilizar en cada escena. La generación IA "
-        "permanece cerrada hasta certificar el runtime local.",
+        "Elige la fuente visual de cada escena. La IA permanece fail-closed hasta certificar el runtime local.",
         eyebrow="MATERIALES",
     )
     try:
         scenes = load_scene_visual_contexts(service, project.project_id)
     except Exception as exc:
-        st.info(
-            "Esta sección estará disponible cuando existan el plan de escenas y la "
-            "resolución de medios del proyecto."
+        ui.render_empty_state(
+            "Visuales por escena aún no disponibles",
+            "Esta sección aparecerá cuando existan el plan de escenas y la resolución de medios del proyecto.",
         )
         with st.expander("Detalle", expanded=False):
             st.caption(type(exc).__name__)
@@ -790,11 +822,11 @@ def render_visual_generation_workspace(service: Any, project: Any) -> None:
     scene = scene_map[scene_id]
 
     with st.container(border=True):
-        st.markdown(f"### Escena {scene.scene_number:02d}")
-        st.write(scene.visual_requirement)
+        st.caption(f"ESCENA {scene.scene_number:02d}")
+        st.markdown(f"### {scene.visual_requirement}")
         st.caption(
-            f"Duración planificada: {scene.duration_seconds} s · "
-            f"Selección actual: {scene.selection_status}"
+            f"{scene.act.replace('_', ' ').title()} · "
+            f"{scene.duration_seconds} s · {scene.selection_status}"
         )
 
     source = st.radio(
@@ -802,6 +834,7 @@ def render_visual_generation_workspace(service: Any, project: Any) -> None:
         options=list(VISUAL_SOURCES),
         format_func=lambda value: VISUAL_SOURCE_LABELS[value],
         key=f"visual-source-{scene.scene_id}",
+        horizontal=True,
     )
 
     if source in {VISUAL_SOURCE_OWN, VISUAL_SOURCE_ONLINE}:
@@ -809,12 +842,13 @@ def render_visual_generation_workspace(service: Any, project: Any) -> None:
     elif source == VISUAL_SOURCE_AI:
         _render_generation_panel(scene, _asset_index())
     else:
-        st.caption(
-            "Híbrido combina material existente con generación IA sin sustituir la "
-            "autoridad de MaterialSelector."
-        )
-        if scene.selected_media_id:
-            st.info(f"Material existente seleccionado: {scene.selected_media_id}")
+        with st.container(border=True):
+            st.markdown("### Flujo híbrido")
+            st.caption(
+                "Combina material existente con generación IA sin sustituir la autoridad de MaterialSelector."
+            )
+            if scene.selected_media_id:
+                st.write(f"Material existente seleccionado: **{scene.selected_media_id}**")
         _render_generation_panel(scene, _asset_index())
 
     _render_upscale_status()

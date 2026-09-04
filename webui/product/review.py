@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 import streamlit as st
 
@@ -14,6 +15,7 @@ from webui.product import pages, ui
 
 
 LOGGER = logging.getLogger(__name__)
+_VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".mkv"}
 
 
 def _build_review(
@@ -84,15 +86,50 @@ def _gate_checkbox(label: str, help_text: str, *, key: str) -> bool:
         return value
 
 
+def _latest_real_video(service, project_id: str) -> tuple[Path, object] | None:
+    try:
+        refs = service.store.list_artifacts(project_id)
+    except Exception:
+        return None
+    for ref in reversed(refs):
+        try:
+            path = service.store.resolve_artifact_path(project_id, ref.artifact_id)
+        except Exception:
+            continue
+        if path.suffix.lower() in _VIDEO_SUFFIXES and path.is_file():
+            return path, ref
+    return None
+
+
+def _render_review_preview(service, project) -> None:
+    ui.render_section_heading(
+        "Preview final",
+        "Revisa el corte real materializado. Si todavía no existe, el estado se muestra sin simulación.",
+        eyebrow="REVISIÓN",
+    )
+    real_video = _latest_real_video(service, project.project_id)
+    with st.container(border=True):
+        if real_video is None:
+            ui.render_empty_state(
+                "Preview aún no disponible",
+                "No se ha encontrado un archivo de vídeo real y reproducible para este proyecto.",
+            )
+            return
+        path, ref = real_video
+        st.video(str(path))
+        st.caption(
+            f"{path.name} · {ui.short_identifier(getattr(ref, 'sha256', None))}"
+        )
+
+
 def review_page() -> None:
     service = pages._service()
 
     ui.render_brand_hero(
         "Revisión final humana",
-        "Comprueba el trabajo como espectador y valida uno a uno los siete controles que "
-        "protegen la calidad científica, audiovisual y editorial.",
+        "Mira el corte como espectador y valida los siete controles que protegen ciencia, montaje y publicación.",
         eyebrow="SALA DE REVISIÓN",
-        action_hint="NINGÚN CONTROL SE APRUEBA AUTOMÁTICAMENTE",
+        action_hint="7/7 CONTROLES · DECISIÓN HUMANA · SIN AUTOPUBLICACIÓN",
     )
 
     project = pages._project_selector(service, "review-selector")
@@ -107,9 +144,12 @@ def review_page() -> None:
     with st.container(border=True):
         st.markdown(f"## {project.title}")
         ui.render_state_badge(project.state)
+        st.caption(f"Actualizado: {project.updated_at}")
         ui.render_project_timeline(project)
         st.markdown("### Qué necesita de ti")
         st.write(project.next_action)
+
+    _render_review_preview(service, project)
 
     if project.state != ProjectState.READY_FOR_HUMAN_REVIEW:
         st.warning(
@@ -123,9 +163,9 @@ def review_page() -> None:
         return
 
     ui.render_section_heading(
-        "7 controles antes de aprobar",
+        "Controles de revisión",
         "Marca cada control únicamente después de comprobarlo.",
-        eyebrow="CONTROL DE CALIDAD",
+        eyebrow="7 CONTROLES · 0/7 AL INICIAR",
     )
 
     progress_slot = st.empty()
@@ -263,8 +303,7 @@ def review_page() -> None:
 
     if not approve_enabled:
         st.caption(
-            "Aprobar proyecto se habilita cuando existen notas y los 7/7 controles "
-            "están verificados."
+            "Aprobar proyecto se habilita cuando existen notas y los 7/7 controles están verificados."
         )
 
     st.info(

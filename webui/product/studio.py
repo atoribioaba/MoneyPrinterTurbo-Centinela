@@ -2,77 +2,223 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
 
 from app.services.centinela.orchestration import JobStatus, ProjectState
 
-from . import pages, ui, visual_generation
+from . import mobile_pages, pages, ui, visual_generation
 
 
 LOGGER = logging.getLogger(__name__)
+_NAVIGATION: dict[str, Any] = {}
+
+
+def configure_product_navigation(**pages_by_name: Any) -> None:
+    _NAVIGATION.update(pages_by_name)
+
+
+def _nav_page(name: str) -> Any | None:
+    return _NAVIGATION.get(name)
 
 
 def _recent_projects(service):
     return list(service.projects())
 
 
+def _agenda_preview() -> tuple[Any, ...]:
+    state = st.session_state.get(pages.AGENDA_SESSION_KEY)
+    if not isinstance(state, dict):
+        return ()
+    return tuple(state.get("events") or ())
+
+
+def _event_time_label(event: Any) -> str:
+    try:
+        official = event.canonical_quantity.provenance.get("official_madrid_time") or {}
+        iso = str(official.get("iso8601") or "")
+        if iso:
+            return iso.replace("T", " ")[:16]
+    except Exception:
+        pass
+    return "Hora pendiente de consulta"
+
+
+def _artifact_count(project: Any, *tokens: str) -> int:
+    total = 0
+    for artifact_type, count in project.artifact_type_counts.items():
+        lower = artifact_type.lower()
+        if any(token in lower for token in tokens):
+            total += int(count)
+    return total
+
+
+def _render_project_content(project: Any) -> None:
+    ui.render_section_heading(
+        "Contenido",
+        "Entregables materializados del proyecto. Solo se muestran estados derivados de datos reales.",
+        eyebrow="PRODUCCIÓN",
+    )
+    rows = (
+        ("Vídeo", _artifact_count(project, "video", "render")),
+        ("Audio narración", _artifact_count(project, "audio", "voice", "tts")),
+        ("Subtítulos", _artifact_count(project, "subtitle", "srt")),
+        ("Miniatura", _artifact_count(project, "thumbnail")),
+    )
+    any_materialized = any(count > 0 for _, count in rows)
+    if not any_materialized:
+        ui.render_empty_state(
+            "El contenido final aún no está materializado",
+            "Los entregables aparecerán aquí a medida que avance el pipeline.",
+        )
+        return
+    with st.container(
+        key="centinela-project-content-grid",
+        horizontal=True,
+        horizontal_alignment="left",
+        gap="medium",
+    ):
+        for label, count in rows:
+            if count <= 0:
+                continue
+            with st.container(border=True):
+                st.caption(label.upper())
+                st.markdown(f"### {count}")
+                st.caption("artefacto" if count == 1 else "artefactos")
+
+
+def _render_next_action(project: Any) -> None:
+    review_page = _nav_page("review")
+    publication_page = _nav_page("publication")
+    if project.state == ProjectState.READY_FOR_HUMAN_REVIEW and review_page is not None:
+        st.page_link(
+            review_page,
+            label="Continuar revisión",
+            icon=":material/fact_check:",
+            width="stretch",
+        )
+    elif project.state == ProjectState.FINAL_APPROVED and publication_page is not None:
+        st.page_link(
+            publication_page,
+            label="Preparar publicación manual",
+            icon=":material/inventory_2:",
+            width="stretch",
+        )
+    else:
+        st.caption(project.next_action)
+
+
 def home_page() -> None:
     service = pages._service()
     projects = _recent_projects(service)
+    events = _agenda_preview()
 
+    ui.render_brand_manifesto()
     ui.render_brand_hero(
-        "Observa. Comprende. Cuenta el cielo.",
-        "Tu centro de control para transformar fenómenos reales del Universo en historias "
-        "visuales con rigor científico, producción audiovisual y revisión humana.",
-        action_hint="CIENCIA · PRODUCCIÓN AUDIOVISUAL · PUBLICACIÓN MANUAL",
+        "Bienvenido al observatorio.",
+        "Todo listo para crear historias del Universo.",
+        eyebrow="INICIO · TU CENTRO DE MANDO",
+        action_hint="CIENCIA RIGUROSA · PRODUCCIÓN AUDIOVISUAL · PUBLICACIÓN MANUAL",
     )
 
-    st.page_link(CREATE_PAGE, label="✦ Crear una historia", width="stretch")
+    with st.container(
+        key="centinela-hero-actions",
+        horizontal=True,
+        horizontal_alignment="left",
+        vertical_alignment="center",
+        gap="small",
+    ):
+        st.page_link(
+            CREATE_PAGE,
+            label="＋ Crear una historia",
+            icon=":material/add_circle:",
+            width="stretch",
+        )
+        sky_page = _nav_page("sky")
+        if sky_page is not None:
+            st.page_link(
+                sky_page,
+                label="Explorar el cielo",
+                icon=":material/dark_mode:",
+                width="stretch",
+            )
 
     ui.render_section_heading(
-        "Tu siguiente acción",
-        "El Centinela prioriza la decisión que necesita de ti ahora.",
-        eyebrow="CENTRO DE CONTROL",
+        "Centro de mando",
+        "Lo importante ahora, sin exponer complejidad técnica innecesaria.",
     )
-    if not projects:
-        ui.render_empty_state(
-            "El observatorio está preparado",
-            "Crea tu primera historia astronómica para iniciar investigación, guion y producción.",
-            action="Empieza desde Crear.",
-        )
-        return
+    with st.container(
+        key="centinela-home-grid",
+        horizontal=True,
+        horizontal_alignment="left",
+        vertical_alignment="top",
+        gap="medium",
+    ):
+        with st.container(border=True):
+            st.caption("PRODUCCIÓN EN CURSO")
+            if not projects:
+                ui.render_empty_state(
+                    "Sin producción activa",
+                    "Crea una historia astronómica para iniciar el primer proyecto.",
+                )
+            else:
+                current = projects[0]
+                st.markdown(f"### {current.title}")
+                ui.render_state_badge(current.state)
+                ui.render_project_timeline(current)
+                _render_next_action(current)
 
-    current = projects[0]
-    with st.container(border=True):
-        st.markdown(f"## {current.title}")
-        ui.render_state_badge(current.state)
-        st.markdown("### Siguiente paso")
-        st.write(current.next_action)
-        ui.render_project_timeline(current)
+        with st.container(border=True):
+            st.caption("PRÓXIMO EVENTO")
+            if not events:
+                ui.render_empty_state(
+                    "Agenda aún no calculada",
+                    "Calcula la Agenda futura para mostrar aquí una efeméride real.",
+                )
+                sky_page = _nav_page("sky")
+                if sky_page is not None:
+                    st.page_link(
+                        sky_page,
+                        label="Ver agenda",
+                        icon=":material/calendar_month:",
+                        width="stretch",
+                    )
+            else:
+                event = events[0]
+                st.markdown(f"### {getattr(event, 'label_es', 'Evento astronómico')}")
+                st.caption(_event_time_label(event))
+                body = str(getattr(event, "body", "") or "").strip()
+                if body:
+                    st.write(body)
+                sky_page = _nav_page("sky")
+                if sky_page is not None:
+                    st.page_link(
+                        sky_page,
+                        label="Ver en agenda",
+                        icon=":material/calendar_month:",
+                        width="stretch",
+                    )
 
-        if current.capability_pending:
-            st.warning(
-                "La producción está detenida de forma segura hasta que la capacidad pendiente "
-                "esté disponible."
+        with st.container(border=True):
+            st.caption("PRODUCCIONES RECIENTES")
+            recent = projects[1:4]
+            if not recent:
+                ui.render_empty_state(
+                    "Sin historial reciente",
+                    "Las últimas producciones aparecerán aquí cuando existan.",
+                )
+            else:
+                for project in recent:
+                    st.markdown(f"**{project.title}**")
+                    st.caption(f"{ui.state_display(project.state)} · {project.updated_at}")
+            st.page_link(
+                PROJECTS_PAGE,
+                label="Ver todos los proyectos",
+                icon=":material/movie:",
+                width="stretch",
             )
-        elif current.state == ProjectState.READY_FOR_HUMAN_REVIEW:
-            st.info("Este proyecto necesita tu revisión humana. Abre **Más → Revisión**.")
-        elif current.state == ProjectState.FINAL_APPROVED:
-            st.info(
-                "El proyecto está aprobado. Abre **Más → Publicación** para preparar el paquete."
-            )
-
-        st.page_link(PROJECTS_PAGE, label="Abrir proyecto", width="stretch")
-
-    if len(projects) > 1:
-        ui.render_section_heading("Historias recientes", "Tus últimas producciones.")
-        for project in projects[1:4]:
-            with st.container(border=True):
-                st.markdown(f"### {project.title}")
-                ui.render_state_badge(project.state)
-                st.caption(project.next_action)
 
 
 def create_video_page() -> None:
@@ -80,11 +226,48 @@ def create_video_page() -> None:
 
     ui.render_brand_hero(
         "¿Qué quieres contar?",
-        "Describe el fenómeno, objeto o historia astronómica. El Centinela investigará y hará "
-        "avanzar la producción hasta la siguiente decisión que necesite de ti.",
+        "Elige cómo quieres empezar. El Fact Lock protege los datos científicos antes de producir.",
         eyebrow="CREAR",
-        action_hint="EL FACT LOCK PROTEGE LOS DATOS CIENTÍFICOS ANTES DE PRODUCIR",
+        action_hint="REEL / TIKTOK / SHORT · 9:16 · 30 FPS",
     )
+
+    start_mode = st.radio(
+        "¿Cómo quieres empezar?",
+        options=("Agenda futura", "Idea propia", "Proyecto existente"),
+        index=1,
+        horizontal=True,
+        key="create-start-mode",
+    )
+
+    if start_mode == "Agenda futura":
+        ui.render_empty_state(
+            "Empieza desde una efeméride real",
+            "Abre Cielo, calcula la Agenda futura para tu ubicación y selecciona el fenómeno que quieras convertir en historia.",
+        )
+        sky_page = _nav_page("sky")
+        if sky_page is not None:
+            st.page_link(
+                sky_page,
+                label="Abrir Agenda futura",
+                icon=":material/calendar_month:",
+                width="stretch",
+            )
+        return
+
+    if start_mode == "Proyecto existente":
+        ui.render_empty_state(
+            "Continúa una producción",
+            "Abre Proyectos para retomar la siguiente acción pendiente de una historia existente.",
+        )
+        st.page_link(
+            PROJECTS_PAGE,
+            label="Abrir Proyectos",
+            icon=":material/movie:",
+            width="stretch",
+        )
+        return
+
+    ui.render_format_chips(("Reel / TikTok / Short", "9:16", "30 fps"))
 
     with st.form("create-video-v2", clear_on_submit=False):
         title = st.text_area(
@@ -93,15 +276,12 @@ def create_video_page() -> None:
                 "Ej.: La Luna llena saliendo detrás del horizonte de Valladolid esta noche."
             ),
             max_chars=512,
-            height=118,
+            height=132,
         )
 
-        st.caption("Formato: vídeo social vertical · 9:16 · revisión humana obligatoria.")
-
-        with st.expander("Contexto de observación · opcional", expanded=False):
+        with st.expander("Opciones avanzadas", expanded=False):
             st.caption(
-                "Úsalo cuando la historia dependa de visibilidad, conjunciones, eclipses o "
-                "paisaje celeste desde un lugar y momento concretos."
+                "Añade contexto de observación solo cuando la historia dependa de lugar, hora o visibilidad."
             )
             use_observation_context = st.checkbox(
                 "Esta historia depende de lugar y/o momento",
@@ -146,15 +326,14 @@ def create_video_page() -> None:
                 )
 
         submitted = st.form_submit_button(
-            "✦ Investigar y crear guion",
+            "✦ Generar investigación y guion",
             type="primary",
             use_container_width=True,
         )
 
     if not submitted:
         st.caption(
-            "Nada se publica automáticamente. Fact Lock y la revisión humana siguen siendo "
-            "obligatorios."
+            "Nada se publica automáticamente. Fact Lock y la revisión humana siguen siendo obligatorios."
         )
         return
 
@@ -229,7 +408,7 @@ def projects_page() -> None:
 
     ui.render_brand_hero(
         "Tus historias del Universo",
-        "Consulta el estado real de cada producción y continúa desde la siguiente decisión útil.",
+        "Consulta el estado real de cada producción, sus entregables y sus visuales por escena.",
         eyebrow="PROYECTOS",
     )
 
@@ -244,48 +423,53 @@ def projects_page() -> None:
         return
 
     with st.container(border=True):
+        st.html('<div class="centinela-project-orb" aria-hidden="true"></div>')
         st.markdown(f"## {project.title}")
         ui.render_state_badge(project.state)
         st.caption(f"Actualizado: {project.updated_at}")
-
-        st.markdown("### Siguiente acción")
-        st.write(project.next_action)
         ui.render_project_timeline(project)
+
+        st.markdown("### Etapa actual")
+        st.write(project.next_action)
 
         if project.capability_pending:
             st.warning(
-                "La producción está detenida de forma segura hasta que esta capacidad "
-                "esté disponible."
+                "La producción está detenida de forma segura hasta que esta capacidad esté disponible."
             )
-        elif project.state == ProjectState.READY_FOR_HUMAN_REVIEW:
-            st.info("Siguiente decisión: **Más → Revisión**.")
-        elif project.state == ProjectState.FINAL_APPROVED:
-            st.info("Siguiente decisión: **Más → Publicación**.")
+        _render_next_action(project)
 
-    active_jobs = [
-        job
-        for job in project.latest_jobs
-        if job.status
-        in {
-            JobStatus.QUEUED,
-            JobStatus.RUNNING,
-            JobStatus.CANCEL_REQUESTED,
-        }
-    ]
-    ui.render_kpi_card(
-        "Archivos y evidencias",
-        project.artifact_count,
-        detail="Materializados para este proyecto.",
-    )
-    ui.render_kpi_card(
-        "Procesos activos",
-        len(active_jobs),
-        detail="Trabajos en cola o ejecución.",
-    )
+    _render_project_content(project)
+
+    with st.container(
+        key="centinela-project-kpis",
+        horizontal=True,
+        horizontal_alignment="left",
+        gap="medium",
+    ):
+        active_jobs = [
+            job
+            for job in project.latest_jobs
+            if job.status
+            in {
+                JobStatus.QUEUED,
+                JobStatus.RUNNING,
+                JobStatus.CANCEL_REQUESTED,
+            }
+        ]
+        ui.render_kpi_card(
+            "Archivos y evidencias",
+            project.artifact_count,
+            detail="Materializados para este proyecto.",
+        )
+        ui.render_kpi_card(
+            "Procesos activos",
+            len(active_jobs),
+            detail="Trabajos en cola o ejecución.",
+        )
 
     visual_generation.render_visual_generation_workspace(service, project)
 
-    with st.expander("Detalles avanzados y trazabilidad"):
+    with st.expander("Detalles técnicos y trazabilidad"):
         st.markdown("#### Artefactos")
         if project.artifact_type_counts:
             for key, value in project.artifact_type_counts.items():
@@ -313,6 +497,11 @@ CREATE_PAGE = st.Page(
     create_video_page,
     title="Crear",
     url_path="crear",
+)
+SKY_PAGE = st.Page(
+    mobile_pages.ephemerides_page,
+    title="Agenda y efemérides",
+    url_path="cielo",
 )
 PROJECTS_PAGE = st.Page(
     projects_page,

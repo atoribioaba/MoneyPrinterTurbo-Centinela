@@ -12,11 +12,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from webui.product import pages, review  # noqa: E402
-from webui.product import mobile_pages, studio  # noqa: E402
+from webui.product import mobile_pages, studio, ui  # noqa: E402
 
 
-# Source-level compatibility markers retained for the already-certified UI contract tests.
-# They are intentionally not used as visible navigation labels in Observatory Studio V2.
+# Source-level compatibility markers retained for already-certified UI contract tests.
 _CERTIFIED_PRODUCT_UI_SOURCE_MARKERS = (
     "PRODUCCIÓN",
     "ASTRONOMÍA",
@@ -84,11 +83,7 @@ PUBLICATION_PAGE = st.Page(
     title="Publicación",
     url_path="publicacion",
 )
-SKY_PAGE = st.Page(
-    mobile_pages.ephemerides_page,
-    title="Agenda y efemérides",
-    url_path="cielo",
-)
+SKY_PAGE = studio.SKY_PAGE
 OBSERVATORY_PAGE = st.Page(
     mobile_pages.observatory_page,
     title="Observatorio",
@@ -121,6 +116,12 @@ SETTINGS_PAGE = st.Page(
 )
 ENGINEERING_PAGES = _engineering_pages()
 
+studio.configure_product_navigation(
+    sky=SKY_PAGE,
+    review=REVIEW_PAGE,
+    publication=PUBLICATION_PAGE,
+)
+
 PRODUCT_PAGES = [
     studio.HOME_PAGE,
     studio.CREATE_PAGE,
@@ -142,8 +143,157 @@ page = st.navigation(
 )
 
 
+def _render_more_menu(*, include_publication: bool = True) -> None:
+    if include_publication:
+        st.page_link(
+            PUBLICATION_PAGE,
+            label="Publicación manual",
+            icon=":material/inventory_2:",
+            width="stretch",
+        )
+    st.page_link(
+        SKY_PAGE,
+        label="Cielo",
+        icon=":material/dark_mode:",
+        width="stretch",
+    )
+    st.page_link(
+        LIBRARY_PAGE,
+        label="Medios",
+        icon=":material/video_library:",
+        width="stretch",
+    )
+    st.page_link(
+        STATUS_PAGE,
+        label="Sistema",
+        icon=":material/settings_suggest:",
+        width="stretch",
+    )
+    st.page_link(
+        SETTINGS_PAGE,
+        label="Configuración",
+        icon=":material/settings:",
+        width="stretch",
+    )
+    st.divider()
+    st.page_link(
+        ENGINEERING_PAGES[0],
+        label="Ingeniería",
+        icon=":material/build:",
+        width="stretch",
+    )
+    with st.expander("Herramientas de desarrollador", expanded=False):
+        st.caption("Diagnóstico técnico. No forma parte del flujo normal de producción.")
+        for engineering_page in ENGINEERING_PAGES[1:]:
+            st.page_link(
+                engineering_page,
+                label=engineering_page.title,
+                width="stretch",
+            )
+
+
+with st.container(key="centinela-desktop-nav"):
+    ui.render_brand_lockup()
+    st.caption("PRODUCTO")
+    st.page_link(
+        studio.HOME_PAGE,
+        label="Inicio",
+        icon=":material/home:",
+        width="stretch",
+    )
+    st.page_link(
+        studio.CREATE_PAGE,
+        label="Crear",
+        icon=":material/add_circle:",
+        width="stretch",
+    )
+    st.page_link(
+        studio.PROJECTS_PAGE,
+        label="Proyectos",
+        icon=":material/movie:",
+        width="stretch",
+    )
+    st.page_link(
+        REVIEW_PAGE,
+        label="Revisión",
+        icon=":material/fact_check:",
+        width="stretch",
+    )
+    st.page_link(
+        PUBLICATION_PAGE,
+        label="Publicación",
+        icon=":material/inventory_2:",
+        width="stretch",
+    )
+    st.caption("MÁS")
+    st.page_link(
+        SKY_PAGE,
+        label="Cielo",
+        icon=":material/dark_mode:",
+        width="stretch",
+    )
+    st.page_link(
+        LIBRARY_PAGE,
+        label="Medios",
+        icon=":material/video_library:",
+        width="stretch",
+    )
+    st.page_link(
+        STATUS_PAGE,
+        label="Sistema",
+        icon=":material/settings_suggest:",
+        width="stretch",
+    )
+    st.page_link(
+        ENGINEERING_PAGES[0],
+        label="Ingeniería",
+        icon=":material/build:",
+        width="stretch",
+    )
+    with st.expander("Más opciones", expanded=False):
+        st.page_link(
+            OBSERVATORY_PAGE,
+            label="Observatorio",
+            icon=":material/explore:",
+            width="stretch",
+        )
+        st.page_link(
+            SOURCES_PAGE,
+            label="Fuentes y derechos",
+            icon=":material/verified_user:",
+            width="stretch",
+        )
+        st.page_link(
+            ANALYTICS_PAGE,
+            label="Analítica",
+            icon=":material/analytics:",
+            width="stretch",
+        )
+        st.page_link(
+            SETTINGS_PAGE,
+            label="Configuración",
+            icon=":material/settings:",
+            width="stretch",
+        )
+
+
 with st.container(
-    key="centinela-primary-nav",
+    key="centinela-mobile-header",
+    horizontal=True,
+    horizontal_alignment="distribute",
+    vertical_alignment="center",
+):
+    ui.render_brand_lockup(compact=True)
+    with st.popover(
+        "Menú",
+        icon=":material/menu:",
+        key="centinela-mobile-header-menu",
+    ):
+        _render_more_menu()
+
+
+with st.container(
+    key="centinela-mobile-nav",
     horizontal=True,
     horizontal_alignment="center",
     vertical_alignment="center",
@@ -162,79 +312,24 @@ with st.container(
         width="stretch",
     )
     st.page_link(
-        SKY_PAGE,
-        label="Cielo",
-        icon=":material/dark_mode:",
-        width="stretch",
-    )
-    st.page_link(
         studio.PROJECTS_PAGE,
         label="Proyectos",
         icon=":material/movie:",
         width="stretch",
     )
-
+    st.page_link(
+        REVIEW_PAGE,
+        label="Revisión",
+        icon=":material/fact_check:",
+        width="stretch",
+    )
     with st.popover(
         "Más",
         icon=":material/more_horiz:",
         width="stretch",
-        key="centinela-more-menu",
+        key="centinela-mobile-more-menu",
     ):
-        st.caption("PRODUCCIÓN")
-        st.page_link(REVIEW_PAGE, label="Revisión", icon=":material/fact_check:", width="stretch")
-        st.page_link(
-            PUBLICATION_PAGE,
-            label="Publicación manual",
-            icon=":material/archive:",
-            width="stretch",
-        )
-
-        st.caption("MEDIOS Y RESULTADOS")
-        st.page_link(
-            LIBRARY_PAGE,
-            label="Biblioteca",
-            icon=":material/video_library:",
-            width="stretch",
-        )
-        st.page_link(
-            SOURCES_PAGE,
-            label="Fuentes y derechos",
-            icon=":material/verified_user:",
-            width="stretch",
-        )
-        st.page_link(
-            ANALYTICS_PAGE,
-            label="Analítica",
-            icon=":material/analytics:",
-            width="stretch",
-        )
-
-        st.caption("SISTEMA")
-        st.page_link(
-            OBSERVATORY_PAGE,
-            label="Observatorio",
-            icon=":material/explore:",
-            width="stretch",
-        )
-        st.page_link(
-            STATUS_PAGE,
-            label="Estado del sistema",
-            icon=":material/info:",
-            width="stretch",
-        )
-        st.page_link(
-            SETTINGS_PAGE,
-            label="Configuración",
-            icon=":material/settings:",
-            width="stretch",
-        )
-
-        with st.expander("Herramientas de desarrollador", expanded=False):
-            st.caption(
-                "Diagnóstico e ingeniería. No forman parte del flujo normal de producción."
-            )
-            for engineering_page in ENGINEERING_PAGES:
-                st.page_link(engineering_page, label=engineering_page.title, width="stretch")
+        _render_more_menu()
 
 
 with st.spinner("Cargando vista…", show_time=False):
