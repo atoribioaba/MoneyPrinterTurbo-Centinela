@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from html import escape
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -9,6 +10,7 @@ import streamlit as st
 
 
 _MADRID = ZoneInfo("Europe/Madrid")
+_M1_2_STYLE_PATH = Path(__file__).with_name("m1_2_patch.css")
 _MONTHS_ES = (
     "enero",
     "febrero",
@@ -144,6 +146,8 @@ def _render_project_timeline(project: Any, ui_module: Any) -> None:
 def install_ui_overrides(ui_module: Any) -> None:
     """Install presentation-only overrides before any product page is rendered."""
     ui_module.render_project_timeline = lambda project: _render_project_timeline(project, ui_module)
+    if _M1_2_STYLE_PATH.is_file():
+        st.html(f"<style>{_M1_2_STYLE_PATH.read_text(encoding='utf-8')}</style>")
 
 
 def render_visual_generation_workspace(

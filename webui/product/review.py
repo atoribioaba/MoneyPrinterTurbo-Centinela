@@ -11,7 +11,7 @@ from app.models.finalization_e2e import (
     HumanFinalReviewRecord,
 )
 from app.services.centinela.orchestration import ProjectState
-from webui.product import pages, ui
+from webui.product import mobile_patch_m1_1, pages, ui
 
 
 LOGGER = logging.getLogger(__name__)
@@ -151,7 +151,9 @@ def review_page() -> None:
     with st.container(key="centinela-review-context", border=True):
         st.markdown(f"## {project.title}")
         ui.render_state_badge(project.state)
-        st.caption(f"Actualizado: {project.updated_at}")
+        st.caption(
+            f"Actualizado el {mobile_patch_m1_1.product_datetime_es(project.updated_at)}"
+        )
         ui.render_project_timeline(project)
         st.markdown("### Qué necesita de ti")
         st.write(project.next_action)
