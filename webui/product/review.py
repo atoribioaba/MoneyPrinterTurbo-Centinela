@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -9,7 +10,10 @@ from app.models.finalization_e2e import (
     HumanFinalReviewRecord,
 )
 from app.services.centinela.orchestration import ProjectState
-from webui.product import pages
+from webui.product import pages, ui
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _build_review(
@@ -46,62 +50,119 @@ def _build_review(
     )
 
 
+def _review_record(
+    *,
+    decision: HumanFinalReviewDecision,
+    reviewer: str,
+    notes: str,
+    science_passed: bool,
+    visual_passed: bool,
+    audio_passed: bool,
+    subtitles_passed: bool,
+    rights_passed: bool,
+    thumbnail_passed: bool,
+    copy_passed: bool,
+) -> HumanFinalReviewRecord:
+    return _build_review(
+        decision=decision,
+        reviewer=reviewer,
+        notes=notes,
+        science_passed=science_passed,
+        visual_passed=visual_passed,
+        audio_passed=audio_passed,
+        subtitles_passed=subtitles_passed,
+        rights_passed=rights_passed,
+        thumbnail_passed=thumbnail_passed,
+        copy_passed=copy_passed,
+    )
+
+
+def _gate_checkbox(label: str, help_text: str, *, key: str) -> bool:
+    with st.container(border=True):
+        value = st.checkbox(label, help=help_text, key=key)
+        st.caption(help_text)
+        return value
+
+
 def review_page() -> None:
     service = pages._service()
-    pages._header(
-        "Revisión",
-        "La aprobación humana es una frontera deliberada y verificable del pipeline.",
+
+    ui.render_brand_hero(
+        "Revisión final humana",
+        "Comprueba el trabajo como espectador y valida uno a uno los siete controles que "
+        "protegen la calidad científica, audiovisual y editorial.",
+        eyebrow="SALA DE REVISIÓN",
+        action_hint="NINGÚN CONTROL SE APRUEBA AUTOMÁTICAMENTE",
     )
+
     project = pages._project_selector(service, "review-selector")
     if project is None:
-        return
-
-    if project.state != ProjectState.READY_FOR_HUMAN_REVIEW:
-        st.info(
-            f"Este proyecto está en **{project.state_label}**. "
-            "La revisión se habilitará cuando exista un vídeo preparado para revisión humana."
+        ui.render_empty_state(
+            "No hay un proyecto para revisar",
+            "La sala de revisión se activará cuando una producción llegue a su corte final.",
+            action="Continúa el proyecto desde Proyectos.",
         )
         return
 
-    st.warning(
-        "La aprobación exige validar explícitamente los siete controles. "
-        "Ningún check se completa automáticamente."
+    with st.container(border=True):
+        st.markdown(f"## {project.title}")
+        ui.render_state_badge(project.state)
+        ui.render_project_timeline(project)
+        st.markdown("### Qué necesita de ti")
+        st.write(project.next_action)
+
+    if project.state != ProjectState.READY_FOR_HUMAN_REVIEW:
+        st.warning(
+            f"Este proyecto está en **{ui.state_display(project.state)}**. "
+            "La revisión todavía no está habilitada."
+        )
+        st.caption(
+            "Completa la siguiente etapa desde Proyectos. No se crea ni aprueba ningún "
+            "resultado de forma artificial."
+        )
+        return
+
+    ui.render_section_heading(
+        "7 controles antes de aprobar",
+        "Marca cada control únicamente después de comprobarlo.",
+        eyebrow="CONTROL DE CALIDAD",
     )
 
-    reviewer = st.text_input("Revisor", value="Revisión humana")
-    notes = st.text_area(
-        "Notas de revisión",
-        placeholder="Justificación de la aprobación o cambios requeridos",
-    )
+    progress_slot = st.empty()
 
-    st.subheader("Controles obligatorios")
-    c1, c2 = st.columns(2)
-    science_passed = c1.checkbox(
-        "Rigor científico verificado",
+    science_passed = _gate_checkbox(
+        "1 · Rigor científico",
+        "Datos, afirmaciones, cifras y contexto astronómico verificados.",
         key="review-science",
     )
-    visual_passed = c1.checkbox(
-        "Imagen y montaje visual verificados",
+    visual_passed = _gate_checkbox(
+        "2 · Imagen y montaje visual",
+        "Selección de planos, continuidad, encuadre y montaje revisados.",
         key="review-visual",
     )
-    audio_passed = c1.checkbox(
-        "Audio y locución verificados",
+    audio_passed = _gate_checkbox(
+        "3 · Audio y locución",
+        "Voz, mezcla, niveles y escucha final revisados.",
         key="review-audio",
     )
-    subtitles_passed = c1.checkbox(
-        "Subtítulos verificados",
+    subtitles_passed = _gate_checkbox(
+        "4 · Subtítulos",
+        "Texto, sincronía y legibilidad revisados.",
         key="review-subtitles",
     )
-    rights_passed = c2.checkbox(
-        "Derechos y licencias verificados",
+    rights_passed = _gate_checkbox(
+        "5 · Derechos y licencias",
+        "Procedencia y derechos de los medios confirmados.",
         key="review-rights",
     )
-    thumbnail_passed = c2.checkbox(
-        "Miniatura verificada",
+    thumbnail_passed = _gate_checkbox(
+        "6 · Miniatura",
+        "Portada final revisada y aprobada.",
         key="review-thumbnail",
     )
-    copy_passed = c2.checkbox(
-        "Copy/caption verificado",
+    copy_passed = _gate_checkbox(
+        "7 · Título, caption y textos",
+        "Copy editorial final revisado.",
         key="review-copy",
     )
 
@@ -115,12 +176,62 @@ def review_page() -> None:
         copy_passed,
     )
     passed_count = sum(gates)
-    st.caption(f"Controles superados: {passed_count}/7")
+    progress_slot.progress(
+        passed_count / 7,
+        text=f"{passed_count}/7 controles verificados",
+    )
 
-    approve_col, changes_col = st.columns(2)
-    if approve_col.button("Aprobar 7/7", type="primary", use_container_width=True):
+    ui.render_section_heading(
+        "Decisión",
+        "Deja una justificación clara de la revisión humana.",
+    )
+    reviewer = st.text_input("Revisor", value="Revisión humana")
+    notes = st.text_area(
+        "Notas de revisión",
+        placeholder="Qué has comprobado, qué funciona y qué debe cambiar si procede.",
+        height=120,
+    )
+
+    can_decide = bool(reviewer.strip() and notes.strip())
+    if st.button(
+        "Solicitar cambios",
+        width="stretch",
+        disabled=not can_decide,
+    ):
         try:
-            review = _build_review(
+            review = _review_record(
+                decision=HumanFinalReviewDecision.CHANGES_REQUESTED,
+                reviewer=reviewer,
+                notes=notes,
+                science_passed=science_passed,
+                visual_passed=visual_passed,
+                audio_passed=audio_passed,
+                subtitles_passed=subtitles_passed,
+                rights_passed=rights_passed,
+                thumbnail_passed=thumbnail_passed,
+                copy_passed=copy_passed,
+            )
+            service.review(project.project_id, review=review)
+            st.warning("Cambios solicitados. El proyecto vuelve al flujo de producción.")
+        except ValueError as exc:
+            ui.render_error_state(str(exc))
+        except Exception as exc:
+            LOGGER.exception("Human review change request failed")
+            ui.render_error_state(
+                "No se pudo registrar la solicitud de cambios.",
+                action="Reintenta la operación o consulta el detalle técnico.",
+                technical_detail=exc,
+            )
+
+    approve_enabled = can_decide and passed_count == 7
+    if st.button(
+        "Aprobar proyecto",
+        type="primary",
+        width="stretch",
+        disabled=not approve_enabled,
+    ):
+        try:
+            review = _review_record(
                 decision=HumanFinalReviewDecision.APPROVE,
                 reviewer=reviewer,
                 notes=notes,
@@ -137,30 +248,26 @@ def review_page() -> None:
                     "No se puede aprobar: deben superarse los siete controles obligatorios."
                 )
             service.review(project.project_id, review=review)
-            st.success("Proyecto aprobado con evidencia humana estructurada 7/7.")
+            st.success("Proyecto aprobado con revisión humana estructurada 7/7.")
+        except ValueError as exc:
+            ui.render_error_state(str(exc))
         except Exception as exc:
-            st.error(str(exc))
-
-    if changes_col.button("Solicitar cambios", use_container_width=True):
-        try:
-            review = _build_review(
-                decision=HumanFinalReviewDecision.CHANGES_REQUESTED,
-                reviewer=reviewer,
-                notes=notes,
-                science_passed=science_passed,
-                visual_passed=visual_passed,
-                audio_passed=audio_passed,
-                subtitles_passed=subtitles_passed,
-                rights_passed=rights_passed,
-                thumbnail_passed=thumbnail_passed,
-                copy_passed=copy_passed,
+            LOGGER.exception("Human review approval failed")
+            ui.render_error_state(
+                "No se pudo registrar la aprobación.",
+                action=(
+                    "El proyecto no se ha aprobado. Consulta el detalle técnico si es necesario."
+                ),
+                technical_detail=exc,
             )
-            service.review(project.project_id, review=review)
-            st.warning("El proyecto vuelve a necesitar intervención antes de continuar.")
-        except Exception as exc:
-            st.error(str(exc))
 
-    st.caption(
-        "La aprobación sólo habilita la siguiente etapa interna. "
-        "No autoriza ni ejecuta publicación automática."
+    if not approve_enabled:
+        st.caption(
+            "Aprobar proyecto se habilita cuando existen notas y los 7/7 controles "
+            "están verificados."
+        )
+
+    st.info(
+        "Aprobar habilita la preparación final del proyecto. "
+        "No autoriza ni ejecuta publicación automática en ninguna plataforma."
     )
