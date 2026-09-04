@@ -185,7 +185,7 @@ with st.container(
         st.page_link(
             PUBLICATION_PAGE,
             label="Publicación manual",
-            icon=":material/package_2:",
+            icon=":material/archive:",
             width="stretch",
         )
 
@@ -205,7 +205,7 @@ with st.container(
         st.page_link(
             ANALYTICS_PAGE,
             label="Analítica",
-            icon=":material/monitoring:",
+            icon=":material/analytics:",
             width="stretch",
         )
 
@@ -213,13 +213,13 @@ with st.container(
         st.page_link(
             OBSERVATORY_PAGE,
             label="Observatorio",
-            icon=":material/telescope:",
+            icon=":material/explore:",
             width="stretch",
         )
         st.page_link(
             STATUS_PAGE,
             label="Estado del sistema",
-            icon=":material/health_and_safety:",
+            icon=":material/info:",
             width="stretch",
         )
         st.page_link(
