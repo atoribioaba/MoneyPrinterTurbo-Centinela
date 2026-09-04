@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import re
+from datetime import UTC, datetime
+from html import escape
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
@@ -13,6 +16,208 @@ from . import pages, ui
 
 
 LOGGER = logging.getLogger(__name__)
+
+_BODY_LABELS_ES = {
+    "sun": "Sol",
+    "moon": "Luna",
+    "mercury": "Mercurio",
+    "venus": "Venus",
+    "mars": "Marte",
+    "jupiter": "Júpiter",
+    "saturn": "Saturno",
+    "uranus": "Urano",
+    "neptune": "Neptuno",
+    "pluto": "Plutón",
+}
+_BODY_TOKEN_RE = re.compile(
+    r"\b(" + "|".join(re.escape(item) for item in _BODY_LABELS_ES) + r")\b",
+    flags=re.IGNORECASE,
+)
+_MONTHS_ES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+
+
+def body_label_es(value: object) -> str:
+    raw = str(getattr(value, "value", value) or "").strip()
+    if not raw:
+        return ""
+    return _BODY_LABELS_ES.get(raw.lower(), raw)
+
+
+def _localize_body_tokens(value: object) -> str:
+    text = str(value or "")
+    return _BODY_TOKEN_RE.sub(
+        lambda match: _BODY_LABELS_ES[match.group(0).lower()],
+        text,
+    )
+
+
+def event_title_es(event: object) -> str:
+    event_type = str(getattr(event, "event_type", "") or "")
+    details = getattr(event, "details", {}) or {}
+    pair = details.get("body_pair") if isinstance(details, dict) else None
+    if event_type == "apparent_conjunction" and isinstance(pair, (list, tuple)) and len(pair) == 2:
+        left_raw = str(pair[0]).lower()
+        left = body_label_es(pair[0])
+        right = body_label_es(pair[1])
+        left_phrase = f"la {left}" if left_raw == "moon" else left
+        return f"Conjunción aparente de {left_phrase} y {right}"
+    return _localize_body_tokens(getattr(event, "label_es", "Evento astronómico"))
+
+
+def event_time_es(event: object) -> str:
+    provenance = getattr(getattr(event, "canonical_quantity", None), "provenance", {}) or {}
+    official = provenance.get("official_madrid_time") or {}
+    iso = str(official.get("iso8601") or "").strip()
+    moment: datetime | None = None
+    if iso:
+        try:
+            moment = datetime.fromisoformat(iso)
+        except ValueError:
+            moment = None
+    if moment is None:
+        fallback = getattr(event, "time_local", None)
+        if isinstance(fallback, datetime):
+            moment = fallback
+    if moment is None:
+        return "Hora pendiente de consulta"
+    abbreviation = str(official.get("abbreviation") or moment.tzname() or "").strip()
+    month = _MONTHS_ES[moment.month - 1]
+    suffix = f" {abbreviation}" if abbreviation else ""
+    return f"{moment.day} de {month} de {moment.year} · {moment:%H:%M}{suffix}"
+
+
+def _agenda_now_utc(calendar: EventCalendarService) -> datetime:
+    now_local = calendar._local_moment()
+    if now_local.tzinfo is None or now_local.utcoffset() is None:
+        raise ValueError("Agenda future authority must be timezone-aware")
+    return now_local.astimezone(UTC)
+
+
+def _future_only_events(events, now: datetime):
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("future agenda cutoff must be timezone-aware")
+    cutoff = now.astimezone(UTC)
+    future = []
+    for event in events:
+        event_time = getattr(event, "time_utc", None)
+        if not isinstance(event_time, datetime):
+            continue
+        if event_time.tzinfo is None or event_time.utcoffset() is None:
+            raise ValueError("future agenda event time must be timezone-aware")
+        if event_time.astimezone(UTC) >= cutoff:
+            future.append(event)
+    return tuple(future)
+
+
+def _future_agenda_events(calendar: EventCalendarService, selected_filter: str):
+    candidates = pages._agenda_events(calendar, selected_filter)
+    return _future_only_events(candidates, _agenda_now_utc(calendar))
+
+
+def _decimal_es(value: object, digits: int, *, show_plus: bool = False) -> str:
+    number = float(value)
+    if show_plus:
+        rendered = f"{number:+.{digits}f}"
+    else:
+        rendered = f"{number:.{digits}f}"
+    return rendered.replace("-", "−", 1).replace(".", ",")
+
+
+def _ra_hm(value: object) -> str:
+    total_minutes = int(round(float(value) * 60.0)) % (24 * 60)
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{hours} h {minutes:02d} min"
+
+
+def _dec_dm(value: object) -> str:
+    degrees_value = float(value)
+    sign = "+" if degrees_value >= 0 else "−"
+    total_minutes = int(round(abs(degrees_value) * 60.0))
+    degrees, minutes = divmod(total_minutes, 60)
+    return f"{sign}{degrees}° {minutes:02d}′"
+
+
+def _visibility_presentation(event: object) -> dict[str, object]:
+    provenance = getattr(getattr(event, "canonical_quantity", None), "provenance", {}) or {}
+    local = provenance.get("local_circumstances") or {}
+    if not local or local.get("status") == "not_available":
+        return {
+            "label": "VISIBILIDAD NO DISPONIBLE",
+            "detail": "No hay circunstancias locales disponibles para este evento.",
+            "tone": "neutral",
+            "altitude": None,
+            "azimuth": None,
+        }
+    above = bool(local.get("above_horizon"))
+    return {
+        "label": "VISIBLE DESDE TU UBICACIÓN" if above else "NO VISIBLE DESDE TU UBICACIÓN",
+        "detail": "Sobre el horizonte" if above else "Bajo el horizonte",
+        "tone": "visible" if above else "warning",
+        "altitude": local.get("altitude_deg"),
+        "azimuth": local.get("azimuth_deg"),
+    }
+
+
+def _scientific_detail_rows(event: object) -> tuple[tuple[str, str], ...]:
+    provenance = getattr(getattr(event, "canonical_quantity", None), "provenance", {}) or {}
+    local = provenance.get("local_circumstances") or {}
+    global_maximum = provenance.get("global_maximum") or {}
+    celestial = provenance.get("celestial_region") or {}
+    rows: list[tuple[str, str]] = []
+
+    if local and local.get("status") != "not_available":
+        if local.get("altitude_deg") is not None:
+            rows.append(("Altitud", f"{_decimal_es(local['altitude_deg'], 2)}°"))
+        if local.get("azimuth_deg") is not None:
+            rows.append(("Azimut", f"{_decimal_es(local['azimuth_deg'], 2)}°"))
+        rows.append(
+            (
+                "Visibilidad",
+                "Sobre el horizonte" if local.get("above_horizon") else "Bajo el horizonte",
+            )
+        )
+    else:
+        rows.append(("Visibilidad", "No disponible"))
+
+    if celestial and celestial.get("status") != "not_available":
+        if celestial.get("right_ascension_hours") is not None:
+            rows.append(("Ascensión recta", _ra_hm(celestial["right_ascension_hours"])))
+        if celestial.get("declination_deg") is not None:
+            rows.append(("Declinación", _dec_dm(celestial["declination_deg"])))
+
+    maximum_status = global_maximum.get("status")
+    if maximum_status == "available":
+        latitude = global_maximum.get("latitude_deg")
+        longitude = global_maximum.get("longitude_deg")
+        if latitude is not None and longitude is not None:
+            rows.append(
+                (
+                    "Máximo terrestre",
+                    f"{_decimal_es(latitude, 2, show_plus=True)}°, "
+                    f"{_decimal_es(longitude, 2, show_plus=True)}°",
+                )
+            )
+        else:
+            rows.append(("Máximo terrestre", "Disponible"))
+    elif maximum_status == "not_applicable":
+        rows.append(("Máximo terrestre", "No aplica a este tipo de fenómeno."))
+    elif maximum_status is not None:
+        rows.append(("Máximo terrestre", "No disponible"))
+
+    return tuple(rows)
 
 
 def _observer_controls() -> ObserverContext | None:
@@ -78,35 +283,56 @@ def _observer_controls() -> ObserverContext | None:
     return observer
 
 
-def _render_event_card(event) -> None:
-    provenance = event.canonical_quantity.provenance
-    official = provenance.get("official_madrid_time") or {}
-    iso = str(official.get("iso8601") or "Hora no disponible")
-    abbreviation = str(official.get("abbreviation") or "")
-    offset = str(official.get("utc_offset") or "")
-    local = provenance.get("local_circumstances") or {}
+def _render_event_card(event, *, index: int) -> None:
+    title = event_title_es(event)
+    body = body_label_es(getattr(event, "body", None))
+    human_time = event_time_es(event)
+    visibility = _visibility_presentation(event)
 
-    with st.container(border=True):
-        st.markdown(f"### {event.label_es}")
-        if event.body:
-            st.caption(str(event.body))
-        st.write(f"**{iso.replace('T', ' ')}**")
-        if abbreviation or offset:
-            st.caption(" · ".join(part for part in (abbreviation, offset) if part))
+    with st.container(border=True, key=f"centinela-ephemeris-card-{index}"):
+        body_markup = f"<p>{escape(body)}</p>" if body else ""
+        st.html(
+            '<div class="centinela-event-heading">'
+            '<div class="centinela-event-heading__eyebrow">EFEMÉRIDE</div>'
+            f"<h3>{escape(title)}</h3>"
+            f"{body_markup}"
+            "</div>"
+        )
+        st.html(f'<div class="centinela-event-time">{escape(human_time)}</div>')
 
-        if local.get("status") != "not_available" and local:
-            altitude = local.get("altitude_deg")
-            azimuth = local.get("azimuth_deg")
-            above = local.get("above_horizon")
-            if altitude is not None and azimuth is not None:
-                visibility = "sobre el horizonte" if above else "bajo el horizonte"
-                st.write(
-                    f"**Desde tu ubicación:** Alt {float(altitude):.1f}° · "
-                    f"Az {float(azimuth):.1f}° · {visibility}"
-                )
+        visibility_class = (
+            " centinela-event-visibility--visible"
+            if visibility["tone"] == "visible"
+            else ""
+        )
+        st.html(
+            f'<div class="centinela-event-visibility{visibility_class}">'
+            f"<strong>{escape(str(visibility['label']))}</strong>"
+            f"<span>{escape(str(visibility['detail']))}</span>"
+            "</div>"
+        )
 
+        altitude = visibility.get("altitude")
+        azimuth = visibility.get("azimuth")
+        if altitude is not None and azimuth is not None:
+            st.caption(
+                f"Altitud {_decimal_es(altitude, 1)}° · "
+                f"Azimut {_decimal_es(azimuth, 1)}°"
+            )
+
+        rows = _scientific_detail_rows(event)
         with st.expander("Detalles científicos"):
-            st.write(pages._visibility_and_maximum(event))
+            markup = "".join(
+                '<div class="centinela-science-row">'
+                f"<span>{escape(label)}</span><strong>{escape(value)}</strong>"
+                "</div>"
+                for label, value in rows
+            )
+            st.html(f'<div class="centinela-science-rows">{markup}</div>')
+            st.caption(
+                "La evidencia original y su precisión completa se conservan en la "
+                "trazabilidad científica del evento."
+            )
 
 
 def ephemerides_page() -> None:
@@ -143,11 +369,11 @@ def ephemerides_page() -> None:
 
     observer_key = pages._observer_summary(observer)
     state = st.session_state.get(pages.AGENDA_SESSION_KEY)
+    calendar = EventCalendarService(observer)
     if refresh:
         try:
             with st.spinner("Calculando efemérides…", show_time=True):
-                calendar = EventCalendarService(observer)
-                events = pages._agenda_events(calendar, selected_filter)
+                events = _future_agenda_events(calendar, selected_filter)
             state = {
                 "filter": selected_filter,
                 "observer": observer_key,
@@ -175,18 +401,24 @@ def ephemerides_page() -> None:
         st.info("La ubicación ha cambiado. Actualiza la Agenda Futura para recalcular.")
         return
 
-    events = tuple(state.get("events") or ())
+    stored_events = tuple(state.get("events") or ())
+    events = _future_only_events(stored_events, _agenda_now_utc(calendar))
+    if events != stored_events:
+        state = dict(state)
+        state["events"] = events
+        st.session_state[pages.AGENDA_SESSION_KEY] = state
+
     st.caption(f"Intervalo calculado: {state.get('filter', selected_filter)}")
     if not events:
         ui.render_empty_state(
-            "No hay eventos en este intervalo",
-            "No se han encontrado fenómenos astronómicos para los filtros actuales.",
+            "No hay eventos futuros en este intervalo",
+            "Los fenómenos que ya han pasado se excluyen de Agenda futura.",
             action="Prueba otro intervalo temporal.",
         )
         return
 
-    for event in events:
-        _render_event_card(event)
+    for index, event in enumerate(events):
+        _render_event_card(event, index=index)
 
 
 def observatory_page() -> None:
