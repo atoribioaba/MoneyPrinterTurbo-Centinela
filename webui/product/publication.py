@@ -165,13 +165,18 @@ def publication_page() -> None:
         action_hint="EL CENTINELA PREPARA · TÚ DECIDES CUÁNDO Y DÓNDE PUBLICAR",
     )
 
-    project = pages._project_selector(service, "publication-selector")
+    project = ui.select_project(service, "publication-selector")
     if project is None:
         ui.render_empty_state(
             "No hay un proyecto preparado",
             "La publicación manual aparecerá cuando una historia complete su revisión final.",
-            action="Continúa la producción desde Proyectos.",
         )
+        with st.container(key="centinela-empty-cta"):
+            ui.render_navigation_cta(
+                "projects",
+                "Ir a Proyectos",
+                icon=":material/movie:",
+            )
         return
 
     with st.container(border=True):
