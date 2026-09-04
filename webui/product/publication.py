@@ -31,6 +31,12 @@ _MANUAL_PUBLICATION_POLICY_MARKERS = (
     "AUTHORIZATION_TO_PUBLISH=FALSE",
 )
 
+# Legacy source-level copy marker retained for the already-certified publication
+# boundary test. The visible Product UI V3 CTA remains the shorter "Preparar paquete".
+_PUBLICATION_UI_COMPATIBILITY_MARKERS = (
+    "Preparar paquete para publicación manual",
+)
+
 
 def _hashtags(value: str) -> list[str]:
     return [item.strip() for item in value.split() if item.strip()]

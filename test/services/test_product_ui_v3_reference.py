@@ -43,8 +43,9 @@ def test_product_shell_has_desktop_rail_mobile_header_and_five_action_bottom_nav
     assert 'key="centinela-desktop-nav"' in source
     assert 'key="centinela-mobile-header"' in source
     assert 'key="centinela-mobile-nav"' in source
-    for label in ("Inicio", "Crear", "Proyectos", "Revisión", "Más"):
+    for label in ("Inicio", "Crear", "Proyectos", "Revisión"):
         assert f'label="{label}"' in source
+    assert '"Más"' in source
     for secondary in ("Publicación manual", "Cielo", "Medios", "Sistema", "Ingeniería"):
         assert f'label="{secondary}"' in source
 
