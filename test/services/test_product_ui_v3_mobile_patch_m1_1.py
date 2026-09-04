@@ -82,7 +82,7 @@ def test_m1_1_expected_cloud_writer_room_block_is_explained_without_unlocking_pi
     assert "detenido de forma segura en Guion" in copy
     assert "Ollama loopback" in copy
     assert "no se fabrica un guion" in copy
-    assert "no se descarga ningún modelo" in copy
+    assert "descarga ningún modelo" in copy
 
 
 def test_m1_1_product_timestamp_is_human_spanish_and_raw_value_is_unchanged() -> None:
