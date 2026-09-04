@@ -9,7 +9,7 @@ import streamlit as st
 
 from app.services.centinela.orchestration import JobStatus, ProjectState
 
-from . import mobile_pages, pages, ui, visual_generation
+from . import mobile_pages, mobile_patch_m1_1, pages, ui, visual_generation
 
 
 LOGGER = logging.getLogger(__name__)
@@ -205,7 +205,8 @@ def home_page() -> None:
             else:
                 for project in recent:
                     st.markdown(f"**{project.title}**")
-                    st.caption(f"{ui.state_display(project.state)} · {project.updated_at}")
+                    updated = mobile_patch_m1_1.product_datetime_es(project.updated_at)
+                    st.caption(f"{ui.state_display(project.state)} · {updated}")
             st.page_link(
                 PROJECTS_PAGE,
                 label="Ver todos los proyectos",
@@ -419,11 +420,17 @@ def projects_page() -> None:
         st.html('<div class="centinela-project-orb" aria-hidden="true"></div>')
         st.markdown(f"## {project.title}")
         ui.render_state_badge(project.state)
-        st.caption(f"Actualizado: {project.updated_at}")
+        st.caption(
+            f"Actualizado el {mobile_patch_m1_1.product_datetime_es(project.updated_at)}"
+        )
         ui.render_project_timeline(project)
 
         st.markdown("### Etapa actual")
-        st.write(project.next_action)
+        block_copy = mobile_patch_m1_1.blocked_project_product_copy(project)
+        if block_copy:
+            st.warning(block_copy)
+        else:
+            st.write(project.next_action)
 
         if project.capability_pending:
             st.warning(
@@ -460,9 +467,20 @@ def projects_page() -> None:
             detail="Trabajos en cola o ejecución.",
         )
 
-    visual_generation.render_visual_generation_workspace(service, project)
+    mobile_patch_m1_1.render_visual_generation_workspace(
+        service,
+        project,
+        visual_generation_module=visual_generation,
+        ui_module=ui,
+    )
 
     with st.expander("Detalles técnicos y trazabilidad"):
+        st.markdown("#### Estado temporal")
+        st.caption(
+            f"Actualización de producto · {mobile_patch_m1_1.product_datetime_es(project.updated_at)}"
+        )
+        st.code(str(project.updated_at), language=None)
+
         st.markdown("#### Artefactos")
         if project.artifact_type_counts:
             for key, value in project.artifact_type_counts.items():
@@ -475,8 +493,22 @@ def projects_page() -> None:
             for job in reversed(project.latest_jobs):
                 with st.container(border=True):
                     st.markdown(f"**{pages._job_status_text(job.status)}**")
-                    st.write(job.message or job.job_type)
-                    st.caption(f"{job.progress}% · {job.updated_at}")
+                    st.write(
+                        mobile_patch_m1_1.product_job_message(
+                            job.message,
+                            job.job_type,
+                        )
+                    )
+                    st.caption(
+                        f"{job.progress}% · {mobile_patch_m1_1.product_datetime_es(job.updated_at)}"
+                    )
+                    st.caption("Traza interna preservada")
+                    st.code(
+                        f"job_type={job.job_type}\n"
+                        f"message={job.message or ''}\n"
+                        f"updated_at={job.updated_at}",
+                        language=None,
+                    )
         else:
             st.caption("No hay procesos registrados todavía.")
 
