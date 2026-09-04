@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 import streamlit as st
 
 from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE
 from webui.product import pages, ui
 
+
+LOGGER = logging.getLogger(__name__)
 
 _ASSET_LABELS = {
     "master_2160x3840.mp4": "Vídeo máster",
@@ -35,7 +39,13 @@ def _asset_label(row: dict) -> str:
     logical_name = str(row.get("logical_name") or "")
     relative_path = str(row.get("relative_path") or "")
     filename = relative_path.replace("\\", "/").rsplit("/", 1)[-1]
-    return _ASSET_LABELS.get(logical_name) or _ASSET_LABELS.get(filename) or logical_name or filename or "Asset"
+    return (
+        _ASSET_LABELS.get(logical_name)
+        or _ASSET_LABELS.get(filename)
+        or logical_name
+        or filename
+        or "Asset"
+    )
 
 
 def _render_ready_package(service, project_id: str) -> None:
@@ -50,24 +60,33 @@ def _render_ready_package(service, project_id: str) -> None:
             verify_integrity=True,
         )
     except Exception as exc:
-        st.error(f"El paquete está marcado como listo pero su manifest no es legible: {exc}")
+        LOGGER.exception("Publication package manifest could not be read")
+        ui.render_error_state(
+            "El paquete figura como listo, pero no puede verificarse su manifest.",
+            action="No publiques este paquete hasta resolver la verificación.",
+            technical_detail=exc,
+        )
         return
 
     st.success("LISTO PARA PUBLICACIÓN MANUAL")
     st.markdown(
-        "El paquete final está preparado. **Nada se ha subido ni publicado automáticamente.**"
+        "**El paquete final está preparado. Nada se ha subido ni publicado automáticamente.**"
     )
 
     package_dir = ref.provenance.get("package_dir", "—")
     review_id = manifest.get("human_review_artifact_id", "—")
     asset_count = int(manifest.get("asset_count", 0) or 0)
 
-    c1, c2 = st.columns(2)
-    c1.metric("Entregables", f"{asset_count}/8")
-    c2.metric("Publicación", "MANUAL")
-
-    st.markdown("**Carpeta preparada**")
-    st.code(str(package_dir), language=None)
+    ui.render_kpi_card(
+        "Entregables",
+        f"{asset_count}/8",
+        detail="Archivos contractuales del paquete final.",
+    )
+    ui.render_kpi_card(
+        "Modo de salida",
+        "Manual",
+        detail="Tú decides cuándo y dónde publicar.",
+    )
 
     ui.render_section_heading(
         "Paquete final",
@@ -78,30 +97,27 @@ def _render_ready_package(service, project_id: str) -> None:
     assets = list(manifest.get("assets") or [])
     for row in assets:
         with st.container(border=True):
-            st.markdown(f"**✓ {_asset_label(row)}**")
+            st.markdown(f"### ✓ {_asset_label(row)}")
             relative_path = row.get("relative_path")
             if relative_path:
                 st.caption(str(relative_path))
 
     with st.expander("Trazabilidad y detalles técnicos"):
+        st.markdown("**Carpeta preparada**")
+        st.code(str(package_dir), language=None)
         st.markdown("**Review humano 7/7**")
         st.code(str(review_id), language=None)
         st.markdown("**Manifest del paquete**")
         st.code(str(ref.artifact_id), language=None)
-        st.dataframe(
-            [
-                {
-                    "Asset": row.get("logical_name"),
-                    "Ruta": row.get("relative_path"),
-                    "SHA256": row.get("sha256"),
-                    "Source artifact": row.get("source_artifact_id"),
-                    "Source SHA256": row.get("source_sha256"),
-                }
-                for row in assets
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+        for row in assets:
+            with st.container(border=True):
+                st.markdown(f"**{_asset_label(row)}**")
+                st.write(f"Ruta: {row.get('relative_path') or '—'}")
+                st.code(str(row.get("sha256") or "—"), language=None)
+                st.caption(
+                    f"Source artifact: {ui.short_identifier(row.get('source_artifact_id'))} · "
+                    f"Source SHA256: {ui.short_identifier(row.get('source_sha256'))}"
+                )
 
     st.caption(
         "Derechos, licencias, procedencia y checklist forman parte del paquete. "
@@ -125,6 +141,7 @@ def publication_page() -> None:
         ui.render_empty_state(
             "No hay un proyecto preparado",
             "La publicación manual aparecerá cuando una historia complete su revisión final.",
+            action="Continúa la producción desde Proyectos.",
         )
         return
 
@@ -138,13 +155,39 @@ def publication_page() -> None:
         return
 
     if project.state != ProjectState.FINAL_APPROVED:
-        st.info(
-            f"Este proyecto está en **{ui.state_display(project.state)}**. "
-            "La preparación del paquete se habilitará después de completar la revisión humana 7/7."
+        st.warning("El paquete final todavía está bloqueado.")
+        ui.render_key_value_card(
+            "Revisión humana",
+            (
+                "Pendiente"
+                if project.state != ProjectState.READY_FOR_HUMAN_REVIEW
+                else "Lista para revisar"
+            ),
+            detail="Debe completarse Review 7/7 antes de preparar la salida.",
+        )
+        ui.render_key_value_card(
+            "Paquete de publicación",
+            "Bloqueado",
+            detail="No se genera hasta que el proyecto esté aprobado.",
+        )
+        st.caption(
+            f"Estado actual: {ui.state_display(project.state)}. "
+            "Continúa desde Proyectos o abre Más → Revisión cuando corresponda."
         )
         return
 
     ui.render_manual_publication_notice()
+
+    ui.render_key_value_card(
+        "Revisión humana",
+        "✓ 7/7 aprobada",
+        detail="El proyecto ha superado la decisión humana requerida.",
+    )
+    ui.render_key_value_card(
+        "Publicación",
+        "Manual",
+        detail="Preparar el paquete no publica contenido.",
+    )
 
     ui.render_section_heading(
         "Contenido editorial",
@@ -172,6 +215,11 @@ def publication_page() -> None:
         height=130,
     )
 
+    st.info(
+        "**Esto no publica nada.** El botón siguiente solo prepara los archivos para "
+        "publicación manual."
+    )
+
     if st.button(
         "Preparar paquete para publicación manual",
         type="primary",
@@ -181,20 +229,27 @@ def publication_page() -> None:
             st.error("Selecciona la miniatura JPEG que ya fue aprobada en Review 7/7.")
             return
         try:
-            service.prepare_publication_package_input(
-                project.project_id,
-                thumbnail_bytes=thumbnail.getvalue(),
-                thumbnail_filename=thumbnail.name,
-                title=title,
-                caption=caption,
-                hashtags=_hashtags(hashtags_text),
-                youtube_description=youtube_description,
-            )
-            schedule = service.schedule_publication_package(project.project_id)
+            with st.spinner("Preparando el paquete final…", show_time=True):
+                service.prepare_publication_package_input(
+                    project.project_id,
+                    thumbnail_bytes=thumbnail.getvalue(),
+                    thumbnail_filename=thumbnail.name,
+                    title=title,
+                    caption=caption,
+                    hashtags=_hashtags(hashtags_text),
+                    youtube_description=youtube_description,
+                )
+                service.schedule_publication_package(project.project_id)
             st.success("El paquete final ha entrado en preparación.")
-            st.caption(f"Proceso interno: {schedule.job_id or 'reutilizado'}")
+        except ValueError as exc:
+            ui.render_error_state(str(exc))
         except Exception as exc:
-            st.error(str(exc))
+            LOGGER.exception("Publication package preparation failed")
+            ui.render_error_state(
+                "No se pudo iniciar la preparación del paquete.",
+                action="Nada se ha publicado. Revisa el detalle técnico o reintenta.",
+                technical_detail=exc,
+            )
 
     st.caption(
         "El paquete se prepara únicamente para publicación manual. "

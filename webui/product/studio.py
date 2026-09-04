@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
 
-from app.services.centinela.orchestration import JobStatus
+from app.services.centinela.orchestration import JobStatus, ProjectState
 
 from . import pages, ui
 
@@ -24,51 +24,55 @@ def home_page() -> None:
 
     ui.render_brand_hero(
         "Observa. Comprende. Cuenta el cielo.",
-        "Un estudio de producción astronómica para convertir fenómenos reales del Universo "
-        "en historias visuales con rigor científico y revisión humana.",
-        action_hint="PRODUCCIÓN AUDIOVISUAL · ASTRONOMÍA · PUBLICACIÓN MANUAL",
+        "Tu centro de control para transformar fenómenos reales del Universo en historias "
+        "visuales con rigor científico, producción audiovisual y revisión humana.",
+        action_hint="CIENCIA · PRODUCCIÓN AUDIOVISUAL · PUBLICACIÓN MANUAL",
     )
 
-    primary, secondary = st.columns([1.35, 1])
-    with primary:
-        st.page_link(CREATE_PAGE, label="✦ Crear una historia", width="stretch")
-    with secondary:
-        st.page_link(PROJECTS_PAGE, label="▣ Ver proyectos", width="stretch")
+    st.page_link(CREATE_PAGE, label="✦ Crear una historia", width="stretch")
 
     ui.render_section_heading(
-        "Producción en curso",
-        "Continúa exactamente donde se detuvo el pipeline.",
-        eyebrow="ESTUDIO",
+        "Tu siguiente acción",
+        "El Centinela prioriza la decisión que necesita de ti ahora.",
+        eyebrow="CENTRO DE CONTROL",
     )
     if not projects:
         ui.render_empty_state(
             "El observatorio está preparado",
             "Crea tu primera historia astronómica para iniciar investigación, guion y producción.",
+            action="Empieza desde Crear.",
         )
         return
 
     current = projects[0]
     with st.container(border=True):
-        title_col, state_col = st.columns([3, 1])
-        with title_col:
-            st.markdown(f"### {current.title}")
-        with state_col:
-            ui.render_state_badge(current.state)
-
+        st.markdown(f"## {current.title}")
+        ui.render_state_badge(current.state)
+        st.markdown("### Siguiente paso")
+        st.write(current.next_action)
         ui.render_project_timeline(current)
-        st.markdown(f"**Siguiente paso:** {current.next_action}")
-        st.page_link(PROJECTS_PAGE, label="Continuar proyecto", width="stretch")
+
+        if current.capability_pending:
+            st.warning(
+                "La producción está detenida de forma segura hasta que la capacidad pendiente "
+                "esté disponible."
+            )
+        elif current.state == ProjectState.READY_FOR_HUMAN_REVIEW:
+            st.info("Este proyecto necesita tu revisión humana. Abre **Más → Revisión**.")
+        elif current.state == ProjectState.FINAL_APPROVED:
+            st.info(
+                "El proyecto está aprobado. Abre **Más → Publicación** para preparar el paquete."
+            )
+
+        st.page_link(PROJECTS_PAGE, label="Abrir proyecto", width="stretch")
 
     if len(projects) > 1:
-        ui.render_section_heading("Producciones recientes")
-        for project in projects[1:5]:
+        ui.render_section_heading("Historias recientes", "Tus últimas producciones.")
+        for project in projects[1:4]:
             with st.container(border=True):
-                left, right = st.columns([4, 1])
-                with left:
-                    st.markdown(f"**{project.title}**")
-                    st.caption(project.next_action)
-                with right:
-                    ui.render_state_badge(project.state)
+                st.markdown(f"### {project.title}")
+                ui.render_state_badge(project.state)
+                st.caption(project.next_action)
 
 
 def create_video_page() -> None:
@@ -76,8 +80,8 @@ def create_video_page() -> None:
 
     ui.render_brand_hero(
         "¿Qué quieres contar?",
-        "Describe el fenómeno, objeto o historia astronómica. El Centinela hará avanzar "
-        "la producción hasta la siguiente decisión que necesite de ti.",
+        "Describe el fenómeno, objeto o historia astronómica. El Centinela investigará y hará "
+        "avanzar la producción hasta la siguiente decisión que necesite de ti.",
         eyebrow="CREAR",
         action_hint="EL FACT LOCK PROTEGE LOS DATOS CIENTÍFICOS ANTES DE PRODUCIR",
     )
@@ -92,10 +96,12 @@ def create_video_page() -> None:
             height=118,
         )
 
-        with st.expander("Contexto de observación"):
+        st.caption("Formato: vídeo social vertical · 9:16 · revisión humana obligatoria.")
+
+        with st.expander("Contexto de observación · opcional", expanded=False):
             st.caption(
-                "Añádelo solo si la historia depende de un lugar o momento concreto: "
-                "visibilidad, conjunciones, eclipses o paisaje celeste."
+                "Úsalo cuando la historia dependa de visibilidad, conjunciones, eclipses o "
+                "paisaje celeste desde un lugar y momento concretos."
             )
             use_observation_context = st.checkbox(
                 "Esta historia depende de lugar y/o momento",
@@ -114,48 +120,41 @@ def create_video_page() -> None:
             )
 
             if use_observation_context:
-                c1, c2 = st.columns(2)
-                latitude_text = c1.text_input(
+                latitude_text = st.text_input(
                     "Latitud",
                     placeholder="41.65",
                     help="Grados, entre -90 y 90.",
                 )
-                longitude_text = c2.text_input(
+                longitude_text = st.text_input(
                     "Longitud",
                     placeholder="-4.72",
                     help="Grados, entre -180 y 180.",
                 )
-                c3, c4 = st.columns(2)
-                elevation_text = c3.text_input("Elevación (m)", value="0")
-                timezone_name = c4.text_input(
+                elevation_text = st.text_input("Elevación (m)", value="0")
+                timezone_name = st.text_input(
                     "Zona horaria",
                     value="Europe/Madrid",
-                    help="Identificador IANA.",
+                    help="Identificador IANA completo, por ejemplo Europe/Madrid.",
                 )
-                c5, c6 = st.columns(2)
-                observation_date = c5.date_input(
+                observation_date = st.date_input(
                     "Fecha local",
                     value=observation_date,
                 )
-                observation_time = c6.time_input(
+                observation_time = st.time_input(
                     "Hora local",
                     value=observation_time,
                 )
 
-        st.caption(
-            "Formato de producto: vídeo social vertical. Los parámetros técnicos avanzados "
-            "permanecen bajo control del pipeline."
-        )
         submitted = st.form_submit_button(
-            "✦ Generar investigación y guion",
+            "✦ Investigar y crear guion",
             type="primary",
             use_container_width=True,
         )
 
     if not submitted:
         st.caption(
-            "Nada se publica automáticamente. La revisión y aprobación humana siguen "
-            "siendo obligatorias."
+            "Nada se publica automáticamente. Fact Lock y la revisión humana siguen siendo "
+            "obligatorios."
         )
         return
 
@@ -176,7 +175,11 @@ def create_video_page() -> None:
                 tzinfo=timezone_info,
             )
         except (ValueError, ZoneInfoNotFoundError) as exc:
-            st.error(f"Contexto de observación inválido: {exc}")
+            ui.render_error_state(
+                "El contexto de observación no es válido.",
+                action="Revisa coordenadas, elevación y zona horaria.",
+                technical_detail=exc,
+            )
             return
 
         observation_context = {
@@ -193,18 +196,21 @@ def create_video_page() -> None:
         }
 
     try:
-        project, started = service.create_project(
-            title,
-            observation_context=observation_context,
-            auto_start=True,
-        )
+        with st.spinner("Creando proyecto e iniciando investigación…", show_time=True):
+            project, started = service.create_project(
+                title,
+                observation_context=observation_context,
+                auto_start=True,
+            )
     except ValueError as exc:
-        st.error(str(exc))
+        ui.render_error_state(str(exc))
         return
-    except Exception:
+    except Exception as exc:
         LOGGER.exception("Create project failed")
-        st.error(
-            "No se pudo crear el proyecto. El diagnóstico técnico está disponible en Ingeniería."
+        ui.render_error_state(
+            "No se pudo crear el proyecto.",
+            action="Puedes reintentarlo. El diagnóstico queda disponible en Ingeniería.",
+            technical_detail=exc,
         )
         return
 
@@ -232,30 +238,30 @@ def projects_page() -> None:
         ui.render_empty_state(
             "Todavía no hay proyectos",
             "Crea una historia para comenzar el primer recorrido de producción.",
+            action="Ve a Crear para iniciar una historia.",
         )
         st.page_link(CREATE_PAGE, label="✦ Crear una historia", width="stretch")
         return
 
     with st.container(border=True):
-        top_left, top_right = st.columns([3, 1])
-        with top_left:
-            st.markdown(f"## {project.title}")
-            st.caption(f"Actualizado: {project.updated_at}")
-        with top_right:
-            ui.render_state_badge(project.state)
+        st.markdown(f"## {project.title}")
+        ui.render_state_badge(project.state)
+        st.caption(f"Actualizado: {project.updated_at}")
 
-        ui.render_project_timeline(project)
-        st.markdown("### Siguiente paso")
+        st.markdown("### Siguiente acción")
         st.write(project.next_action)
+        ui.render_project_timeline(project)
 
         if project.capability_pending:
             st.warning(
                 "La producción está detenida de forma segura hasta que esta capacidad "
                 "esté disponible."
             )
+        elif project.state == ProjectState.READY_FOR_HUMAN_REVIEW:
+            st.info("Siguiente decisión: **Más → Revisión**.")
+        elif project.state == ProjectState.FINAL_APPROVED:
+            st.info("Siguiente decisión: **Más → Publicación**.")
 
-    c1, c2 = st.columns(2)
-    c1.metric("Archivos y evidencias", project.artifact_count)
     active_jobs = [
         job
         for job in project.latest_jobs
@@ -266,37 +272,32 @@ def projects_page() -> None:
             JobStatus.CANCEL_REQUESTED,
         }
     ]
-    c2.metric("Procesos activos", len(active_jobs))
+    ui.render_kpi_card(
+        "Archivos y evidencias",
+        project.artifact_count,
+        detail="Materializados para este proyecto.",
+    )
+    ui.render_kpi_card(
+        "Procesos activos",
+        len(active_jobs),
+        detail="Trabajos en cola o ejecución.",
+    )
 
-    with st.expander("Detalles técnicos"):
+    with st.expander("Detalles avanzados y trazabilidad"):
         st.markdown("#### Artefactos")
         if project.artifact_type_counts:
-            st.dataframe(
-                [
-                    {"Tipo": key, "Cantidad": value}
-                    for key, value in project.artifact_type_counts.items()
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
+            for key, value in project.artifact_type_counts.items():
+                ui.render_key_value_card(key, value)
         else:
             st.caption("Todavía no hay artefactos materializados.")
 
         st.markdown("#### Historial de procesos")
         if project.latest_jobs:
-            st.dataframe(
-                [
-                    {
-                        "Estado": pages._job_status_text(job.status),
-                        "Progreso": f"{job.progress}%",
-                        "Proceso": job.message or job.job_type,
-                        "Actualizado": job.updated_at,
-                    }
-                    for job in reversed(project.latest_jobs)
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
+            for job in reversed(project.latest_jobs):
+                with st.container(border=True):
+                    st.markdown(f"**{pages._job_status_text(job.status)}**")
+                    st.write(job.message or job.job_type)
+                    st.caption(f"{job.progress}% · {job.updated_at}")
         else:
             st.caption("No hay procesos registrados todavía.")
 

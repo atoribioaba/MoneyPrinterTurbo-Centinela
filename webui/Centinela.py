@@ -11,7 +11,7 @@ WEBUI_ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from webui.product import pages, review, studio  # noqa: E402
+from webui.product import mobile_pages, pages, review, studio  # noqa: E402
 
 
 # Source-level compatibility markers retained for the already-certified UI contract tests.
@@ -31,16 +31,12 @@ st.set_page_config(
     page_title="El Centinela del Universo",
     page_icon="☾",
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="collapsed",
 )
 
 style_path = WEBUI_ROOT / "product" / "styles.css"
 if style_path.is_file():
-    st.markdown(f"<style>{style_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
-
-st.sidebar.markdown("## ☾ EL CENTINELA DEL UNIVERSO")
-st.sidebar.caption("Studio de producción astronómica")
-st.sidebar.caption("Observa · comprende · cuenta el cielo")
+    st.html(f"<style>{style_path.read_text(encoding='utf-8')}</style>")
 
 
 def _engineering_title(path: Path) -> str:
@@ -77,69 +73,168 @@ def _engineering_pages() -> list:
     return result
 
 
-navigation = {
-    "ESTUDIO": [
-        studio.HOME_PAGE,
-        studio.CREATE_PAGE,
-        studio.PROJECTS_PAGE,
-        st.Page(
-            review.review_page,
-            title="Revisión",
-            url_path="revision",
-        ),
-        st.Page(
-            pages.publication_page,
-            title="Publicación",
-            url_path="publicacion",
-        ),
-    ],
-    "CIELO": [
-        st.Page(
-            pages.ephemerides_page,
-            title="Agenda y efemérides",
-            url_path="cielo",
-        ),
-        st.Page(
-            pages.observatory_page,
-            title="Observatorio",
-            url_path="observatorio",
-        ),
-    ],
-    "MEDIOS": [
-        st.Page(
-            pages.library_page,
-            title="Biblioteca",
-            url_path="biblioteca",
-        ),
-        st.Page(
-            pages.sources_page,
-            title="Fuentes y derechos",
-            url_path="fuentes",
-        ),
-    ],
-    "MÁS": [
-        st.Page(
-            pages.analytics_page,
-            title="Analítica",
-            url_path="analitica",
-        ),
-        st.Page(
-            pages.system_status_page,
-            title="Estado del sistema",
-            url_path="estado",
-        ),
-        st.Page(
-            pages.settings_page,
-            title="Configuración",
-            url_path="configuracion",
-        ),
-    ],
-    "INGENIERÍA": _engineering_pages(),
-}
+REVIEW_PAGE = st.Page(
+    review.review_page,
+    title="Revisión",
+    url_path="revision",
+)
+PUBLICATION_PAGE = st.Page(
+    pages.publication_page,
+    title="Publicación",
+    url_path="publicacion",
+)
+SKY_PAGE = st.Page(
+    mobile_pages.ephemerides_page,
+    title="Agenda y efemérides",
+    url_path="cielo",
+)
+OBSERVATORY_PAGE = st.Page(
+    mobile_pages.observatory_page,
+    title="Observatorio",
+    url_path="observatorio",
+)
+LIBRARY_PAGE = st.Page(
+    mobile_pages.library_page,
+    title="Biblioteca",
+    url_path="biblioteca",
+)
+SOURCES_PAGE = st.Page(
+    mobile_pages.sources_page,
+    title="Fuentes y derechos",
+    url_path="fuentes",
+)
+ANALYTICS_PAGE = st.Page(
+    mobile_pages.analytics_page,
+    title="Analítica",
+    url_path="analitica",
+)
+STATUS_PAGE = st.Page(
+    mobile_pages.system_status_page,
+    title="Estado del sistema",
+    url_path="estado",
+)
+SETTINGS_PAGE = st.Page(
+    mobile_pages.settings_page,
+    title="Configuración",
+    url_path="configuracion",
+)
+ENGINEERING_PAGES = _engineering_pages()
+
+PRODUCT_PAGES = [
+    studio.HOME_PAGE,
+    studio.CREATE_PAGE,
+    SKY_PAGE,
+    studio.PROJECTS_PAGE,
+    REVIEW_PAGE,
+    PUBLICATION_PAGE,
+    OBSERVATORY_PAGE,
+    LIBRARY_PAGE,
+    SOURCES_PAGE,
+    ANALYTICS_PAGE,
+    STATUS_PAGE,
+    SETTINGS_PAGE,
+]
 
 page = st.navigation(
-    navigation,
-    position="sidebar",
-    expanded=False,
+    PRODUCT_PAGES + ENGINEERING_PAGES,
+    position="hidden",
 )
-page.run()
+
+
+with st.container(
+    key="centinela-primary-nav",
+    horizontal=True,
+    horizontal_alignment="center",
+    vertical_alignment="center",
+    gap="small",
+):
+    st.page_link(
+        studio.HOME_PAGE,
+        label="Inicio",
+        icon=":material/home:",
+        width="stretch",
+    )
+    st.page_link(
+        studio.CREATE_PAGE,
+        label="Crear",
+        icon=":material/add_circle:",
+        width="stretch",
+    )
+    st.page_link(
+        SKY_PAGE,
+        label="Cielo",
+        icon=":material/dark_mode:",
+        width="stretch",
+    )
+    st.page_link(
+        studio.PROJECTS_PAGE,
+        label="Proyectos",
+        icon=":material/movie:",
+        width="stretch",
+    )
+
+    with st.popover(
+        "Más",
+        icon=":material/more_horiz:",
+        width="stretch",
+        key="centinela-more-menu",
+    ):
+        st.caption("PRODUCCIÓN")
+        st.page_link(REVIEW_PAGE, label="Revisión", icon=":material/fact_check:", width="stretch")
+        st.page_link(
+            PUBLICATION_PAGE,
+            label="Publicación manual",
+            icon=":material/package_2:",
+            width="stretch",
+        )
+
+        st.caption("MEDIOS Y RESULTADOS")
+        st.page_link(
+            LIBRARY_PAGE,
+            label="Biblioteca",
+            icon=":material/video_library:",
+            width="stretch",
+        )
+        st.page_link(
+            SOURCES_PAGE,
+            label="Fuentes y derechos",
+            icon=":material/verified_user:",
+            width="stretch",
+        )
+        st.page_link(
+            ANALYTICS_PAGE,
+            label="Analítica",
+            icon=":material/monitoring:",
+            width="stretch",
+        )
+
+        st.caption("SISTEMA")
+        st.page_link(
+            OBSERVATORY_PAGE,
+            label="Observatorio",
+            icon=":material/telescope:",
+            width="stretch",
+        )
+        st.page_link(
+            STATUS_PAGE,
+            label="Estado del sistema",
+            icon=":material/health_and_safety:",
+            width="stretch",
+        )
+        st.page_link(
+            SETTINGS_PAGE,
+            label="Configuración",
+            icon=":material/settings:",
+            width="stretch",
+        )
+
+        with st.expander("Herramientas de desarrollador", expanded=False):
+            st.caption(
+                "Diagnóstico e ingeniería. No forman parte del flujo normal de producción."
+            )
+            for engineering_page in ENGINEERING_PAGES:
+                st.page_link(engineering_page, label=engineering_page.title, width="stretch")
+
+
+with st.spinner("Cargando vista…", show_time=False):
+    page.run()
