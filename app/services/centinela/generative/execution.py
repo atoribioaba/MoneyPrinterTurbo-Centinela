@@ -10,7 +10,6 @@ from typing import Mapping, Protocol
 from app.services.centinela.generative.contracts import (
     GeneratedMediaType,
     GeneratedVisualAsset,
-    GenerationQuality,
     VisualGenerationMode,
     VisualGenerationRequest,
 )
