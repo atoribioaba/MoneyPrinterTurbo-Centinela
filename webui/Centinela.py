@@ -34,9 +34,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-style_path = WEBUI_ROOT / "product" / "styles.css"
-if style_path.is_file():
-    st.html(f"<style>{style_path.read_text(encoding='utf-8')}</style>")
+for style_name in ("styles.css", "v3_patch.css"):
+    style_path = WEBUI_ROOT / "product" / style_name
+    if style_path.is_file():
+        st.html(f"<style>{style_path.read_text(encoding='utf-8')}</style>")
 
 
 def _engineering_title(path: Path) -> str:
@@ -121,6 +122,14 @@ studio.configure_product_navigation(
     review=REVIEW_PAGE,
     publication=PUBLICATION_PAGE,
 )
+ui.configure_product_navigation(
+    home=studio.HOME_PAGE,
+    create=studio.CREATE_PAGE,
+    projects=studio.PROJECTS_PAGE,
+    sky=SKY_PAGE,
+    review=REVIEW_PAGE,
+    publication=PUBLICATION_PAGE,
+)
 
 PRODUCT_PAGES = [
     studio.HOME_PAGE,
@@ -141,6 +150,24 @@ page = st.navigation(
     PRODUCT_PAGES + ENGINEERING_PAGES,
     position="hidden",
 )
+
+
+def _page_is_active(target) -> bool:
+    return str(getattr(page, "url_path", "")) == str(getattr(target, "url_path", ""))
+
+
+def _nav_button(target, *, label: str, icon: str, slot: str) -> None:
+    state = "active" if _page_is_active(target) else "idle"
+    with st.container(key=f"centinela-nav-{slot}-{state}"):
+        clicked = st.button(
+            label=label,
+            icon=icon,
+            width="stretch",
+            key=f"centinela-nav-button-{slot}",
+            help="Página actual" if state == "active" else None,
+        )
+        if clicked:
+            st.switch_page(target)
 
 
 def _render_more_menu(*, include_publication: bool = True) -> None:
@@ -195,35 +222,35 @@ def _render_more_menu(*, include_publication: bool = True) -> None:
 with st.container(key="centinela-desktop-nav"):
     ui.render_brand_lockup()
     st.caption("PRODUCTO")
-    st.page_link(
+    _nav_button(
         studio.HOME_PAGE,
         label="Inicio",
         icon=":material/home:",
-        width="stretch",
+        slot="desktop-home",
     )
-    st.page_link(
+    _nav_button(
         studio.CREATE_PAGE,
         label="Crear",
         icon=":material/add_circle:",
-        width="stretch",
+        slot="desktop-create",
     )
-    st.page_link(
+    _nav_button(
         studio.PROJECTS_PAGE,
         label="Proyectos",
         icon=":material/movie:",
-        width="stretch",
+        slot="desktop-projects",
     )
-    st.page_link(
+    _nav_button(
         REVIEW_PAGE,
         label="Revisión",
         icon=":material/fact_check:",
-        width="stretch",
+        slot="desktop-review",
     )
-    st.page_link(
+    _nav_button(
         PUBLICATION_PAGE,
         label="Publicación",
         icon=":material/inventory_2:",
-        width="stretch",
+        slot="desktop-publication",
     )
     st.caption("MÁS")
     st.page_link(
@@ -299,29 +326,29 @@ with st.container(
     vertical_alignment="center",
     gap="small",
 ):
-    st.page_link(
+    _nav_button(
         studio.HOME_PAGE,
         label="Inicio",
         icon=":material/home:",
-        width="stretch",
+        slot="mobile-home",
     )
-    st.page_link(
+    _nav_button(
         studio.CREATE_PAGE,
         label="Crear",
         icon=":material/add_circle:",
-        width="stretch",
+        slot="mobile-create",
     )
-    st.page_link(
+    _nav_button(
         studio.PROJECTS_PAGE,
         label="Proyectos",
         icon=":material/movie:",
-        width="stretch",
+        slot="mobile-projects",
     )
-    st.page_link(
+    _nav_button(
         REVIEW_PAGE,
         label="Revisión",
         icon=":material/fact_check:",
-        width="stretch",
+        slot="mobile-review",
     )
     with st.popover(
         "Más",
