@@ -102,3 +102,42 @@
   color: #151008 !important;
   box-shadow: 0 8px 24px rgba(211, 163, 63, .18) !important;
 }
+
+/* M1.4: bind to Streamlit's rendered button semantics, not inferred wrapper
+   shapes. The real-phone evidence proved that active mobile navigation and
+   form submit buttons expose their primary kind even when wrapper keys vary. */
+@media (max-width: 430px) {
+  .st-key-centinela-mobile-nav [data-testid="stBaseButton-primary"],
+  .st-key-centinela-mobile-nav button[kind="primary"] {
+    min-width: 0 !important;
+    padding-inline: .02rem !important;
+    font-size: .58rem !important;
+    line-height: 1.05 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .st-key-centinela-mobile-nav [data-testid="stBaseButton-primary"] *,
+  .st-key-centinela-mobile-nav button[kind="primary"] * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin-inline: 0 !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    hyphens: none !important;
+    font-size: .58rem !important;
+    line-height: 1.05 !important;
+  }
+}
+
+/* Product-primary form submissions are gold. This intentionally targets the
+   stable Streamlit submit/primary semantics so Create cannot fall back to the
+   theme's red primary color if keyed form classes change in the rendered DOM. */
+[data-testid="stFormSubmitButton"] [data-testid="stBaseButton-primary"],
+[data-testid="stFormSubmitButton"] button[kind="primary"],
+[data-testid="stFormSubmitButton"] > button {
+  border-color: #b8872f !important;
+  background: linear-gradient(135deg, #b9872f, var(--centinela-gold-primary)) !important;
+  color: #151008 !important;
+  box-shadow: 0 8px 24px rgba(211, 163, 63, .18) !important;
+}
