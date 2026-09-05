@@ -300,10 +300,18 @@ def test_real_f37_requires_bound_content_and_verified_normalized_metric():
 
 
 def test_f38_minimum_sample_size_is_pydantic_authoritative():
-    joined = OutcomeLinkerPlan.model_construct(
-        outcome_linker_hash="joined",
-        records=[],
+    binding = ContentBinding(
+        platform=AnalyticsPlatform.YOUTUBE,
+        content_id="video-1",
     )
+    features = build_content_feature_registry(_f36_request(binding))
+    joined = build_outcome_linker(
+        OutcomeLinkerRequest.model_construct(
+            features=features,
+            metrics=_metric_plan("video-1"),
+        )
+    )
+
     with pytest.raises(ValueError):
         AssociationAnalyzerRequest(joined=joined, minimum_sample_size=4)
 
