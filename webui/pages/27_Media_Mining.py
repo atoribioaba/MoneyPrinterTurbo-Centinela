@@ -76,9 +76,9 @@ def _render(plan) -> None:
         st.write(f"Splits video: {plan.splits_video}")
         st.write(f"Downloads dependencies: {plan.downloads_dependencies}")
         st.write(f"Modifies sources: {plan.modifies_sources}")
-        st.write(f"Network calls: 0")
-        st.write(f"External asset search: false")
-        st.write(f"Asset selection: false")
+        st.write("Network calls: 0")
+        st.write("External asset search: false")
+        st.write("Asset selection: false")
         st.write(f"Auto publication: {plan.auto_publication}")
 
 
