@@ -57,8 +57,10 @@ def test_f52_wires_real_contract_without_local_side_effects():
         "build_video_base_e2e",
     } <= imported
     assert _calls_symbol(tree, "build_video_base_e2e")
-    assert "ffprobe" not in source.casefold()
     assert "subprocess" not in imported
+    assert "os" not in imported
+    assert not _calls_symbol(tree, "system")
+    assert not _calls_symbol(tree, "Popen")
     assert "st.video" not in source
     assert "no inspecciona el filesystem" in source
     assert "no demuestra por sí sola que el archivo físico exista" in source
