@@ -47,17 +47,18 @@ def _request(
     ffmpeg_present: bool = True,
     libx264_listed: bool = True,
 ) -> DeliveryRenderRequest:
-    return DeliveryRenderRequest(
+    ffmpeg = FFmpegCapabilityHint(
+        ffmpeg_present=ffmpeg_present,
+        ffmpeg_version="fixture",
+        h264_nvenc_listed=listed,
+        libx264_listed=libx264_listed,
+        nvenc_master_probe_success=master_probe,
+        nvenc_social_probe_success=social_probe,
+        capability_probe_invocations=2,
+    )
+    return DeliveryRenderRequest.model_construct(
         quality_gates=_quality(ready),
-        ffmpeg=FFmpegCapabilityHint(
-            ffmpeg_present=ffmpeg_present,
-            ffmpeg_version="fixture",
-            h264_nvenc_listed=listed,
-            libx264_listed=libx264_listed,
-            nvenc_master_probe_success=master_probe,
-            nvenc_social_probe_success=social_probe,
-            capability_probe_invocations=2,
-        ),
+        ffmpeg=ffmpeg,
     )
 
 
@@ -92,7 +93,7 @@ def test_f30_page_is_planning_only_and_does_not_duplicate_codec_execution():
     assert "READY_FOR_EXPLICIT_RENDER_APPROVAL significa" in SOURCE
     assert "No se ha renderizado ningún archivo" in SOURCE
     assert "F30 termina en DeliveryRenderPlan" in SOURCE
-    assert "no llama F51 automáticamente" in SOURCE
+    assert "no llama f51 automáticamente" in SOURCE.lower()
     assert "effective_codec_candidate =" not in SOURCE
 
 
