@@ -115,6 +115,32 @@ function Command-Application {
         Select-Object -First 1
 }
 
+function Get-Sha256Hex {
+    param([string]$LiteralPath)
+
+    $Stream = $null
+    $Hasher = $null
+    try {
+        $Stream = [System.IO.File]::Open(
+            $LiteralPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+        )
+        $Hasher = [System.Security.Cryptography.SHA256]::Create()
+        $Digest = $Hasher.ComputeHash($Stream)
+        return ([System.BitConverter]::ToString($Digest)).Replace('-', '')
+    }
+    finally {
+        if ($null -ne $Hasher) {
+            $Hasher.Dispose()
+        }
+        if ($null -ne $Stream) {
+            $Stream.Dispose()
+        }
+    }
+}
+
 function ConvertTo-NativeArgument {
     param([AllowEmptyString()][string]$Value)
     if ([string]::IsNullOrEmpty($Value)) {
@@ -591,7 +617,7 @@ try {
                     if ($IsFile) {
                         $SizeBytes = [string]$Item.Length
                         $LastWriteTimeUtc = $Item.LastWriteTimeUtc.ToString('o')
-                        $FileHash = (Get-FileHash -LiteralPath $FullPath -Algorithm SHA256 -ErrorAction Stop).Hash
+                        $FileHash = Get-Sha256Hex $FullPath
                     }
                 }
             }
@@ -840,7 +866,7 @@ catch {
 
 if ($PreflightReportWritten) {
     try {
-        $ReportHash = (Get-FileHash -LiteralPath $ReportPath -Algorithm SHA256 -ErrorAction Stop).Hash
+        $ReportHash = Get-Sha256Hex $ReportPath
         $PreflightReportHashed = $true
     }
     catch {

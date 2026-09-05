@@ -141,8 +141,12 @@ def test_t01_happy_path_gate_valid(tmp_path: Path) -> None:
     assert markers["PREFLIGHT_REPORT_WRITTEN"] == "TRUE"
     assert markers["PREFLIGHT_REPORT_HASHED"] == "TRUE"
     assert markers["PREFLIGHT_HASH_FILE_WRITTEN"] == "TRUE"
-    assert Path(markers["PREFLIGHT_REPORT"]).is_file()
+    report_path = Path(markers["PREFLIGHT_REPORT"])
+    assert report_path.is_file()
     assert Path(markers["PREFLIGHT_HASH_FILE"]).is_file()
+    assert markers["PREFLIGHT_SHA256"] == hashlib.sha256(
+        report_path.read_bytes()
+    ).hexdigest().upper()
 
 
 @WINDOWS_ONLY
@@ -174,7 +178,9 @@ def test_t03_existing_non_git_directory_is_blocked(tmp_path: Path) -> None:
 def test_t04_git_unavailable_is_blocked(tmp_path: Path) -> None:
     repo = _make_repo(tmp_path)
     env = os.environ.copy()
-    system_root = Path(env["SystemRoot"])
+    system_root = Path(
+        env.get("SystemRoot") or env.get("SYSTEMROOT") or r"C:\Windows"
+    )
     env["PATH"] = str(system_root / "System32")
 
     result, markers = _invoke(
@@ -258,10 +264,7 @@ def test_t08_report_hash_failure_is_collector_failure(
     tmp_path: Path,
 ) -> None:
     repo = _make_repo(tmp_path)
-    old = (
-        "$ReportHash = (Get-FileHash -LiteralPath $ReportPath "
-        "-Algorithm SHA256 -ErrorAction Stop).Hash"
-    )
+    old = "$ReportHash = Get-Sha256Hex $ReportPath"
     injected = _patched_script(
         tmp_path,
         old=old,
