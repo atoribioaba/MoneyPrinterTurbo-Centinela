@@ -53,6 +53,24 @@ def _calls_symbol(tree: ast.AST, symbol: str) -> bool:
     )
 
 
+def _assigned_identifiers(tree: ast.AST) -> set[str]:
+    assigned: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            for part in ast.walk(target):
+                if isinstance(part, ast.Name):
+                    assigned.add(part.id)
+                elif isinstance(part, ast.Attribute):
+                    assigned.add(part.attr)
+    return assigned
+
+
 def _comparison(candidate_id: str, safe: bool = True) -> PolicyComparison:
     return PolicyComparison(
         policy_candidate_id=candidate_id,
@@ -129,17 +147,17 @@ def test_f44_page_loads_real_f41_f42_f43_context_in_memory():
 
 def test_f44_page_validates_lineage_and_never_repairs_hashes():
     source = _source()
+    tree = _tree()
     assert "f42.source_policy_candidate_hash == f41.policy_candidate_hash" in source
     assert "f43.source_policy_simulator_hash == f42.policy_simulator_hash" in source
     assert "La trazabilidad de este candidato no coincide" in source
-    forbidden = (
-        "policy_candidate_hash =",
-        "policy_simulator_hash =",
-        "source_policy_candidate_hash =",
-        "source_policy_simulator_hash =",
-    )
-    for marker in forbidden:
-        assert marker not in source, marker
+    lineage_hash_fields = {
+        "policy_candidate_hash",
+        "policy_simulator_hash",
+        "source_policy_candidate_hash",
+        "source_policy_simulator_hash",
+    }
+    assert _assigned_identifiers(tree).isdisjoint(lineage_hash_fields)
 
 
 def test_f44_page_consumes_f43_safe_gate_without_reimplementing_comparator():
