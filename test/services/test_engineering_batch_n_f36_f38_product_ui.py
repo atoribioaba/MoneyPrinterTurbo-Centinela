@@ -23,8 +23,7 @@ from app.models.metric_normalizer import (
     NormalizationStatus,
     NormalizedMetricObservation,
 )
-from app.models.outcome_linker import OutcomeLinkerPlan, OutcomeLinkerRequest
-from app.models.outcome_linker import OutcomeLinkerStatus
+from app.models.outcome_linker import OutcomeLinkerRequest, OutcomeLinkerStatus
 from app.models.visual_story_graph import VisualStoryGraph, VisualStoryNode
 from app.services.association_analyzer import build_association_analyzer
 from app.services.content_feature_registry import build_content_feature_registry
