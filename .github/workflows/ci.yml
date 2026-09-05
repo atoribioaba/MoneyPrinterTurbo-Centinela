@@ -100,6 +100,26 @@ jobs:
       - name: Compile Python sources
         run: uv run --no-sync python -m compileall app cli.py main.py webui test
 
+      - name: Parse PC return preflight PowerShell
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            "scripts/centinela_pc_return_readonly_preflight.ps1",
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: Run PC return preflight hardening tests
+        run: >-
+          uv run --no-sync python -X utf8 -m pytest -q
+          test/services/test_pc_return_readonly_preflight.py
+
       - name: Run core service smoke tests
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
