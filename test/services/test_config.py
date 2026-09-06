@@ -118,13 +118,14 @@ class TestConfigPersistence:
             "upload_post_api_key",
             "upload_post_username",
             "upload_post_platforms",
-            "upload_post_auto_upload",
             "upload_post_youtube_privacy_status",
             "upload_post_max_pending_tasks",
         }
 
         assert upload_post_keys <= example_config["app"].keys()
         assert upload_post_keys.isdisjoint(example_config.get("ui", {}).keys())
+        assert "upload_post_auto_upload" not in example_config["app"]
+        assert example_config["app"]["upload_post_youtube_privacy_status"] == "private"
 
     def test_save_config_uses_parseable_atomic_output(self):
         """
