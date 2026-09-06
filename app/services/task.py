@@ -708,7 +708,10 @@ def generate_audio(
                 "failed to synthesize audio; verify the selected voice and TTS connectivity",
             )
             return None, None, None
-        audio_duration = math.ceil(voice.get_audio_duration(sub_maker))
+        file_duration = voice.get_audio_duration(audio_file)
+        audio_duration = math.ceil(
+            file_duration if file_duration > 0 else voice.get_audio_duration(sub_maker)
+        )
         if audio_duration == 0:
             _mark_task_failed(task_id, "audio", "generated audio duration is zero")
             return None, None, None
