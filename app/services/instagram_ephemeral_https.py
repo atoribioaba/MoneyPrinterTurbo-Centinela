@@ -52,6 +52,7 @@ from app.services.error_control import (
     boundary_error,
     validate_local_media_file,
 )
+from app.services.instagram_oauth_callback import TailscaleFunnelBridge
 from app.services.social_publication import InstagramAdapter, SocialResult
 
 AUTO_PUBLICATION = False
@@ -78,6 +79,7 @@ _SINGLE_RANGE_PATTERN = re.compile(r"bytes=(\d*)-(\d*)\Z")
 
 
 class InstagramTunnelProvider(StrEnum):
+    TAILSCALE_FUNNEL = "tailscale_funnel"
     CLOUDFLARE_QUICK = "cloudflare_quick"
     ZROK_PUBLIC = "zrok_public"
 
@@ -96,6 +98,20 @@ class TunnelProviderFacts:
 
 
 _PROVIDER_FACTS: dict[InstagramTunnelProvider, TunnelProviderFacts] = {
+    InstagramTunnelProvider.TAILSCALE_FUNNEL: TunnelProviderFacts(
+        provider=InstagramTunnelProvider.TAILSCALE_FUNNEL,
+        executable_candidates=("tailscale",),
+        allowed_hostname_suffixes=(".ts.net",),
+        classification="FREEMIUM (cliente OSS; control plane/relay hospedado)",
+        software_license="BSD-3-Clause (cliente tailscale/tailscale)",
+        hosted_service="Tailscale Funnel",
+        cost="0 € en plan Personal vigente, sujeto a límites/condiciones del servicio",
+        conclusion="MANTENER",
+        caveat=(
+            "Proveedor preferido para unificar OAuth + MP4; queda pendiente certificar "
+            "en el PC el fetch real de Meta y el ciclo Funnel 443."
+        ),
+    ),
     InstagramTunnelProvider.CLOUDFLARE_QUICK: TunnelProviderFacts(
         provider=InstagramTunnelProvider.CLOUDFLARE_QUICK,
         executable_candidates=("cloudflared",),
@@ -291,6 +307,7 @@ def tunnel_provider_facts(
 def iter_tunnel_provider_audit_rows() -> Iterator[dict[str, str]]:
     """Yield stable rows for the final open-source pipeline audit."""
     for provider in (
+        InstagramTunnelProvider.TAILSCALE_FUNNEL,
         InstagramTunnelProvider.CLOUDFLARE_QUICK,
         InstagramTunnelProvider.ZROK_PUBLIC,
     ):
@@ -582,7 +599,9 @@ class EphemeralTunnel(AbstractContextManager["EphemeralTunnel"]):
     process_factory: ProcessFactory = subprocess.Popen
     executable: str = ""
     public_origin: str = ""
+    tailscale_bridge_factory: Callable[..., TailscaleFunnelBridge] = TailscaleFunnelBridge
     _process: TunnelProcess | None = field(default=None, init=False, repr=False)
+    _tailscale_bridge: TailscaleFunnelBridge | None = field(default=None, init=False, repr=False)
 
     def _resolve_executable(self) -> str:
         facts = tunnel_provider_facts(self.provider)
@@ -617,6 +636,13 @@ class EphemeralTunnel(AbstractContextManager["EphemeralTunnel"]):
                 "instagram_tunnel_local_origin_invalid",
                 "El túnel solo puede apuntar al servidor local 127.0.0.1.",
             )
+        if self.provider == InstagramTunnelProvider.TAILSCALE_FUNNEL:
+            return [
+                executable,
+                "funnel",
+                "--https=443",
+                self.local_origin,
+            ]
         if self.provider == InstagramTunnelProvider.CLOUDFLARE_QUICK:
             return [
                 executable,
@@ -653,6 +679,32 @@ class EphemeralTunnel(AbstractContextManager["EphemeralTunnel"]):
     def __enter__(self) -> "EphemeralTunnel":
         if self.startup_timeout_seconds <= 0:
             raise ValueError("startup_timeout_seconds must be positive")
+        if self.provider == InstagramTunnelProvider.TAILSCALE_FUNNEL:
+            split = urlsplit(self.local_origin)
+            if split.scheme != "http" or split.hostname != _LOOPBACK_HOST or split.port is None:
+                raise _error(
+                    "instagram_tunnel_local_origin_invalid",
+                    "El túnel solo puede apuntar al servidor local 127.0.0.1.",
+                )
+            bridge = self.tailscale_bridge_factory(local_port=split.port)
+            try:
+                bridge.start()
+                accepted = self._accepted_public_origin(bridge.public_origin)
+                if accepted is None:
+                    raise _error(
+                        "instagram_tailscale_public_origin_invalid",
+                        "Tailscale no devolvió un origen HTTPS *.ts.net verificable.",
+                        category=ErrorCategory.UPSTREAM,
+                    )
+            except Exception:
+                try:
+                    bridge.stop()
+                except Exception:
+                    pass
+                raise
+            self._tailscale_bridge = bridge
+            self.public_origin = accepted
+            return self
         executable = self._resolve_executable()
         command = self._command(executable)
         try:
@@ -730,6 +782,12 @@ class EphemeralTunnel(AbstractContextManager["EphemeralTunnel"]):
             raise
 
     def close(self) -> None:
+        bridge = self._tailscale_bridge
+        if bridge is not None:
+            bridge.stop()
+            self._tailscale_bridge = None
+            self.public_origin = ""
+            return
         process = self._process
         self._process = None
         if process is None:
