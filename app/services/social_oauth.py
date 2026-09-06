@@ -489,7 +489,7 @@ class LoopbackOAuthReceiver:
         self._expected_state = state
         self._event = threading.Event()
         self._callback: OAuthCallback | None = None
-        self._error: BaseException | None = None
+        self._error: Exception | None = None
         receiver = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -550,7 +550,7 @@ class LoopbackOAuthReceiver:
                         "<p>Ya puedes cerrar esta pestaña y volver a El Centinela.</p>"
                     ).encode("utf-8")
                     self.send_response(HTTPStatus.OK)
-                except BaseException as exc:  # boundary error must reach waiting thread
+                except Exception as exc:  # boundary error must reach waiting thread
                     receiver._error = exc
                     body = (
                         "<!doctype html><meta charset='utf-8'>"
@@ -575,6 +575,7 @@ class LoopbackOAuthReceiver:
             name="centinela-oauth-loopback",
             daemon=True,
         )
+        self._started = False
 
     def __enter__(self) -> LoopbackOAuthReceiver:
         self.start()
@@ -585,8 +586,10 @@ class LoopbackOAuthReceiver:
         self.close()
 
     def start(self) -> None:
-        if not self._thread.is_alive():
-            self._thread.start()
+        if self._started:
+            return
+        self._thread.start()
+        self._started = True
 
     def wait(self, *, timeout_seconds: float = 300.0) -> OAuthCallback:
         if timeout_seconds <= 0:
@@ -615,7 +618,8 @@ class LoopbackOAuthReceiver:
         return self._callback
 
     def close(self) -> None:
-        self._server.shutdown()
+        if self._started:
+            self._server.shutdown()
+            if self._thread.is_alive():
+                self._thread.join(timeout=2)
         self._server.server_close()
-        if self._thread.is_alive():
-            self._thread.join(timeout=2)

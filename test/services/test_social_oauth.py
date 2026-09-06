@@ -341,3 +341,29 @@ def test_oauth_http_error_never_echoes_client_secret_or_access_token():
     assert "super-secret" not in text
     assert "leaked-token" not in text
     assert "***REDACTED***" in text
+
+
+def test_loopback_receiver_close_before_start_is_safe():
+    receiver = LoopbackOAuthReceiver(expected_state="never-started")
+    receiver.close()
+    assert receiver._started is False
+
+
+def test_loopback_receiver_start_is_idempotent():
+    receiver = LoopbackOAuthReceiver(expected_state="idempotent-start")
+    try:
+        receiver.start()
+        first_thread = receiver._thread
+        receiver.start()
+        assert receiver._thread is first_thread
+        assert receiver._started is True
+    finally:
+        receiver.close()
+
+
+def test_loopback_handler_never_catches_baseexception():
+    from pathlib import Path
+
+    source = Path("app/services/social_oauth.py").read_text(encoding="utf-8")
+    assert "except BaseException" not in source
+    assert "self._error: BaseException" not in source
