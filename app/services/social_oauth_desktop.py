@@ -244,22 +244,25 @@ def authorize_desktop(
             )
 
         callback = receiver.wait(timeout_seconds=timeout_seconds)
-        if credentials.platform == OAuthPlatform.YOUTUBE:
-            token = exchange_youtube_authorization_code(
-                request,
-                callback,
-                client_id=credentials.client_identifier,
-                client_secret=credentials.client_secret,
-                session=session,
-            )
-        else:
-            token = exchange_tiktok_authorization_code(
-                request,
-                callback,
-                client_key=credentials.client_identifier,
-                client_secret=credentials.client_secret,
-                session=session,
-            )
+
+    # The local callback listener is closed before any external token exchange.
+    # This keeps the loopback attack surface one-shot and as short-lived as possible.
+    if credentials.platform == OAuthPlatform.YOUTUBE:
+        token = exchange_youtube_authorization_code(
+            request,
+            callback,
+            client_id=credentials.client_identifier,
+            client_secret=credentials.client_secret,
+            session=session,
+        )
+    else:
+        token = exchange_tiktok_authorization_code(
+            request,
+            callback,
+            client_key=credentials.client_identifier,
+            client_secret=credentials.client_secret,
+            session=session,
+        )
 
     return DesktopOAuthSessionResult(token=token, platform=credentials.platform)
 

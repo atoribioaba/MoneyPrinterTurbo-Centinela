@@ -42,6 +42,8 @@ class _FakeSession:
         self.calls: list[dict] = []
 
     def post(self, url, **kwargs):
+        assert _FakeReceiver.instances
+        assert _FakeReceiver.instances[-1].exited is True
         self.calls.append({"url": url, **kwargs})
         return self.response
 
