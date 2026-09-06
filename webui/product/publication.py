@@ -20,6 +20,7 @@ from app.services.instagram_ephemeral_https import (
 )
 from app.services.instagram_manual_publication import (
     get_instagram_publish_receipt,
+    get_unresolved_instagram_publish_intent,
     load_latest_prepared_instagram_reel,
     prepare_instagram_manual_publication,
     publish_instagram_manual_publication,
@@ -414,6 +415,7 @@ def _render_instagram_manual_action(service, project_id: str) -> None:
     try:
         prepared = load_latest_prepared_instagram_reel(service.store, project_id)
         receipt = get_instagram_publish_receipt(service.store, project_id)
+        unresolved_intent = get_unresolved_instagram_publish_intent(service.store, project_id)
     except CentinelaError as exc:
         ui.render_error_state(
             exc.safe_message,
@@ -437,6 +439,18 @@ def _render_instagram_manual_action(service, project_id: str) -> None:
             if receipt.remote_id:
                 st.code(receipt.remote_id, language=None)
         st.caption("No se ofrece otro media_publish para este contenedor.")
+        return
+
+    if unresolved_intent is not None:
+        st.warning(
+            "Existe un intento previo de publicación cuyo resultado remoto no está resuelto. "
+            "Por seguridad no se ofrece otro media_publish."
+        )
+        with st.expander("Intento de Instagram por resolver", expanded=True):
+            st.code(unresolved_intent.container_id or "—", language=None)
+            st.caption(
+                "Verifica manualmente el estado de este Reel en Instagram antes de cualquier recuperación futura."
+            )
         return
 
     if prepared is None:

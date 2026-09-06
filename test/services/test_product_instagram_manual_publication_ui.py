@@ -19,6 +19,8 @@ def test_instagram_product_ui_is_two_step_token_free_and_manual():
     assert "publish_instagram_manual_publication" in source
     assert "load_latest_prepared_instagram_reel" in source
     assert "get_instagram_publish_receipt" in source
+    assert "get_unresolved_instagram_publish_intent" in source
+    assert "resultado remoto no está resuelto" in source
     assert "callback_runtime_status" in source
     assert "ephemeral_https_settings" in source
     assert '"Autenticar y preparar Reel"' in source

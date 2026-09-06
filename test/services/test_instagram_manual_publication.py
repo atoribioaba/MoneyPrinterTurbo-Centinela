@@ -13,8 +13,10 @@ from app.services.instagram_ephemeral_https import (
 )
 from app.services.instagram_manual_publication import (
     INSTAGRAM_PREPARED_REEL_ARTIFACT_TYPE,
+    INSTAGRAM_PUBLISH_INTENT_ARTIFACT_TYPE,
     INSTAGRAM_PUBLISH_RECEIPT_ARTIFACT_TYPE,
     get_instagram_publish_receipt,
+    get_unresolved_instagram_publish_intent,
     load_latest_prepared_instagram_reel,
     persist_prepared_instagram_reel,
     prepare_instagram_manual_publication,
@@ -284,6 +286,12 @@ def test_successful_publish_writes_receipt_and_blocks_duplicate_before_oauth(tmp
 
     assert result.success is True
     assert order == ["oauth", "publish"]
+    intents = store.list_artifacts(PROJECT_ID, artifact_type=INSTAGRAM_PUBLISH_INTENT_ARTIFACT_TYPE)
+    assert len(intents) == 1
+    intent_payload = store.read_json(PROJECT_ID, intents[0].artifact_id, verify_integrity=True)
+    assert intent_payload["status"] == "STARTED"
+    assert intent_payload["contains_credentials"] is False
+    assert "runtime-secret-token" not in str(intent_payload)
     receipt = get_instagram_publish_receipt(store, PROJECT_ID)
     assert receipt is not None
     assert receipt.prepared_artifact_id == record.artifact_id
@@ -345,3 +353,45 @@ def test_remote_success_plus_receipt_failure_blocks_automatic_assumption(tmp_pat
     assert exc_info.value.code == "instagram_publish_receipt_persistence_failed"
     assert exc_info.value.retryable is False
     assert "No reintentes automáticamente" in exc_info.value.safe_message
+    unresolved = get_unresolved_instagram_publish_intent(store, PROJECT_ID)
+    assert unresolved is not None
+    second_calls = []
+    with pytest.raises(CentinelaError) as second_exc:
+        publish_instagram_manual_publication(
+            store,
+            PROJECT_ID,
+            approved=True,
+            oauth_authorize=lambda: second_calls.append("oauth"),
+            publish=lambda *args, **kwargs: second_calls.append("publish"),
+        )
+    assert second_exc.value.code == "instagram_publish_outcome_unresolved"
+    assert second_calls == []
+
+
+def test_publish_intent_persistence_failure_prevents_remote_call(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    prepared = _prepared()
+    persist_prepared_instagram_reel(store, prepared)
+    monkeypatch.setattr(
+        "app.services.instagram_manual_publication.verify_publication_package",
+        lambda *args, **kwargs: _package(prepared),
+    )
+    original_put_json = store.put_json
+    calls = []
+
+    def failing_put_json(project_id, artifact_type, payload, **kwargs):
+        if artifact_type == INSTAGRAM_PUBLISH_INTENT_ARTIFACT_TYPE:
+            raise OSError("intent disk failure")
+        return original_put_json(project_id, artifact_type, payload, **kwargs)
+
+    monkeypatch.setattr(store, "put_json", failing_put_json)
+    with pytest.raises(CentinelaError) as exc_info:
+        publish_instagram_manual_publication(
+            store,
+            PROJECT_ID,
+            approved=True,
+            oauth_authorize=lambda: _oauth(),
+            publish=lambda *args, **kwargs: calls.append("publish"),
+        )
+    assert exc_info.value.code == "instagram_publish_intent_persistence_failed"
+    assert calls == []

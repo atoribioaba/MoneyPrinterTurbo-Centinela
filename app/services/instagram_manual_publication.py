@@ -41,6 +41,7 @@ from app.services.social_publication import SocialResult
 AUTO_PUBLICATION = False
 INSTAGRAM_PREPARED_REEL_ARTIFACT_TYPE = "instagram_prepared_reel"
 INSTAGRAM_PUBLISH_RECEIPT_ARTIFACT_TYPE = "instagram_publish_receipt"
+INSTAGRAM_PUBLISH_INTENT_ARTIFACT_TYPE = "instagram_publish_intent"
 _SCHEMA_VERSION = 1
 _PRODUCER = "centinela.instagram_manual_publication"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
@@ -62,6 +63,13 @@ class InstagramPublishReceipt:
     prepared_artifact_id: str
     remote_id: str
     status: str
+
+
+@dataclass(frozen=True, slots=True)
+class InstagramPublishIntent:
+    artifact_id: str
+    prepared_artifact_id: str
+    container_id: str
 
 
 def _error(
@@ -283,6 +291,49 @@ def _receipt_for_prepared(
     return None
 
 
+def _intent_for_prepared(
+    store: ArtifactStore,
+    project_id: str,
+    prepared_artifact_id: str,
+) -> InstagramPublishIntent | None:
+    refs = store.list_artifacts(project_id, artifact_type=INSTAGRAM_PUBLISH_INTENT_ARTIFACT_TYPE)
+    for ref in reversed(refs):
+        payload = store.read_json(project_id, ref.artifact_id, verify_integrity=True)
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("prepared_artifact_id") or "") != prepared_artifact_id:
+            continue
+        if payload.get("schema_version") != _SCHEMA_VERSION:
+            continue
+        if payload.get("status") != "STARTED":
+            continue
+        if payload.get("contains_credentials") is not False or payload.get("auto_publication") is not False:
+            raise _error(
+                "instagram_publish_intent_policy_violation",
+                ErrorCategory.VALIDATION,
+                "El intento de publicación de Instagram viola la política de seguridad.",
+                operation="instagram_manual_publication.load_intent",
+            )
+        return InstagramPublishIntent(
+            artifact_id=ref.artifact_id,
+            prepared_artifact_id=prepared_artifact_id,
+            container_id=str(payload.get("container_id") or "").strip(),
+        )
+    return None
+
+
+def get_unresolved_instagram_publish_intent(
+    store: ArtifactStore,
+    project_id: str,
+) -> InstagramPublishIntent | None:
+    prepared = load_latest_prepared_instagram_reel(store, project_id)
+    if prepared is None:
+        return None
+    if _receipt_for_prepared(store, project_id, prepared.artifact_id) is not None:
+        return None
+    return _intent_for_prepared(store, project_id, prepared.artifact_id)
+
+
 def get_instagram_publish_receipt(
     store: ArtifactStore,
     project_id: str,
@@ -405,6 +456,16 @@ def publish_instagram_manual_publication(
             "Este contenedor Instagram ya tiene un recibo de publicación y no se repetirá.",
             operation="instagram_manual_publication.publish",
         )
+    if _intent_for_prepared(store, project_id, record.artifact_id) is not None:
+        raise _error(
+            "instagram_publish_outcome_unresolved",
+            ErrorCategory.VALIDATION,
+            (
+                "Existe un intento previo de media_publish sin recibo final verificable. "
+                "No se repetirá: comprueba primero el estado remoto en Instagram."
+            ),
+            operation="instagram_manual_publication.publish",
+        )
 
     _package_matches_prepared(store, record.prepared)
     oauth_result = oauth_authorize()
@@ -426,6 +487,41 @@ def publish_instagram_manual_publication(
                 "La segunda autenticación pertenece a otra cuenta de Instagram.",
                 operation="instagram_manual_publication.publish",
             )
+        intent_payload = {
+            "schema_version": _SCHEMA_VERSION,
+            "prepared_artifact_id": record.artifact_id,
+            "manifest_artifact_id": record.prepared.manifest_artifact_id,
+            "publication_package_hash": record.prepared.publication_package_hash,
+            "ig_user_id": record.prepared.ig_user_id,
+            "container_id": record.prepared.container_id,
+            "status": "STARTED",
+            "contains_credentials": False,
+            "auto_publication": False,
+        }
+        try:
+            store.put_json(
+                project_id,
+                INSTAGRAM_PUBLISH_INTENT_ARTIFACT_TYPE,
+                intent_payload,
+                producer=_PRODUCER,
+                input_artifact_ids=(record.artifact_id,),
+                metadata={
+                    "container_id": record.prepared.container_id,
+                    "contains_credentials": False,
+                },
+            )
+        except Exception as exc:
+            raise _error(
+                "instagram_publish_intent_persistence_failed",
+                ErrorCategory.FILESYSTEM,
+                (
+                    "No se pudo registrar de forma durable el intento de publicación. "
+                    "media_publish no se ejecutará."
+                ),
+                operation="instagram_manual_publication.publish",
+                details={"container_id": record.prepared.container_id},
+                cause=exc,
+            ) from exc
         result = publish(
             store,
             record.prepared,
