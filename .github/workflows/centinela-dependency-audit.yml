@@ -38,6 +38,24 @@ jobs:
             --no-dev \
             --no-extra twelvelabs
 
+      - name: Verify legacy pip requirements resolve on supported Python versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv pip compile requirements.txt \
+            --python-version 3.11 \
+            --no-header \
+            --output-file "$RUNNER_TEMP/legacy-pip-py311.txt"
+          uv pip compile requirements.txt \
+            --python-version 3.13 \
+            --no-header \
+            --output-file "$RUNNER_TEMP/legacy-pip-py313.txt"
+          test -s "$RUNNER_TEMP/legacy-pip-py311.txt"
+          test -s "$RUNNER_TEMP/legacy-pip-py313.txt"
+          rm -f "$RUNNER_TEMP/legacy-pip-py311.txt" "$RUNNER_TEMP/legacy-pip-py313.txt"
+          echo "LEGACY_PIP_RESOLUTION_PY311=PASS"
+          echo "LEGACY_PIP_RESOLUTION_PY313=PASS"
+
       - name: Record gate result
         if: success()
         run: |
