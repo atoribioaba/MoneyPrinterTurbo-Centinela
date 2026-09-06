@@ -1,12 +1,13 @@
-"""Runtime-only Desktop OAuth orchestration for manual social publication.
+"""Ephemeral system-browser orchestration for Centinela social OAuth.
 
-This layer connects the C8 protocol boundary to an explicitly initiated desktop
-browser flow. App credentials are read from the process environment by default;
-access and refresh tokens are returned only in memory and are never persisted.
+C9 composes the protocol primitives from :mod:`app.services.social_oauth` into a
+single desktop interaction:
 
-Safety policy:
-    GENERAR -> REVISAR -> APROBAR -> PUBLICAR
-    AUTO_PUBLICATION = False
+    explicit UI action -> localhost receiver -> system browser -> OAuth callback
+    -> token exchange -> in-memory token result
+
+Nothing in this module persists access tokens, refresh tokens, PKCE state,
+client secrets, or publication approval. It also does not publish media.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import os
 import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 import requests
 
@@ -32,202 +34,275 @@ from app.services.social_oauth import (
 )
 
 AUTO_PUBLICATION = False
+DESKTOP_OAUTH_ENABLED_ENV = "CENTINELA_DESKTOP_OAUTH_ENABLED"
 YOUTUBE_CLIENT_ID_ENV = "CENTINELA_YOUTUBE_OAUTH_CLIENT_ID"
 YOUTUBE_CLIENT_SECRET_ENV = "CENTINELA_YOUTUBE_OAUTH_CLIENT_SECRET"
 TIKTOK_CLIENT_KEY_ENV = "CENTINELA_TIKTOK_CLIENT_KEY"
 TIKTOK_CLIENT_SECRET_ENV = "CENTINELA_TIKTOK_CLIENT_SECRET"
-_DEFAULT_CALLBACK_TIMEOUT_SECONDS = 300.0
 
-BrowserOpener = Callable[[str], bool]
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
+
+
+class _Receiver(Protocol):
+    redirect_uri: str
+
+    def __enter__(self) -> _Receiver: ...
+
+    def __exit__(self, exc_type, exc, traceback) -> None: ...
+
+    def wait(self, *, timeout_seconds: float = 300.0): ...
+
+
+ReceiverFactory = Callable[..., _Receiver]
+BrowserOpen = Callable[[str], bool]
 
 
 @dataclass(frozen=True, slots=True)
 class DesktopOAuthCredentials:
+    """Runtime-only application credentials; secrets never appear in repr."""
+
     platform: OAuthPlatform
-    client_id: str = field(default="", repr=False)
+    client_identifier: str = field(repr=False)
     client_secret: str = field(default="", repr=False)
-    client_key: str = field(default="", repr=False)
 
 
-def oauth_environment_contract(platform: OAuthPlatform) -> tuple[str, ...]:
-    """Return environment variable names required by one desktop provider."""
-    if platform == OAuthPlatform.YOUTUBE:
-        return (YOUTUBE_CLIENT_ID_ENV,)
-    if platform == OAuthPlatform.TIKTOK:
-        return (TIKTOK_CLIENT_KEY_ENV, TIKTOK_CLIENT_SECRET_ENV)
-    raise boundary_error(
-        code="desktop_oauth_platform_unsupported",
-        category=ErrorCategory.VALIDATION,
-        message="La plataforma OAuth Desktop no está soportada.",
-        operation="social_oauth_desktop.environment_contract",
-        component="oauth",
+@dataclass(frozen=True, slots=True)
+class DesktopOAuthSessionResult:
+    """Successful ephemeral OAuth result returned to the caller in memory only."""
+
+    token: OAuthTokenSet = field(repr=False)
+    platform: OAuthPlatform
+
+
+def _blocked(
+    code: str,
+    message: str,
+    *,
+    component: str = "desktop_oauth",
+    cause: BaseException | None = None,
+):
+    return boundary_error(
+        code=code,
+        category=ErrorCategory.CONFIG,
+        message=message,
+        operation="social_oauth_desktop.authorize",
+        component=component,
+        cause=cause,
+    )
+
+
+def desktop_oauth_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Fail closed unless the local desktop OAuth boundary is explicitly enabled."""
+    source = os.environ if environ is None else environ
+    raw = str(source.get(DESKTOP_OAUTH_ENABLED_ENV, "")).strip().lower()
+    if raw in _TRUE_VALUES:
+        return True
+    if raw in _FALSE_VALUES:
+        return False
+    raise _blocked(
+        "desktop_oauth_gate_invalid",
+        (
+            f"{DESKTOP_OAUTH_ENABLED_ENV} debe ser 1/true/yes/on o "
+            "0/false/no/off."
+        ),
     )
 
 
 def load_desktop_oauth_credentials(
-    platform: OAuthPlatform,
+    platform: OAuthPlatform | str,
     *,
     environ: Mapping[str, str] | None = None,
 ) -> DesktopOAuthCredentials:
-    """Load app credentials from process environment without persisting them."""
+    """Read application credentials from process environment without persisting them."""
+    if AUTO_PUBLICATION:
+        raise RuntimeError("AUTO_PUBLICATION invariant was modified")
+    if not desktop_oauth_enabled(environ):
+        raise _blocked(
+            "desktop_oauth_disabled",
+            "OAuth Desktop está desactivado en este entorno.",
+        )
+
+    try:
+        normalized = OAuthPlatform(platform)
+    except ValueError as exc:
+        raise _blocked(
+            "desktop_oauth_platform_unsupported",
+            "La plataforma OAuth Desktop solicitada no está soportada.",
+            cause=exc,
+        ) from exc
+
     source = os.environ if environ is None else environ
-
-    if platform == OAuthPlatform.YOUTUBE:
-        client_id = str(source.get(YOUTUBE_CLIENT_ID_ENV, "") or "").strip()
-        client_secret = str(source.get(YOUTUBE_CLIENT_SECRET_ENV, "") or "").strip()
+    if normalized == OAuthPlatform.YOUTUBE:
+        client_id = str(source.get(YOUTUBE_CLIENT_ID_ENV, "")).strip()
+        client_secret = str(source.get(YOUTUBE_CLIENT_SECRET_ENV, "")).strip()
         if not client_id:
-            raise boundary_error(
-                code="youtube_desktop_oauth_environment_missing",
-                category=ErrorCategory.CONFIG,
-                message=(
-                    "Falta la credencial OAuth Desktop de YouTube en el entorno del proceso."
-                ),
-                operation="social_oauth_desktop.load_credentials",
+            raise _blocked(
+                "youtube_desktop_oauth_not_configured",
+                f"Falta {YOUTUBE_CLIENT_ID_ENV} en el proceso local.",
                 component="youtube",
-                details={"required_environment": [YOUTUBE_CLIENT_ID_ENV]},
             )
         return DesktopOAuthCredentials(
-            platform=platform,
-            client_id=client_id,
+            platform=normalized,
+            client_identifier=client_id,
             client_secret=client_secret,
         )
 
-    if platform == OAuthPlatform.TIKTOK:
-        client_key = str(source.get(TIKTOK_CLIENT_KEY_ENV, "") or "").strip()
-        client_secret = str(source.get(TIKTOK_CLIENT_SECRET_ENV, "") or "").strip()
-        missing = [
-            name
-            for name, value in (
-                (TIKTOK_CLIENT_KEY_ENV, client_key),
-                (TIKTOK_CLIENT_SECRET_ENV, client_secret),
-            )
-            if not value
-        ]
-        if missing:
-            raise boundary_error(
-                code="tiktok_desktop_oauth_environment_missing",
-                category=ErrorCategory.CONFIG,
-                message=(
-                    "Faltan credenciales OAuth Desktop de TikTok en el entorno del proceso."
-                ),
-                operation="social_oauth_desktop.load_credentials",
-                component="tiktok",
-                details={"required_environment": missing},
-            )
-        return DesktopOAuthCredentials(
-            platform=platform,
-            client_key=client_key,
-            client_secret=client_secret,
+    client_key = str(source.get(TIKTOK_CLIENT_KEY_ENV, "")).strip()
+    client_secret = str(source.get(TIKTOK_CLIENT_SECRET_ENV, "")).strip()
+    if not client_key or not client_secret:
+        raise _blocked(
+            "tiktok_desktop_oauth_not_configured",
+            (
+                f"Faltan {TIKTOK_CLIENT_KEY_ENV} y/o "
+                f"{TIKTOK_CLIENT_SECRET_ENV} en el proceso local."
+            ),
+            component="tiktok",
         )
-
-    raise boundary_error(
-        code="desktop_oauth_platform_unsupported",
-        category=ErrorCategory.VALIDATION,
-        message="La plataforma OAuth Desktop no está soportada.",
-        operation="social_oauth_desktop.load_credentials",
-        component="oauth",
+    return DesktopOAuthCredentials(
+        platform=normalized,
+        client_identifier=client_key,
+        client_secret=client_secret,
     )
 
 
 def _open_system_browser(url: str) -> bool:
-    """Open the system browser only after an explicit caller action."""
+    """Open the vendor authorization URL without copying it to logs or UI."""
     return bool(webbrowser.open(url, new=2, autoraise=True))
 
 
-def _validate_credentials_for_platform(
-    platform: OAuthPlatform,
-    credentials: DesktopOAuthCredentials,
-) -> None:
-    if credentials.platform != platform:
-        raise boundary_error(
-            code="desktop_oauth_credentials_platform_mismatch",
-            category=ErrorCategory.VALIDATION,
-            message="Las credenciales OAuth no pertenecen a la plataforma seleccionada.",
-            operation="social_oauth_desktop.authorize",
-            component=platform.value,
-        )
-
-
-def authorize_desktop_oauth(
-    platform: OAuthPlatform,
+def authorize_desktop(
+    platform: OAuthPlatform | str,
     *,
-    credentials: DesktopOAuthCredentials | None = None,
     environ: Mapping[str, str] | None = None,
-    browser_opener: BrowserOpener | None = None,
-    timeout_seconds: float = _DEFAULT_CALLBACK_TIMEOUT_SECONDS,
+    browser_open: BrowserOpen | None = None,
+    receiver_factory: ReceiverFactory = LoopbackOAuthReceiver,
     session: requests.Session | None = None,
-) -> OAuthTokenSet:
-    """Run one explicit Desktop OAuth consent flow and return runtime-only tokens."""
+    timeout_seconds: float = 300.0,
+) -> DesktopOAuthSessionResult:
+    """Run one explicit browser OAuth session and return its token in memory.
+
+    The caller remains responsible for the separate publication approval gate.
+    OAuth consent is authentication, never authorization to publish.
+    """
     if AUTO_PUBLICATION:
         raise RuntimeError("AUTO_PUBLICATION invariant was modified")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
 
-    resolved = credentials or load_desktop_oauth_credentials(platform, environ=environ)
-    _validate_credentials_for_platform(platform, resolved)
+    credentials = load_desktop_oauth_credentials(platform, environ=environ)
     state = generate_oauth_state()
     verifier = generate_code_verifier()
-    opener = browser_opener or _open_system_browser
+    opener = browser_open or _open_system_browser
 
-    with LoopbackOAuthReceiver(expected_state=state) as receiver:
-        if platform == OAuthPlatform.YOUTUBE:
+    try:
+        receiver_context = receiver_factory(expected_state=state)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise boundary_error(
+            code="desktop_oauth_loopback_unavailable",
+            category=ErrorCategory.NETWORK,
+            message="No se pudo abrir el callback OAuth local en 127.0.0.1.",
+            operation="social_oauth_desktop.authorize",
+            component=credentials.platform.value,
+            cause=exc,
+        ) from exc
+
+    with receiver_context as receiver:
+        if credentials.platform == OAuthPlatform.YOUTUBE:
             request = build_youtube_desktop_authorization(
-                client_id=resolved.client_id,
-                redirect_uri=receiver.redirect_uri,
-                state=state,
-                code_verifier=verifier,
-            )
-        elif platform == OAuthPlatform.TIKTOK:
-            request = build_tiktok_desktop_authorization(
-                client_key=resolved.client_key,
+                client_id=credentials.client_identifier,
                 redirect_uri=receiver.redirect_uri,
                 state=state,
                 code_verifier=verifier,
             )
         else:
-            raise boundary_error(
-                code="desktop_oauth_platform_unsupported",
-                category=ErrorCategory.VALIDATION,
-                message="La plataforma OAuth Desktop no está soportada.",
-                operation="social_oauth_desktop.authorize",
-                component="oauth",
+            request = build_tiktok_desktop_authorization(
+                client_key=credentials.client_identifier,
+                redirect_uri=receiver.redirect_uri,
+                state=state,
+                code_verifier=verifier,
             )
 
         try:
             opened = bool(opener(request.authorization_url))
         except Exception as exc:
             raise boundary_error(
-                code="desktop_oauth_browser_launch_failed",
+                code="desktop_oauth_browser_failed",
                 category=ErrorCategory.UPSTREAM,
-                message="No se pudo abrir el navegador del sistema para autorizar la cuenta.",
+                message="No se pudo abrir el navegador del sistema para OAuth.",
                 operation="social_oauth_desktop.authorize",
-                component=platform.value,
+                component=credentials.platform.value,
                 cause=exc,
             ) from exc
         if not opened:
             raise boundary_error(
-                code="desktop_oauth_browser_launch_failed",
+                code="desktop_oauth_browser_not_opened",
                 category=ErrorCategory.UPSTREAM,
                 message="El navegador del sistema no confirmó la apertura de OAuth.",
                 operation="social_oauth_desktop.authorize",
-                component=platform.value,
+                component=credentials.platform.value,
             )
-        callback = receiver.wait(timeout_seconds=timeout_seconds)
 
-    if platform == OAuthPlatform.YOUTUBE:
-        return exchange_youtube_authorization_code(
-            request,
-            callback,
-            client_id=resolved.client_id,
-            client_secret=resolved.client_secret,
-            session=session,
-        )
-    if platform == OAuthPlatform.TIKTOK:
-        return exchange_tiktok_authorization_code(
-            request,
-            callback,
-            client_key=resolved.client_key,
-            client_secret=resolved.client_secret,
-            session=session,
-        )
-    raise AssertionError("validated OAuth platform became unsupported")
+        callback = receiver.wait(timeout_seconds=timeout_seconds)
+        if credentials.platform == OAuthPlatform.YOUTUBE:
+            token = exchange_youtube_authorization_code(
+                request,
+                callback,
+                client_id=credentials.client_identifier,
+                client_secret=credentials.client_secret,
+                session=session,
+            )
+        else:
+            token = exchange_tiktok_authorization_code(
+                request,
+                callback,
+                client_key=credentials.client_identifier,
+                client_secret=credentials.client_secret,
+                session=session,
+            )
+
+    return DesktopOAuthSessionResult(token=token, platform=credentials.platform)
+
+
+def configured_desktop_oauth_platforms(
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[OAuthPlatform, ...]:
+    """Return only platforms whose runtime credentials pass the fail-closed gate."""
+    try:
+        if not desktop_oauth_enabled(environ):
+            return ()
+    except Exception:
+        return ()
+
+    configured: list[OAuthPlatform] = []
+    for platform in (OAuthPlatform.YOUTUBE, OAuthPlatform.TIKTOK):
+        try:
+            load_desktop_oauth_credentials(platform, environ=environ)
+        except Exception:
+            continue
+        configured.append(platform)
+    return tuple(configured)
+
+
+def oauth_runtime_status(
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return a secret-free Product/UI status snapshot."""
+    try:
+        enabled = desktop_oauth_enabled(environ)
+        gate_valid = True
+    except Exception:
+        enabled = False
+        gate_valid = False
+    configured = configured_desktop_oauth_platforms(environ=environ) if gate_valid else ()
+    return {
+        "enabled": enabled,
+        "gate_valid": gate_valid,
+        "youtube_configured": OAuthPlatform.YOUTUBE in configured,
+        "tiktok_configured": OAuthPlatform.TIKTOK in configured,
+        "token_persistence": False,
+        "refresh_token_persistence": False,
+        "auto_publication": False,
+    }

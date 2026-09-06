@@ -21,9 +21,10 @@ def test_product_manual_publication_form_is_explicit_and_ephemeral():
     assert 'clear_on_submit=True' in source
     assert 'enter_to_submit=False' in source
     assert 'type="password"' not in source
-    assert "Access token de esta sesión" not in source
-    assert '"Autorizar cuenta y ejecutar envío manual"' in source
-    assert "authorize_desktop_oauth" in source
+    assert "authorize_desktop" in source
+    assert '"Conectar plataforma y ejecutar envío manual"' in source
+    assert "No hay fallback de pegado manual de tokens" in source
+    assert "st.session_state" not in source
     assert 'approved=approved' in source
     assert "Publicar ahora" not in source
     assert "AUTO_PUBLICATION=FALSE" in source
@@ -97,37 +98,3 @@ def test_product_delivery_executor_does_not_infer_approval(monkeypatch):
     )
 
     assert calls[0][1]["approved"] is False
-
-
-def test_product_oauth_authorizer_uses_runtime_token_without_persistence(monkeypatch):
-    calls = []
-    sentinel = SimpleNamespace(access_token="oauth-runtime-only")
-
-    def fake_authorize(platform):
-        calls.append(platform)
-        return sentinel
-
-    monkeypatch.setattr(publication, "authorize_desktop_oauth", fake_authorize)
-
-    result = publication._authorize_manual_delivery(
-        publication.ManualPublicationPlatform.YOUTUBE
-    )
-
-    assert result is sentinel
-    assert calls == [publication.OAuthPlatform.YOUTUBE]
-
-
-def test_product_oauth_ui_uses_environment_contract_and_no_token_storage():
-    source = (ROOT / "webui" / "product" / "publication.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "oauth_environment_contract" in source
-    assert "YOUTUBE_CLIENT_ID_ENV" in source
-    assert "TIKTOK_CLIENT_KEY_ENV" in source
-    assert "TIKTOK_CLIENT_SECRET_ENV" in source
-    assert "st.session_state" not in source
-    assert "save_config" not in source
-    assert "config.toml" in source
-    assert "token_set.access_token" in source
-    assert "refresh_token" not in source
