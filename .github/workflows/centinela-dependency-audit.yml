@@ -1,0 +1,63 @@
+name: Centinela Dependency Audit
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-dependency-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  production-dependency-audit:
+    name: Production dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Audit frozen production dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv --version
+          uv --preview audit \
+            --frozen \
+            --no-dev \
+            --no-extra twelvelabs
+
+      - name: Verify legacy pip requirements resolve on supported Python versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv pip compile requirements.txt \
+            --python-version 3.11 \
+            --no-header \
+            --output-file "$RUNNER_TEMP/legacy-pip-py311.txt"
+          uv pip compile requirements.txt \
+            --python-version 3.13 \
+            --no-header \
+            --output-file "$RUNNER_TEMP/legacy-pip-py313.txt"
+          test -s "$RUNNER_TEMP/legacy-pip-py311.txt"
+          test -s "$RUNNER_TEMP/legacy-pip-py313.txt"
+          rm -f "$RUNNER_TEMP/legacy-pip-py311.txt" "$RUNNER_TEMP/legacy-pip-py313.txt"
+          echo "LEGACY_PIP_RESOLUTION_PY311=PASS"
+          echo "LEGACY_PIP_RESOLUTION_PY313=PASS"
+
+      - name: Record gate result
+        if: success()
+        run: |
+          echo "CENTINELA_DEPENDENCY_AUDIT=PASS"
+          echo "AUDIT_GRAPH=FROZEN_PRODUCTION_NO_TWELVELABS"
