@@ -246,6 +246,32 @@ def test_tailscale_ephemeral_tunnel_reuses_certified_bridge_and_cleans_up():
     assert tunnel.public_origin == ""
 
 
+class _InvalidOriginCleanupFailBridge:
+    public_origin = "https://evil.example"
+
+    def start(self):
+        return None
+
+    def stop(self):
+        raise OSError("cannot confirm Funnel stop")
+
+
+def test_tailscale_invalid_origin_with_cleanup_failure_is_explicit():
+    bridge = _InvalidOriginCleanupFailBridge()
+    tunnel = EphemeralTunnel(
+        InstagramTunnelProvider.TAILSCALE_FUNNEL,
+        "http://127.0.0.1:43126",
+        tailscale_bridge_factory=lambda **kwargs: bridge,
+    )
+
+    with pytest.raises(CentinelaError) as exc_info:
+        tunnel.__enter__()
+
+    assert exc_info.value.code == "instagram_tailscale_cleanup_failed_after_start_error"
+    assert exc_info.value.retryable is False
+    assert exc_info.value.as_dict()["details"]["primary_error"] == "CentinelaError"
+
+
 class _FakeResponse:
     def __init__(
         self,

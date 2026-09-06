@@ -696,11 +696,20 @@ class EphemeralTunnel(AbstractContextManager["EphemeralTunnel"]):
                         "Tailscale no devolvió un origen HTTPS *.ts.net verificable.",
                         category=ErrorCategory.UPSTREAM,
                     )
-            except Exception:
+            except Exception as primary_exc:
                 try:
                     bridge.stop()
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    raise _error(
+                        "instagram_tailscale_cleanup_failed_after_start_error",
+                        (
+                            "El Funnel de Tailscale no pudo validarse y además no se confirmó "
+                            "su cierre. No continúes hasta verificar el estado de Funnel."
+                        ),
+                        category=ErrorCategory.SUBPROCESS,
+                        details={"primary_error": type(primary_exc).__name__},
+                        cause=cleanup_exc,
+                    ) from cleanup_exc
                 raise
             self._tailscale_bridge = bridge
             self.public_origin = accepted
