@@ -1,0 +1,119 @@
+name: Centinela B2 Lock and Audit
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-b2-litellm-optional-v0.1
+    paths:
+      - pyproject.toml
+      - requirements.txt
+      - .github/workflows/centinela-b2-lock-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-b2-lock-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate LiteLLM optionalization and generated lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Generate and check lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv --version
+          uv lock
+          uv lock --check
+
+      - name: Verify baseline excludes LiteLLM
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          if uv pip show litellm >/dev/null 2>&1; then
+            echo "B2_BASELINE_LITELLM_PRESENT=TRUE"
+            exit 2
+          fi
+          echo "B2_BASELINE_LITELLM_PRESENT=FALSE"
+
+      - name: Verify LiteLLM extra is explicit and current target
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --extra litellm
+          version="$(uv pip show litellm | awk '/^Version:/{print $2}')"
+          if [ "$version" != "1.99.0" ]; then
+            echo "B2_LITELLM_EXTRA_VERSION=$version"
+            exit 2
+          fi
+          echo "B2_LITELLM_EXTRA_VERSION=1.99.0"
+
+      - name: Audit generated lock
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          uv --preview-features audit-command audit --output-format json > uv-audit.json 2>uv-audit.stderr
+          AUDIT_RC=$?
+          set -e
+          AUDIT_RC="$AUDIT_RC" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          data = json.loads(Path("uv-audit.json").read_text(encoding="utf-8"))
+          vulnerabilities = data.get("vulnerabilities", [])
+          affected = sorted({
+              (item["dependency"]["name"], item["dependency"]["version"])
+              for item in vulnerabilities
+          })
+          print(f"B2_UV_AUDIT_EXIT_CODE={os.environ['AUDIT_RC']}")
+          print(f"B2_UV_AUDIT_FINDINGS={len(vulnerabilities)}")
+          print(f"B2_UV_AUDIT_AFFECTED_PACKAGE_VERSIONS={len(affected)}")
+          for name, version in affected:
+              print(f"B2_AFFECTED_PACKAGE={name}=={version}")
+          PY
+          rm -f uv-audit.stderr
+          echo "$AUDIT_RC" > uv-audit.exit-code
+
+      - name: Hash generated lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum uv.lock | tee uv-lock.sha256
+
+      - name: Upload B2 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: centinela-b2-lock-audit-${{ github.sha }}
+          path: |
+            uv.lock
+            uv-lock.sha256
+            uv-audit.json
+            uv-audit.exit-code
+          retention-days: 7
+          if-no-files-found: error
