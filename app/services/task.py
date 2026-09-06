@@ -1754,22 +1754,11 @@ def _run_pipeline(
         f"task {task_id} finished, generated {len(final_video_paths)} videos."
     )
 
-    # 7. 先完成视频生成任务，再按需提交跨平台发布。第三方上传可能耗时
-    # 数分钟，不应阻塞视频结果返回，也不能反向影响已经生成的成片。
-    cross_post_enabled = (
-        upload_post.upload_post_service.is_configured()
-        and upload_post.upload_post_service.auto_upload
-    )
-    platforms = (
-        list(upload_post.upload_post_service.platforms) if cross_post_enabled else []
-    )
-    should_cross_post = cross_post_enabled and bool(platforms)
-    if cross_post_enabled and not platforms:
-        logger.warning(
-            f"skip cross-post because no platforms are configured, task_id: {task_id}"
-        )
-    cross_post_state = const.CROSS_POST_STATE_PENDING if should_cross_post else None
-
+    # 7. Generation and publication are deliberately separate phases.
+    # A generated video must finish in a neutral publication state regardless of
+    # legacy Upload-Post configuration. Publication is an explicit human-approved
+    # action through the official C2 adapters or the manual C4 fallback; this
+    # pipeline never creates or schedules a publication job.
     kwargs = {
         "videos": final_video_paths,
         "combined_videos": combined_video_paths,
@@ -1779,33 +1768,15 @@ def _run_pipeline(
         "audio_duration": audio_duration,
         "subtitle_path": subtitle_path,
         "materials": downloaded_videos,
-        "cross_post_state": cross_post_state,
+        "cross_post_state": None,
         "cross_post_results": None,
         "cross_post_error": None,
-        "cross_post_owner": _cross_post_process_owner if should_cross_post else None,
+        "cross_post_owner": None,
         "warnings": generation_warnings or None,
     }
     sm.state.update_task(
         task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs
     )
-
-    if should_cross_post:
-        scheduling_error = _schedule_cross_post(
-            task_id=task_id,
-            video_paths=final_video_paths,
-            params=params,
-            video_script=video_script,
-            platforms=platforms,
-            youtube_privacy_status=(
-                upload_post.upload_post_service.youtube_privacy_status
-            ),
-        )
-        # 队列满或线程池关闭属于同步可知的调度失败。任务状态已经由调度函数
-        # 更新，这里同步修正返回快照，避免调用方收到与后续查询不一致的 pending。
-        if scheduling_error:
-            kwargs["cross_post_state"] = const.CROSS_POST_STATE_FAILED
-            kwargs["cross_post_error"] = scheduling_error
-            kwargs["cross_post_owner"] = None
 
     return kwargs
 
