@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.models.astronomy import ScientificStatus
+from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import GroundingFact, NarrativeAct
 from app.services.centinela.av_runtime.scenes import build_scene_plan
 from app.services.centinela.writer_room import (
     WRITER_ROOM_LOGICAL_STAGES,
     FactLock,
+    compute_fact_lock_context_hash,
     FinalScript,
     FinalScriptSegment,
     ScriptClaim,
@@ -15,11 +16,7 @@ from app.services.centinela.writer_room import (
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
-        subject="La Luna",
-        research_mode="GENERIC_GEOCENTRIC",
-        context_hash="D" * 64,
-        facts=[
+    facts = [
             GroundingFact(
                 fact_id="body:moon:geocentric_distance_km",
                 label_es="Distancia geocentrica lunar",
@@ -35,8 +32,24 @@ def _fact_lock() -> FactLock:
                 scientific_status=ScientificStatus.HECHO_VERIFICADO,
                 source_ids=["source:fixture"],
             ),
+        ]
+    return FactLock(
+        subject="La Luna",
+        research_mode="GENERIC_GEOCENTRIC",
+        context_hash=compute_fact_lock_context_hash(facts, ["source:fixture"]),
+        facts=facts,
+        sources=[
+            SourceReference(
+                source_id="source:fixture",
+                title="FactLock test source",
+                provider="TEST",
+                url="https://example.invalid/factlock",
+                license="TEST",
+                classification="PRIMARY_TEST_SOURCE",
+                role="scientific_fixture",
+                scientific_status=ScientificStatus.HECHO_VERIFICADO,
+            )
         ],
-        sources=[],
         source_ids=["source:fixture"],
         scope_note="Contrato hermetico V31 scene-5 grounding.",
         location_assumed=False,
@@ -101,7 +114,7 @@ def _final_script() -> FinalScript:
         social_30s="La Luna como referencia observacional y cientifica.",
         social_15s="Mirar la Luna tambien es medirla.",
         closing_line="Seguimos mirando el cielo.",
-        fact_lock_hash="D" * 64,
+        fact_lock_hash=_fact_lock().context_hash,
         model_used="cloud-cert-fixture",
         logical_stages=list(WRITER_ROOM_LOGICAL_STAGES),
         inference_passes=3,

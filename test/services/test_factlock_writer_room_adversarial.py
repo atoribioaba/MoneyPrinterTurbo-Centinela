@@ -4,12 +4,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models.astronomy import ScientificStatus
+from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import GroundingFact, NarrativeAct
 from app.services.centinela.writer_room import (
     CritiqueBundle,
     DraftPacket,
     FactLock,
+    compute_fact_lock_context_hash,
     FinalScriptCandidate,
     FinalScriptSegment,
     ScriptClaim,
@@ -29,11 +30,7 @@ ILLUMINATION_FACT_ID = "moon:illuminated_fraction"
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
-        subject="La Luna",
-        research_mode="GENERIC_GEOCENTRIC",
-        context_hash="A" * 64,
-        facts=[
+    facts = [
             GroundingFact(
                 fact_id=DISTANCE_FACT_ID,
                 label_es="Distancia geocéntrica lunar",
@@ -50,8 +47,24 @@ def _fact_lock() -> FactLock:
                 scientific_status=ScientificStatus.HECHO_VERIFICADO,
                 source_ids=["source:test"],
             ),
+        ]
+    return FactLock(
+        subject="La Luna",
+        research_mode="GENERIC_GEOCENTRIC",
+        context_hash=compute_fact_lock_context_hash(facts, ["source:test"]),
+        facts=facts,
+        sources=[
+            SourceReference(
+                source_id="source:test",
+                title="FactLock test source",
+                provider="TEST",
+                url="https://example.invalid/factlock",
+                license="TEST",
+                classification="PRIMARY_TEST_SOURCE",
+                role="scientific_fixture",
+                scientific_status=ScientificStatus.HECHO_VERIFICADO,
+            )
         ],
-        sources=[],
         source_ids=["source:test"],
         scope_note="Fixture cuantitativo adversarial C3.",
         location_assumed=False,
