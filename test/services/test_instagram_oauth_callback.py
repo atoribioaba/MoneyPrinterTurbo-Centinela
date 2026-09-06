@@ -198,11 +198,13 @@ class _TailscaleRunner:
         preexisting: bool = False,
         start_returncode: int = 0,
         stop_returncode: int = 0,
+        sticky_after_stop: bool = False,
     ) -> None:
         self.dns_name = dns_name
         self.preexisting = preexisting
         self.start_returncode = start_returncode
         self.stop_returncode = stop_returncode
+        self.sticky_after_stop = sticky_after_stop
         self.active = False
         self.proxy = ""
         self.calls: list[list[str]] = []
@@ -247,9 +249,10 @@ class _TailscaleRunner:
         if args == ["funnel", "--https=443", "off"]:
             if self.stop_returncode:
                 return CliResult(self.stop_returncode, stderr="cannot stop")
-            self.active = False
-            self.preexisting = False
-            self.proxy = ""
+            if not self.sticky_after_stop:
+                self.active = False
+                self.preexisting = False
+                self.proxy = ""
             return CliResult(0, "stopped")
         raise AssertionError(f"unexpected tailscale command: {argv}")
 
@@ -332,6 +335,27 @@ def test_tailscale_stop_failure_is_not_silently_ignored():
         bridge.stop()
 
     assert exc_info.value.code == "tailscale_funnel_stop_failed"
+
+
+def test_tailscale_sticky_route_keeps_bridge_active_for_safe_retry():
+    runner = _TailscaleRunner(sticky_after_stop=True)
+    bridge = TailscaleFunnelBridge(
+        local_port=43123,
+        redirect_uri=REDIRECT,
+        executable="tailscale",
+        runner=runner,
+    )
+    bridge.start()
+
+    with pytest.raises(CentinelaError) as exc_info:
+        bridge.stop()
+
+    assert exc_info.value.code == "tailscale_funnel_still_active"
+    assert runner.active is True
+
+    runner.sticky_after_stop = False
+    bridge.stop()
+    assert runner.active is False
 
 
 def test_authorization_lifecycle_closes_public_boundary_before_token_exchange():

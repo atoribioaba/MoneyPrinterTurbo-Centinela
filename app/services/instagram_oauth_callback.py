@@ -620,13 +620,20 @@ class TailscaleFunnelBridge:
         if handler is None or str(handler.get("Proxy") or "") != expected_proxy:
             try:
                 self.stop()
-            finally:
+            except BaseException as cleanup_exc:
                 raise _error(
-                    "tailscale_funnel_route_unverified",
-                    ErrorCategory.UPSTREAM,
-                    "Tailscale Funnel no confirmó el proxy HTTPS esperado.",
+                    "tailscale_funnel_cleanup_failed_after_route_mismatch",
+                    ErrorCategory.SUBPROCESS,
+                    "El route de Funnel era inválido y además no se confirmó su cierre.",
                     operation="instagram_oauth_callback.funnel_start",
-                )
+                    cause=cleanup_exc,
+                ) from cleanup_exc
+            raise _error(
+                "tailscale_funnel_route_unverified",
+                ErrorCategory.UPSTREAM,
+                "Tailscale Funnel no confirmó el proxy HTTPS esperado.",
+                operation="instagram_oauth_callback.funnel_start",
+            )
 
         allowed = status.get("AllowFunnel")
         if not isinstance(allowed, Mapping) or allowed.get(
@@ -634,13 +641,20 @@ class TailscaleFunnelBridge:
         ) is not True:
             try:
                 self.stop()
-            finally:
+            except BaseException as cleanup_exc:
                 raise _error(
-                    "tailscale_funnel_public_not_confirmed",
-                    ErrorCategory.UPSTREAM,
-                    "Tailscale no confirmó que el endpoint esté expuesto mediante Funnel.",
+                    "tailscale_funnel_cleanup_failed_after_public_mismatch",
+                    ErrorCategory.SUBPROCESS,
+                    "Funnel no confirmó exposición pública y tampoco su cierre posterior.",
                     operation="instagram_oauth_callback.funnel_start",
-                )
+                    cause=cleanup_exc,
+                ) from cleanup_exc
+            raise _error(
+                "tailscale_funnel_public_not_confirmed",
+                ErrorCategory.UPSTREAM,
+                "Tailscale no confirmó que el endpoint esté expuesto mediante Funnel.",
+                operation="instagram_oauth_callback.funnel_start",
+            )
 
     def stop(self) -> None:
         if not self._active:
@@ -656,7 +670,6 @@ class TailscaleFunnelBridge:
                 operation="instagram_oauth_callback.funnel_stop",
                 details={"cli_message": _safe_cli_error(result)},
             )
-        self._active = False
         if _funnel_handler(self._funnel_status(), host=self.host) is not None:
             raise _error(
                 "tailscale_funnel_still_active",
@@ -664,6 +677,7 @@ class TailscaleFunnelBridge:
                 "Tailscale sigue mostrando el Funnel de Instagram como activo.",
                 operation="instagram_oauth_callback.funnel_stop",
             )
+        self._active = False
 
 
 def _open_system_browser(url: str) -> bool:
