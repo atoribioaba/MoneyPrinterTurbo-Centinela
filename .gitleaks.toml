@@ -1,0 +1,17 @@
+title = "El Centinela del Universo secret scanning"
+
+[extend]
+useDefault = true
+
+# Streamlit widget identifiers use keyword argument `key=` and values such as
+# `f30-capability-probe-invocations`. Gitleaks' generic-api-key heuristic can
+# classify these UI-only identifiers as credentials because they are long and
+# sufficiently entropic. Scope this exception to the exact Fxx widget-key
+# naming convention and only to the generic-api-key rule.
+[[allowlists]]
+description = "Streamlit Fxx widget identifiers are UI keys, not credentials"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = [
+  '''(?i)^key\s*=\s*["']f[0-9]{2}[-_][a-z0-9_-]+["']$''',
+]
