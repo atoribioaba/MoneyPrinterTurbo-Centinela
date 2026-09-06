@@ -5,8 +5,13 @@ from pathlib import Path
 
 import streamlit as st
 
+from app.services.centinela.manual_publication import (
+    ManualPublicationPlatform,
+    publish_verified_package,
+)
 from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE
+from app.services.error_control import CentinelaError
 from webui.product import pages, ui
 
 
@@ -36,6 +41,11 @@ _MANUAL_PUBLICATION_POLICY_MARKERS = (
 _PUBLICATION_UI_COMPATIBILITY_MARKERS = (
     "Preparar paquete para publicación manual",
 )
+
+_MANUAL_DELIVERY_OPTIONS = {
+    "YouTube · subir como privado": ManualPublicationPlatform.YOUTUBE,
+    "TikTok · enviar a bandeja": ManualPublicationPlatform.TIKTOK,
+}
 
 
 def _hashtags(value: str) -> list[str]:
@@ -68,6 +78,124 @@ def _render_package_thumbnail(package_dir: object, assets: list[dict]) -> None:
         if candidate.is_file():
             st.image(str(candidate), caption="Miniatura incluida en el paquete")
         return
+
+
+def _execute_manual_delivery(
+    service,
+    project_id: str,
+    platform: ManualPublicationPlatform,
+    *,
+    access_token: str,
+    approved: bool,
+):
+    """Pass one fresh Product action to the certified C6 boundary."""
+    return publish_verified_package(
+        service.store,
+        project_id,
+        platform,
+        access_token=access_token,
+        approved=approved,
+    )
+
+
+def _render_manual_delivery_action(service, project_id: str) -> None:
+    ui.render_section_heading(
+        "Envío manual verificado",
+        (
+            "Después del paquete aprobado puedes iniciar una única acción de envío. "
+            "C6 vuelve a verificar estado, Review 7/7, derechos, rutas y SHA-256 justo antes de salir del equipo."
+        ),
+        eyebrow="ACCIÓN HUMANA",
+    )
+    st.info(
+        "**Nada se envía al abrir esta pantalla.** El token se usa solo para el "
+        "envío que confirmes en este formulario; no se guarda en el proyecto ni en sus artefactos."
+    )
+    st.caption(
+        "Instagram sigue bloqueado: requiere hosting HTTPS verificable del mismo vídeo aprobado "
+        "antes de poder conectarlo con seguridad."
+    )
+
+    with st.form(
+        f"centinela-manual-publication-{project_id}",
+        clear_on_submit=True,
+        enter_to_submit=False,
+    ):
+        delivery_label = st.selectbox(
+            "Destino",
+            options=tuple(_MANUAL_DELIVERY_OPTIONS),
+            help=(
+                "YouTube siempre se inicia como privado. TikTok se envía a su bandeja "
+                "para completar allí la publicación."
+            ),
+        )
+        access_token = st.text_input(
+            "Access token de esta sesión",
+            type="password",
+            help="Credencial efímera: no se escribe en configuración, proyecto ni artefactos.",
+        )
+        approved = st.checkbox(
+            "Confirmo que he revisado este paquete y autorizo únicamente este envío manual.",
+            value=False,
+        )
+        submitted = st.form_submit_button(
+            "Ejecutar envío manual",
+            type="primary",
+            width="stretch",
+        )
+
+    if not submitted:
+        return
+    if not approved:
+        st.error("Marca la confirmación explícita antes de ejecutar este envío.")
+        return
+    token = access_token.strip()
+    if not token:
+        st.error("Introduce el access token de la plataforma para esta sesión.")
+        return
+
+    platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]
+    try:
+        with st.spinner("Revalidando paquete y ejecutando el envío manual…", show_time=True):
+            result = _execute_manual_delivery(
+                service,
+                project_id,
+                platform,
+                access_token=token,
+                approved=approved,
+            )
+    except CentinelaError as exc:
+        ui.render_error_state(
+            exc.safe_message,
+            action="No hay reintento automático. Revisa el estado antes de volver a autorizar otra acción.",
+            technical_detail=f"{exc.code} · {exc.category.value}",
+        )
+        return
+    except Exception as exc:
+        LOGGER.exception("Manual publication UI action failed")
+        ui.render_error_state(
+            "La acción manual no pudo completarse.",
+            action="No hay reintento automático. Verifica la plataforma y el paquete antes de intentar otra vez.",
+            technical_detail=type(exc).__name__,
+        )
+        return
+
+    if platform == ManualPublicationPlatform.YOUTUBE:
+        st.success(
+            "Vídeo subido a YouTube como privado. Revísalo en YouTube Studio antes de cambiar su visibilidad."
+        )
+    else:
+        st.success(
+            "Vídeo enviado a la bandeja de TikTok. Completa allí la publicación cuando decidas."
+        )
+
+    with st.expander("Resultado del envío", expanded=False):
+        st.write(f"Estado remoto: {getattr(result, 'status', '—') or '—'}")
+        remote_id = str(getattr(result, "remote_id", "") or "").strip()
+        if remote_id:
+            st.code(remote_id, language=None)
+        if getattr(result, "requires_user_action", False):
+            st.caption("La plataforma requiere una acción humana posterior.")
 
 
 def _render_ready_package(service, project_id: str) -> None:
@@ -151,8 +279,9 @@ def _render_ready_package(service, project_id: str) -> None:
 
     st.caption(
         "Derechos, licencias, procedencia y checklist forman parte del paquete. "
-        "No hay upload, OAuth, scheduler, webhook ni autoposting."
+        "No hay scheduler, webhook ni autoposting: cualquier subida requiere la acción humana separada de abajo."
     )
+    _render_manual_delivery_action(service, project_id)
 
 
 def publication_page() -> None:
