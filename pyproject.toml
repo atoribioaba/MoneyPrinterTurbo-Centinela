@@ -25,14 +25,14 @@ dependencies = [
     "dashscope==1.20.14",
     "azure-cognitiveservices-speech==1.41.1",
     "redis==5.2.0",
-    "python-multipart==0.0.27",
+    "python-multipart==0.0.32",
     "pyyaml==6.0.3",
     "requests==2.33.1",
     "packaging==24.2",
     "socksio==1.0.0",
     "pydub==0.25.1",
     "audioop-lts==0.2.2; python_version >= '3.13'",
-    "litellm==1.86.2",
+    "litellm==1.99.0",
     "google-genai==2.11.0",
     "astronomy-engine==2.1.19",
     "tzdata>=2025.3",
@@ -79,3 +79,17 @@ packages = ["app"]
 [tool.uv]
 # 当前项目以应用运行形态为主，不作为可发布的 Python 包安装。
 package = false
+
+# Security floors for transitive runtime dependencies. These constraints do not
+# install packages on their own; they only prevent resolution to versions below
+# the first versions that fix vulnerabilities observed by `uv audit` on
+# 2026-09-06.
+constraint-dependencies = [
+    "aiohttp>=3.14.3",
+    "click>=8.3.3",
+    "cryptography>=50.0.0",
+    "gitpython>=3.1.59",
+    "pillow>=12.3.0",
+    "setuptools>=83.0.0",
+    "starlette>=1.3.1",
+]
