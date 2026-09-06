@@ -1,0 +1,86 @@
+name: Centinela C3 v1.3.6 LLM Backport
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c3-upstream-v1.3.6-security-sync-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C3 branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Apply exact upstream fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/services/llm.py")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = {
+              'response = re.sub(r"\\[.*\\]", "", response)': 'response = re.sub(r"\\[.*?\\]", "", response)',
+              'response = re.sub(r"\\(.*\\)", "", response)': 'response = re.sub(r"\\(.*?\\)", "", response)',
+              'if i < _max_retries:\n            logger.warning(f"failed to generate video script, trying again... {i + 1}")': 'if i < _max_retries - 1:\n            logger.warning(f"failed to generate video script, trying again... {i + 1}")',
+              'if i < _max_retries:\n            logger.warning(f"failed to generate video terms, trying again... {i + 1}")': 'if i < _max_retries - 1:\n            logger.warning(f"failed to generate video terms, trying again... {i + 1}")',
+          }
+
+          changed = False
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count == 1:
+                  text = text.replace(old, new, 1)
+                  changed = True
+              elif count == 0 and new in text:
+                  # Idempotent second run after the bot commit.
+                  continue
+              else:
+                  raise SystemExit(f"unexpected replacement count={count}: {old}")
+
+          if changed:
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate focused regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.11
+          uv run --no-sync pytest -q test/services/test_llm_v136_backports.py
+          uv run --no-sync ruff check app/services/llm.py test/services/test_llm_v136_backports.py
+
+      - name: Commit only patched service
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/services/llm.py; then
+            echo "C3_LLM_PATCH_CHANGED=FALSE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/services/llm.py
+          test "$(git diff --cached --name-only)" = "app/services/llm.py"
+          git commit -m "fix: backport v1.3.6 LLM cleanup and retry behavior"
+          git push origin HEAD:centinela-engineering/c05-c3-upstream-v1.3.6-security-sync-v0.1
