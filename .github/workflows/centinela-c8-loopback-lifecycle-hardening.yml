@@ -1,0 +1,102 @@
+name: Centinela C8 Loopback Lifecycle Hardening
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c8-desktop-oauth-boundary-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C8 branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Harden loopback exception and shutdown lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          prod = Path("app/services/social_oauth.py")
+          text = prod.read_text(encoding="utf-8")
+          replacements = (
+              (
+                  "        self._error: BaseException | None = None\n",
+                  "        self._error: Exception | None = None\n",
+              ),
+              (
+                  "                except BaseException as exc:  # boundary error must reach waiting thread\n",
+                  "                except Exception as exc:  # boundary error must reach waiting thread\n",
+              ),
+              (
+                  '        self._thread = threading.Thread(\n            target=self._server.serve_forever,\n            name="centinela-oauth-loopback",\n            daemon=True,\n        )\n',
+                  '        self._thread = threading.Thread(\n            target=self._server.serve_forever,\n            name="centinela-oauth-loopback",\n            daemon=True,\n        )\n        self._started = False\n',
+              ),
+              (
+                  "    def start(self) -> None:\n        if not self._thread.is_alive():\n            self._thread.start()\n",
+                  "    def start(self) -> None:\n        if self._started:\n            return\n        self._thread.start()\n        self._started = True\n",
+              ),
+              (
+                  "    def close(self) -> None:\n        self._server.shutdown()\n        self._server.server_close()\n        if self._thread.is_alive():\n            self._thread.join(timeout=2)\n",
+                  "    def close(self) -> None:\n        if self._started:\n            self._server.shutdown()\n            if self._thread.is_alive():\n                self._thread.join(timeout=2)\n        self._server.server_close()\n",
+              ),
+          )
+          for old, new in replacements:
+              if old in text:
+                  text = text.replace(old, new, 1)
+              elif new not in text:
+                  raise SystemExit(f"C8 lifecycle anchor not found: {old[:80]!r}")
+          prod.write_text(text, encoding="utf-8")
+
+          tests = Path("test/services/test_social_oauth.py")
+          test_text = tests.read_text(encoding="utf-8")
+          marker = "def test_loopback_receiver_close_before_start_is_safe():"
+          if marker not in test_text:
+              test_text += '''\n\ndef test_loopback_receiver_close_before_start_is_safe():\n    receiver = LoopbackOAuthReceiver(expected_state="never-started")\n    receiver.close()\n    assert receiver._started is False\n\n\ndef test_loopback_receiver_start_is_idempotent():\n    receiver = LoopbackOAuthReceiver(expected_state="idempotent-start")\n    try:\n        receiver.start()\n        first_thread = receiver._thread\n        receiver.start()\n        assert receiver._thread is first_thread\n        assert receiver._started is True\n    finally:\n        receiver.close()\n\n\ndef test_loopback_handler_never_catches_baseexception():\n    from pathlib import Path\n\n    source = Path("app/services/social_oauth.py").read_text(encoding="utf-8")\n    assert "except BaseException" not in source\n    assert "self._error: BaseException" not in source\n'''
+              tests.write_text(test_text, encoding="utf-8")
+          PY
+      - name: Validate C8 lifecycle hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.11
+          uv run --no-sync pytest -q test/services/test_social_oauth.py test/services/test_social_publication.py test/services/test_manual_publication.py test/services/test_product_manual_publication_ui.py
+          uv run --no-sync ruff check app/services/social_oauth.py test/services/test_social_oauth.py
+          uv run --no-sync python -m py_compile app/services/social_oauth.py
+      - name: Commit only C8 production and test hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/services/social_oauth.py test/services/test_social_oauth.py; then
+            echo "C8_LIFECYCLE_CHANGED=FALSE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/services/social_oauth.py test/services/test_social_oauth.py
+          mapfile -t files < <(git diff --cached --name-only)
+          test "${#files[@]}" -le 2
+          for file in "${files[@]}"; do
+            case "$file" in
+              app/services/social_oauth.py|test/services/test_social_oauth.py) ;;
+              *) echo "unexpected staged file: $file" >&2; exit 1 ;;
+            esac
+          done
+          git commit -m "auth: harden OAuth loopback lifecycle"
+          git push origin HEAD:centinela-engineering/c05-c8-desktop-oauth-boundary-v0.1
