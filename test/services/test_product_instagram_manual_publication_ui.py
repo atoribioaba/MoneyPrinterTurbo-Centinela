@@ -27,6 +27,8 @@ def test_instagram_product_ui_is_two_step_token_free_and_manual():
     assert '"Autenticar de nuevo y publicar Reel"' in source
     assert "segunda aprobación" in source.lower()
     assert "hosting HTTPS verificable" in source
+    assert "transporte unificado para OAuth y MP4" in source
+    assert "cloudflare_quick y zrok_public quedan como fallback" in source
     assert "st.session_state" not in source
     assert 'type="password"' not in source
     assert "access_token=" not in source[source.index("def _render_instagram_manual_action") :]
@@ -95,7 +97,7 @@ def test_instagram_runtime_status_is_secret_free(monkeypatch):
     monkeypatch.setattr(
         publication,
         "ephemeral_https_settings",
-        lambda: SimpleNamespace(enabled=True, provider=SimpleNamespace(value="cloudflare_quick")),
+        lambda: SimpleNamespace(enabled=True, provider=SimpleNamespace(value="tailscale_funnel")),
     )
 
     status = publication._instagram_product_runtime_status()
@@ -107,10 +109,37 @@ def test_instagram_runtime_status_is_secret_free(monkeypatch):
         "callback_provider": "tailscale_funnel",
         "transport_gate_valid": True,
         "transport_enabled": True,
-        "transport_provider": "cloudflare_quick",
+        "transport_provider": "tailscale_funnel",
+        "unified_tailscale": True,
         "ready": True,
         "token_persistence": False,
         "auto_publication": False,
     }
     assert "secret" not in str(status).lower()
     assert "token" in str(status).lower()
+
+
+def test_instagram_runtime_status_marks_alternative_media_transport_as_fallback(monkeypatch):
+    monkeypatch.setattr(
+        publication,
+        "callback_runtime_status",
+        lambda: {
+            "enabled": True,
+            "gate_valid": True,
+            "provider": "tailscale_funnel",
+            "configured": True,
+            "token_persistence": False,
+            "long_lived_token_default": False,
+            "auto_publication": False,
+        },
+    )
+    monkeypatch.setattr(
+        publication,
+        "ephemeral_https_settings",
+        lambda: SimpleNamespace(enabled=True, provider=SimpleNamespace(value="cloudflare_quick")),
+    )
+
+    status = publication._instagram_product_runtime_status()
+    assert status["ready"] is True
+    assert status["unified_tailscale"] is False
+    assert status["transport_provider"] == "cloudflare_quick"
