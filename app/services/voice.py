@@ -1590,8 +1590,10 @@ def elevenlabs_tts(
                 f.write(response.content)
 
             audio_clip = AudioFileClip(voice_file)
-            audio_duration = audio_clip.duration
-            audio_clip.close()
+            try:
+                audio_duration = audio_clip.duration
+            finally:
+                audio_clip.close()
 
             sub_maker = ensure_legacy_submaker_fields(SubMaker())
             logger.success(f"elevenlabs tts succeeded: {voice_file}")
@@ -1677,8 +1679,10 @@ def chatterbox_tts(
                 f.write(response.content)
 
             audio_clip = AudioFileClip(voice_file)
-            audio_duration = audio_clip.duration
-            audio_clip.close()
+            try:
+                audio_duration = audio_clip.duration
+            finally:
+                audio_clip.close()
 
             sub_maker = ensure_legacy_submaker_fields(SubMaker())
             logger.success(f"chatterbox tts succeeded: {voice_file}")

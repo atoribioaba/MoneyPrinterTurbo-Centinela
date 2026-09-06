@@ -6,6 +6,7 @@ import math
 import os
 import re
 import shutil
+import sys
 from typing import TYPE_CHECKING, Sequence
 from uuid import UUID, uuid4
 
@@ -874,5 +875,18 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+def _force_utf8_console() -> None:
+    """Make stdout/stderr UTF-8 before the CLI prints user or log content."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            continue
+
+
 if __name__ == "__main__":
+    _force_utf8_console()
     raise SystemExit(run_cli())
