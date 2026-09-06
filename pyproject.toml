@@ -13,7 +13,10 @@ readme = "README-en.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
-    "moviepy==2.2.1",
+    # MoviePy 2.2.1 on PyPI caps Pillow <12.0. Upstream commit 97316f37
+    # removes that cap and adds the TextClip compatibility fix for Pillow >11.2.
+    # Pin the full immutable upstream commit; never follow master here.
+    "moviepy @ git+https://github.com/Zulko/moviepy.git@97316f37f6a8d3843abfb53eba8f3bb0ea46a008",
     "streamlit==1.59.1",
     "streamlit-tour==1.1.0",
     "edge-tts==7.2.7",
