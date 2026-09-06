@@ -1,0 +1,136 @@
+name: Centinela C5 Detach Legacy Cross-Post
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c5-detach-legacy-cross-post-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C5 branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Detach publication from generation pipeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/services/task.py")
+          text = path.read_text(encoding="utf-8")
+          start_marker = "    # 7. 先完成视频生成任务，再按需提交跨平台发布。"
+          end_marker = "\n    return kwargs"
+          start = text.find(start_marker)
+          if start < 0:
+              if "Generation and publication are deliberately separate phases" in text:
+                  raise SystemExit(0)
+              raise SystemExit("legacy pipeline cross-post block not found")
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit("legacy pipeline cross-post block end not found")
+          end += len(end_marker)
+
+          replacement = '''    # 7. Generation and publication are deliberately separate phases.\n    # A generated video must finish in a neutral publication state regardless of\n    # legacy Upload-Post configuration. Publication is an explicit human-approved\n    # action through the official C2 adapters or the manual C4 fallback; this\n    # pipeline never creates or schedules a publication job.\n    kwargs = {\n        "videos": final_video_paths,\n        "combined_videos": combined_video_paths,\n        "script": video_script,\n        "terms": video_terms,\n        "audio_file": audio_file,\n        "audio_duration": audio_duration,\n        "subtitle_path": subtitle_path,\n        "materials": downloaded_videos,\n        "cross_post_state": None,\n        "cross_post_results": None,\n        "cross_post_error": None,\n        "cross_post_owner": None,\n        "warnings": generation_warnings or None,\n    }\n    sm.state.update_task(\n        task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs\n    )\n\n    return kwargs'''
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Reconcile pipeline regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("test/services/test_task.py")
+          text = path.read_text(encoding="utf-8")
+
+          def method_bounds(source: str, name: str):
+              marker = f"    def {name}(self):"
+              start = source.find(marker)
+              if start < 0:
+                  return None
+              candidates = [
+                  pos for pos in (
+                      source.find("\n    def ", start + len(marker)),
+                      source.find("\n    @", start + len(marker)),
+                  ) if pos >= 0
+              ]
+              end = min(candidates) if candidates else len(source)
+              return start, end
+
+          new_test = '''    def test_start_never_schedules_legacy_cross_post_even_if_flags_true(self):\n        """Generation must stay publication-neutral even if legacy flags regress."""\n        params = VideoParams(video_subject="Coffee", video_language="en")\n        service = tm.upload_post.upload_post_service\n        state = MemoryState()\n\n        with (\n            patch.object(tm, "generate_script", return_value="generated script"),\n            patch.object(tm, "generate_terms", return_value=["coffee"]),\n            patch.object(tm, "save_script_data"),\n            patch.object(\n                tm,\n                "generate_audio",\n                return_value=("audio.mp3", 5, object()),\n            ),\n            patch.object(tm, "generate_subtitle", return_value="subtitle.srt"),\n            patch.object(tm, "get_video_materials", return_value=["clip.mp4"]),\n            patch.object(\n                tm,\n                "generate_final_videos",\n                return_value=(["final.mp4"], ["combined.mp4"], []),\n            ),\n            patch.object(service, "is_configured", return_value=True) as configured,\n            patch.object(service, "auto_upload", True),\n            patch.object(service, "platforms", ["youtube"]),\n            patch.object(service, "youtube_privacy_status", "public"),\n            patch.object(tm.llm, "generate_social_metadata") as metadata,\n            patch.object(tm.upload_post, "cross_post_video") as cross_post,\n            patch.object(tm, "_schedule_cross_post") as schedule_cross_post,\n            patch.object(tm.sm, "state", state),\n        ):\n            result = tm.start("pipeline-publication-neutral", params)\n\n        configured.assert_not_called()\n        metadata.assert_not_called()\n        cross_post.assert_not_called()\n        schedule_cross_post.assert_not_called()\n        self.assertEqual(result["videos"], ["final.mp4"])\n        self.assertIsNone(result["cross_post_state"])\n        self.assertIsNone(result["cross_post_results"])\n        self.assertIsNone(result["cross_post_error"])\n        self.assertIsNone(result["cross_post_owner"])\n        persisted = state.get_task("pipeline-publication-neutral")\n        self.assertEqual(persisted["state"], tm.const.TASK_STATE_COMPLETE)\n        self.assertEqual(persisted["progress"], 100)\n        self.assertIsNone(persisted["cross_post_state"])\n'''
+
+          first = method_bounds(text, "test_start_generates_youtube_metadata_for_each_cross_post")
+          if first is not None:
+              text = text[:first[0]] + new_test + text[first[1]:]
+          elif "test_start_never_schedules_legacy_cross_post_even_if_flags_true" not in text:
+              raise SystemExit("primary auto-cross-post test not found")
+
+          for obsolete in (
+              "test_start_returns_before_cross_post_worker_runs",
+              "test_start_returns_cross_post_scheduling_failure",
+          ):
+              bounds = method_bounds(text, obsolete)
+              if bounds is not None:
+                  text = text[:bounds[0]] + text[bounds[1]:]
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate C5 regression scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.11
+          uv run --no-sync pytest -q test/services/test_task.py test/services/test_upload_post.py test/services/test_config.py
+          uv run --no-sync ruff check app/services/task.py test/services/test_task.py
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("app/services/task.py").read_text(encoding="utf-8")
+          pipeline = text[text.index("def _run_pipeline("):text.index("\ndef start(", text.index("def _run_pipeline("))]
+          forbidden = ("is_configured()", ".auto_upload", "_schedule_cross_post(")
+          found = [item for item in forbidden if item in pipeline]
+          if found:
+              raise SystemExit(f"generation pipeline still references legacy publication controls: {found}")
+          if '"cross_post_state": None' not in pipeline or '"cross_post_owner": None' not in pipeline:
+              raise SystemExit("generation pipeline does not persist neutral publication state")
+          PY
+
+      - name: Commit only C5 production and regression files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/services/task.py test/services/test_task.py; then
+            echo "C5_CHANGED=FALSE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/services/task.py test/services/test_task.py
+          mapfile -t staged < <(git diff --cached --name-only)
+          test "${#staged[@]}" -eq 2
+          test "${staged[0]}" = "app/services/task.py"
+          test "${staged[1]}" = "test/services/test_task.py"
+          git commit -m "security: detach generation from legacy cross-post scheduler"
+          git push origin HEAD:centinela-engineering/c05-c5-detach-legacy-cross-post-v0.1
