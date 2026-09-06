@@ -53,7 +53,7 @@ class OAuthPlatform(StrEnum):
 @dataclass(frozen=True, slots=True)
 class OAuthAuthorizationRequest:
     platform: OAuthPlatform
-    authorization_url: str
+    authorization_url: str = field(repr=False)
     redirect_uri: str
     state: str = field(repr=False)
     code_verifier: str = field(repr=False)
