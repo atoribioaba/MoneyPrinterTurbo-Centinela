@@ -1,0 +1,73 @@
+name: Centinela C6 Streaming Source Hash
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c6-verified-manual-publication-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C6 branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Replace whole-file read with streaming source verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/services/centinela/manual_publication.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    try:\n        social_source = store.get_artifact(project_id, social_source_id)\n        social_source_bytes = store.read_bytes(\n            project_id,\n            social_source_id,\n            verify_integrity=True,\n        )\n    except (ArtifactNotFoundError, IntegrityError, OSError, ValueError) as exc:\n        raise _blocked(\n            "publication_social_source_unavailable",\n            "No se puede revalidar el artefacto social canónico.",\n            cause=exc,\n        ) from exc\n    social_sha = str(by_name["social"]["sha256"]).lower()\n    if social_source.sha256.lower() != social_sha or _sha256_file(\n        verified_paths["social"]\n    )[0] != _sha256_file(Path(store.resolve_artifact_path(project_id, social_source_id)))[0]:\n        raise _blocked(\n            "publication_social_source_identity_mismatch",\n            "El vídeo social materializado ya no coincide con su artefacto canónico.",\n        )\n    del social_source_bytes\n'''
+          new = '''    try:\n        social_source = store.get_artifact(project_id, social_source_id)\n        social_source_path = store.resolve_artifact_path(project_id, social_source_id)\n        if social_source_path.is_symlink() or not social_source_path.is_file():\n            raise OSError("canonical social source is not a regular file")\n        source_actual_sha, source_actual_size = _sha256_file(social_source_path)\n    except (ArtifactNotFoundError, IntegrityError, OSError, ValueError) as exc:\n        raise _blocked(\n            "publication_social_source_unavailable",\n            "No se puede revalidar el artefacto social canónico.",\n            cause=exc,\n        ) from exc\n    social_sha = str(by_name["social"]["sha256"]).lower()\n    if (\n        social_source.sha256.lower() != social_sha\n        or source_actual_sha != social_sha\n        or source_actual_size != social_source.size_bytes\n    ):\n        raise _blocked(\n            "publication_social_source_identity_mismatch",\n            "El vídeo social materializado ya no coincide con su artefacto canónico.",\n        )\n'''
+          if old in text:
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          elif "source_actual_sha, source_actual_size = _sha256_file(social_source_path)" not in text:
+              raise SystemExit("expected C6 source verification block not found")
+          PY
+      - name: Validate streaming C6 boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.11
+          uv run --no-sync pytest -q test/services/test_manual_publication.py test/services/test_social_publication.py test/services/test_publication_package_materializer.py
+          uv run --no-sync ruff check app/services/centinela/manual_publication.py test/services/test_manual_publication.py
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("app/services/centinela/manual_publication.py").read_text(encoding="utf-8")
+          if "social_source_bytes = store.read_bytes" in text:
+              raise SystemExit("whole-file canonical social read still present")
+          if "source_actual_sha, source_actual_size = _sha256_file(social_source_path)" not in text:
+              raise SystemExit("streaming canonical source hash missing")
+          PY
+      - name: Commit only streaming hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/services/centinela/manual_publication.py; then
+            echo "C6_STREAMING_CHANGED=FALSE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/services/centinela/manual_publication.py
+          test "$(git diff --cached --name-only)" = "app/services/centinela/manual_publication.py"
+          git commit -m "publication: stream canonical social integrity verification"
+          git push origin HEAD:centinela-engineering/c05-c6-verified-manual-publication-v0.1
