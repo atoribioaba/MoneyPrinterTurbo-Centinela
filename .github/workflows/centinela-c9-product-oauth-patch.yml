@@ -1,0 +1,116 @@
+name: Centinela C9 Product OAuth Integration
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c9-product-oauth-manual-publication-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C9 branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Wire Product UI to runtime Desktop OAuth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("webui/product/publication.py")
+          text = path.read_text(encoding="utf-8")
+          import_anchor = "from app.services.error_control import CentinelaError\n"
+          import_block = '''from app.services.error_control import CentinelaError\nfrom app.services.social_oauth import OAuthPlatform\nfrom app.services.social_oauth_desktop import (\n    TIKTOK_CLIENT_KEY_ENV,\n    TIKTOK_CLIENT_SECRET_ENV,\n    YOUTUBE_CLIENT_ID_ENV,\n    authorize_desktop_oauth,\n    oauth_environment_contract,\n)\n'''
+          if import_block not in text:
+              if import_anchor not in text:
+                  raise SystemExit("C9 import anchor not found")
+              text = text.replace(import_anchor, import_block, 1)
+
+          helper_marker = "def _authorize_manual_delivery("
+          if helper_marker not in text:
+              anchor = '''    return publish_verified_package(\n        service.store,\n        project_id,\n        platform,\n        access_token=access_token,\n        approved=approved,\n    )\n\n\n'''
+              helper = '''    return publish_verified_package(\n        service.store,\n        project_id,\n        platform,\n        access_token=access_token,\n        approved=approved,\n    )\n\n\ndef _authorize_manual_delivery(platform: ManualPublicationPlatform):\n    \"\"\"Acquire one runtime-only OAuth token after the user's fresh action.\"\"\"\n    return authorize_desktop_oauth(OAuthPlatform(platform.value))\n\n\n'''
+              if anchor not in text:
+                  raise SystemExit("C9 executor anchor not found")
+              text = text.replace(anchor, helper, 1)
+
+          start = text.index("def _render_manual_delivery_action(service, project_id: str) -> None:\n")
+          end = text.index("\ndef _render_ready_package(service, project_id: str) -> None:\n", start)
+          replacement = '''def _render_manual_delivery_action(service, project_id: str) -> None:\n    ui.render_section_heading(\n        \"Envío manual verificado\",\n        (\n            \"Después del paquete aprobado puedes autorizar una única acción desde el navegador. \"\n            \"C6 vuelve a verificar estado, Review 7/7, derechos, rutas y SHA-256 justo antes de salir del equipo.\"\n        ),\n        eyebrow=\"ACCIÓN HUMANA\",\n    )\n    st.info(\n        \"**Nada se envía al abrir esta pantalla.** Al confirmar, El Centinela abre OAuth en el \"\n        \"navegador del sistema. Los tokens resultantes se usan solo en memoria para este envío y no se guardan.\"\n    )\n    st.caption(\n        \"Las credenciales de la app OAuth se leen del entorno del proceso; Product UI no las escribe en config.toml. \"\n        \"Instagram sigue bloqueado porque requiere hosting HTTPS verificable del mismo vídeo aprobado.\"\n    )\n\n    with st.form(\n        f\"centinela-manual-publication-{project_id}\",\n        clear_on_submit=True,\n        enter_to_submit=False,\n    ):\n        delivery_label = st.selectbox(\n            \"Destino\",\n            options=tuple(_MANUAL_DELIVERY_OPTIONS),\n            help=(\n                \"YouTube siempre se inicia como privado. TikTok se envía a su bandeja \"\n                \"para completar allí la publicación.\"\n            ),\n        )\n        platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]\n        required_environment = oauth_environment_contract(OAuthPlatform(platform.value))\n        st.caption(\n            \"OAuth Desktop debe estar configurado antes de iniciar la autorización: \"\n            + \", \".join(f\"`{name}`\" for name in required_environment)\n        )\n        approved = st.checkbox(\n            \"Confirmo que he revisado este paquete y autorizo únicamente este envío manual.\",\n            value=False,\n        )\n        submitted = st.form_submit_button(\n            \"Autorizar cuenta y ejecutar envío manual\",\n            type=\"primary\",\n            width=\"stretch\",\n        )\n\n    if not submitted:\n        return\n    if not approved:\n        st.error(\"Marca la confirmación explícita antes de abrir OAuth o ejecutar este envío.\")\n        return\n\n    try:\n        with st.spinner(\n            \"Abriendo el navegador y esperando la autorización OAuth local…\",\n            show_time=True,\n        ):\n            token_set = _authorize_manual_delivery(platform)\n        with st.spinner(\"Revalidando paquete y ejecutando el envío manual…\", show_time=True):\n            result = _execute_manual_delivery(\n                service,\n                project_id,\n                platform,\n                access_token=token_set.access_token,\n                approved=approved,\n            )\n    except CentinelaError as exc:\n        ui.render_error_state(\n            exc.safe_message,\n            action=(\n                \"No hay reintento automático. Revisa la configuración OAuth y el estado \"\n                \"del paquete antes de volver a autorizar otra acción.\"\n            ),\n            technical_detail=f\"{exc.code} · {exc.category.value}\",\n        )\n        return\n    except Exception as exc:\n        LOGGER.exception(\"Manual OAuth publication UI action failed\")\n        ui.render_error_state(\n            \"La autorización o el envío manual no pudo completarse.\",\n            action=(\n                \"No hay reintento automático. Verifica OAuth, la plataforma y el paquete \"\n                \"antes de intentarlo otra vez.\"\n            ),\n            technical_detail=type(exc).__name__,\n        )\n        return\n\n    if platform == ManualPublicationPlatform.YOUTUBE:\n        st.success(\n            \"Vídeo subido a YouTube como privado. Revísalo en YouTube Studio antes de cambiar su visibilidad.\"\n        )\n    else:\n        st.success(\n            \"Vídeo enviado a la bandeja de TikTok. Completa allí la publicación cuando decidas.\"\n        )\n\n    with st.expander(\"Resultado del envío\", expanded=False):\n        st.write(f\"Estado remoto: {getattr(result, 'status', '—') or '—'}\")\n        remote_id = str(getattr(result, \"remote_id\", \"\") or \"\").strip()\n        if remote_id:\n            st.code(remote_id, language=None)\n        if getattr(result, \"requires_user_action\", False):\n            st.caption(\"La plataforma requiere una acción humana posterior.\")\n'''
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+          test_path = Path("test/services/test_product_manual_publication_ui.py")
+          tests = test_path.read_text(encoding="utf-8")
+          tests = tests.replace(
+              '    assert \'type="password"\' in source\n',
+              '    assert \'type="password"\' not in source\n'
+              '    assert "Access token de esta sesión" not in source\n',
+              1,
+          )
+          tests = tests.replace(
+              '    assert \'"Ejecutar envío manual"\' in source\n',
+              '    assert \'"Autorizar cuenta y ejecutar envío manual"\' in source\n'
+              '    assert "authorize_desktop_oauth" in source\n',
+              1,
+          )
+          marker = "def test_product_oauth_authorizer_uses_runtime_token_without_persistence():"
+          if marker not in tests:
+              tests += '''\n\ndef test_product_oauth_authorizer_uses_runtime_token_without_persistence(monkeypatch):\n    calls = []\n    sentinel = SimpleNamespace(access_token=\"oauth-runtime-only\")\n\n    def fake_authorize(platform):\n        calls.append(platform)\n        return sentinel\n\n    monkeypatch.setattr(publication, \"authorize_desktop_oauth\", fake_authorize)\n\n    result = publication._authorize_manual_delivery(\n        publication.ManualPublicationPlatform.YOUTUBE\n    )\n\n    assert result is sentinel\n    assert calls == [publication.OAuthPlatform.YOUTUBE]\n\n\ndef test_product_oauth_ui_uses_environment_contract_and_no_token_storage():\n    source = (ROOT / \"webui\" / \"product\" / \"publication.py\").read_text(\n        encoding=\"utf-8\"\n    )\n\n    assert \"oauth_environment_contract\" in source\n    assert \"YOUTUBE_CLIENT_ID_ENV\" in source\n    assert \"TIKTOK_CLIENT_KEY_ENV\" in source\n    assert \"TIKTOK_CLIENT_SECRET_ENV\" in source\n    assert \"st.session_state\" not in source\n    assert \"save_config\" not in source\n    assert \"config.toml\" in source\n    assert \"token_set.access_token\" in source\n    assert \"refresh_token\" not in source\n'''
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+      - name: Validate C9 integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.11
+          uv run --no-sync pytest -q \
+            test/services/test_social_oauth_desktop.py \
+            test/services/test_social_oauth.py \
+            test/services/test_product_manual_publication_ui.py \
+            test/services/test_social_publication.py \
+            test/services/test_manual_publication.py
+          uv run --no-sync ruff check \
+            app/services/social_oauth_desktop.py \
+            webui/product/publication.py \
+            test/services/test_social_oauth_desktop.py \
+            test/services/test_product_manual_publication_ui.py
+          uv run --no-sync python -m py_compile \
+            app/services/social_oauth_desktop.py \
+            webui/product/publication.py
+      - name: Commit only C9 Product UI integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add webui/product/publication.py test/services/test_product_manual_publication_ui.py
+          mapfile -t files < <(git diff --cached --name-only)
+          test "${#files[@]}" -le 2
+          for file in "${files[@]}"; do
+            case "$file" in
+              webui/product/publication.py|test/services/test_product_manual_publication_ui.py) ;;
+              *) echo "unexpected staged file: $file" >&2; exit 1 ;;
+            esac
+          done
+          if test "${#files[@]}" -eq 0; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ui: authorize manual publication through desktop OAuth"
+          git push origin HEAD:centinela-engineering/c05-c9-product-oauth-manual-publication-v0.1
