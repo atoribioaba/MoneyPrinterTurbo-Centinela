@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: centinela-lock-candidate-${{ github.event.pull_request.number }}
@@ -12,18 +12,21 @@ concurrency:
 
 jobs:
   generate-lock-candidate:
-    name: Generate uv.lock candidate
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'centinela-engineering/c05-b-dependency-security-v0.1'
+    name: Generate and commit verified uv.lock
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Check out PR head exactly
+      - name: Check out guarded PR head branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.repository }}
+          ref: ${{ github.head_ref }}
           fetch-depth: 1
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Install pinned uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -31,22 +34,32 @@ jobs:
           version: "0.12.10"
           enable-cache: false
 
-      - name: Generate deterministic lock candidate
+      - name: Regenerate and verify deterministic lock
         shell: bash
+        env:
+          EXPECTED_LOCK_SHA256: "06ec551be32a94bb6093dc2ea28ea68fbd7ee667b47546d1344195e0ab7fe5cb"
         run: |
           set -euo pipefail
           uv --version
           uv lock
           uv lock --check
-          sha256sum uv.lock > uv.lock.sha256
-          echo "LOCK_CANDIDATE_GENERATION=PASS"
+          ACTUAL_LOCK_SHA256="$(sha256sum uv.lock | awk '{print $1}')"
+          test "$ACTUAL_LOCK_SHA256" = "$EXPECTED_LOCK_SHA256"
+          echo "LOCK_SHA256_MATCH=TRUE"
 
-      - name: Upload lock candidate only
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: centinela-uv-lock-candidate-${{ github.event.pull_request.head.sha }}
-          path: |
-            uv.lock
-            uv.lock.sha256
-          retention-days: 1
-          if-no-files-found: error
+      - name: Commit verified uv.lock only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add uv.lock
+          if git diff --cached --quiet -- uv.lock; then
+            echo "LOCK_COMMIT_REQUIRED=FALSE"
+            exit 0
+          fi
+          test "$(git diff --cached --name-only | wc -l)" -eq 1
+          test "$(git diff --cached --name-only)" = "uv.lock"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: refresh uv.lock for security floors"
+          git push origin "HEAD:${{ github.head_ref }}"
+          echo "LOCK_COMMIT_REQUIRED=TRUE"
