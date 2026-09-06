@@ -1,0 +1,96 @@
+name: Centinela A1 Security Lock Refresh
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-a1-dependency-vulnerability-gate-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-and-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Resolve constrained lock deterministically
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv --version
+          uv lock
+          uv lock --check
+
+      - name: Validate baseline security floors
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --no-default-groups
+          python - <<'PY'
+          from importlib.metadata import version
+          from packaging.version import Version
+
+          floors = {
+              "click": "8.3.3",
+              "cryptography": "50.0.0",
+              "GitPython": "3.1.59",
+              "pillow": "12.3.0",
+              "setuptools": "83.0.0",
+              "starlette": "1.3.1",
+          }
+          for package, minimum in floors.items():
+              installed = version(package)
+              print(f"A1_SECURITY_FLOOR={package}=={installed} (minimum {minimum})")
+              if Version(installed) < Version(minimum):
+                  raise SystemExit(f"{package} resolved below security floor")
+          PY
+
+      - name: Audit zero-cost baseline only
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv --preview-features audit-command audit \
+            --no-default-groups \
+            --no-extra litellm \
+            --no-extra twelvelabs
+
+      - name: Audit LiteLLM optional profile separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv --preview-features audit-command audit \
+            --no-default-groups \
+            --extra litellm \
+            --no-extra twelvelabs
+
+      - name: Commit validated uv.lock only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- uv.lock; then
+            echo "A1_LOCK_CHANGED=FALSE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock
+          git diff --cached --name-only
+          test "$(git diff --cached --name-only)" = "uv.lock"
+          git commit -m "lock: apply A1 security dependency floors"
+          git push origin HEAD:centinela-engineering/c05-a1-dependency-vulnerability-gate-v0.1
