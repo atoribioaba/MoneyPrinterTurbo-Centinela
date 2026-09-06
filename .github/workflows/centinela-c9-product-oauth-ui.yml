@@ -1,0 +1,149 @@
+name: Centinela C9 Product Desktop OAuth UI
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c9-product-desktop-oauth-ui-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C9 branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Replace pasted-token UI with Desktop OAuth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("webui/product/publication.py")
+          text = path.read_text(encoding="utf-8")
+
+          old_imports = '''from app.services.centinela.manual_publication import (\n    ManualPublicationPlatform,\n    publish_verified_package,\n)\nfrom app.services.centinela.orchestration import ProjectState\nfrom app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE\nfrom app.services.error_control import CentinelaError\n'''
+          new_imports = '''from app.services.centinela.manual_publication import (\n    ManualPublicationPlatform,\n    publish_verified_package,\n    verify_publication_package,\n)\nfrom app.services.centinela.orchestration import ProjectState\nfrom app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE\nfrom app.services.error_control import CentinelaError, ErrorCategory, boundary_error\nfrom app.services.social_oauth import OAuthPlatform\nfrom app.services.social_oauth_desktop import (\n    DESKTOP_OAUTH_ENABLED_ENV,\n    TIKTOK_CLIENT_KEY_ENV,\n    TIKTOK_CLIENT_SECRET_ENV,\n    YOUTUBE_CLIENT_ID_ENV,\n    YOUTUBE_CLIENT_SECRET_ENV,\n    authorize_desktop,\n    oauth_runtime_status,\n)\n'''
+          if old_imports in text:
+              text = text.replace(old_imports, new_imports, 1)
+          elif "from app.services.social_oauth_desktop import (" not in text:
+              raise SystemExit("C9 import anchor not found")
+
+          old_options = '''_MANUAL_DELIVERY_OPTIONS = {\n    "YouTube · subir como privado": ManualPublicationPlatform.YOUTUBE,\n    "TikTok · enviar a bandeja": ManualPublicationPlatform.TIKTOK,\n}\n'''
+          new_options = '''_MANUAL_DELIVERY_OPTIONS = {\n    "YouTube · subir como privado": (\n        ManualPublicationPlatform.YOUTUBE,\n        OAuthPlatform.YOUTUBE,\n    ),\n    "TikTok · enviar a bandeja": (\n        ManualPublicationPlatform.TIKTOK,\n        OAuthPlatform.TIKTOK,\n    ),\n}\n'''
+          if old_options in text:
+              text = text.replace(old_options, new_options, 1)
+          elif "OAuthPlatform.YOUTUBE" not in text:
+              raise SystemExit("C9 option anchor not found")
+
+          helper_anchor = '''def _render_manual_delivery_action(service, project_id: str) -> None:\n'''
+          oauth_helper = '''def _authorize_and_execute_manual_delivery(\n    service,\n    project_id: str,\n    platform: ManualPublicationPlatform,\n    oauth_platform: OAuthPlatform,\n    *,\n    approved: bool,\n    oauth_authorize=authorize_desktop,\n):\n    """Authenticate in browser and immediately delegate one approved action to C6."""\n    if not approved:\n        raise boundary_error(\n            code="human_approval_required",\n            category=ErrorCategory.VALIDATION,\n            message="La publicación requiere confirmación humana explícita antes de OAuth.",\n            operation="product.publication.desktop_oauth",\n            component=platform.value,\n        )\n\n    # Reject stale/tampered packages before opening a vendor login. C6 intentionally\n    # repeats this verification after OAuth, immediately before the network upload.\n    verify_publication_package(service.store, project_id)\n    oauth_result = oauth_authorize(oauth_platform)\n    access_token = oauth_result.token.access_token\n    try:\n        return _execute_manual_delivery(\n            service,\n            project_id,\n            platform,\n            access_token=access_token,\n            approved=True,\n        )\n    finally:\n        # Python strings cannot be zeroized reliably. Drop the local reference as\n        # soon as C6 returns; no token is copied into config/project/session state.\n        access_token = ""\n        oauth_result = None\n\n\n'''
+          if helper_anchor in text and "def _authorize_and_execute_manual_delivery" not in text:
+              text = text.replace(helper_anchor, oauth_helper + helper_anchor, 1)
+          elif "def _authorize_and_execute_manual_delivery" not in text:
+              raise SystemExit("C9 manual-delivery helper anchor not found")
+
+          start = text.index("def _render_manual_delivery_action(service, project_id: str) -> None:\n")
+          end = text.index("\n\ndef _render_ready_package(service, project_id: str) -> None:\n", start)
+          replacement = '''def _render_manual_delivery_action(service, project_id: str) -> None:\n    ui.render_section_heading(\n        "Envío manual verificado",\n        (\n            "Después del paquete aprobado puedes iniciar una única acción de envío. "\n            "El navegador autentica la plataforma y C6 revalida el paquete justo antes de subirlo."\n        ),\n        eyebrow="ACCIÓN HUMANA",\n    )\n\n    runtime = oauth_runtime_status()\n    if not runtime["gate_valid"]:\n        st.error(f"{DESKTOP_OAUTH_ENABLED_ENV} contiene un valor no válido.")\n    elif not runtime["enabled"]:\n        st.warning(\n            "OAuth Desktop está desactivado. No hay fallback de pegado manual de tokens."\n        )\n    else:\n        st.info(\n            "**Nada se envía al abrir esta pantalla.** La autenticación se realiza en el "\n            "navegador del sistema y los tokens solo viven en memoria durante esta acción."\n        )\n\n    with st.expander("Configuración local de OAuth", expanded=False):\n        st.caption(\n            "Define estas variables en el proceso local. No introduzcas sus valores en el proyecto."\n        )\n        st.code(DESKTOP_OAUTH_ENABLED_ENV, language=None)\n        st.code(YOUTUBE_CLIENT_ID_ENV, language=None)\n        st.caption(f"Opcional para Google Desktop: {YOUTUBE_CLIENT_SECRET_ENV}")\n        st.code(TIKTOK_CLIENT_KEY_ENV, language=None)\n        st.code(TIKTOK_CLIENT_SECRET_ENV, language=None)\n        st.caption(\n            "Refresh tokens: no se guardan. La persistencia segura queda pendiente de certificar "\n            "con Windows Credential Manager/DPAPI en el PC físico."\n        )\n\n    st.caption(\n        "Instagram sigue bloqueado: requiere hosting HTTPS verificable del mismo vídeo aprobado."\n    )\n\n    with st.form(\n        f"centinela-manual-publication-{project_id}",\n        clear_on_submit=True,\n        enter_to_submit=False,\n    ):\n        delivery_label = st.selectbox(\n            "Destino",\n            options=tuple(_MANUAL_DELIVERY_OPTIONS),\n            help=(\n                "YouTube se inicia como privado. TikTok se envía a su bandeja "\n                "para completar allí la publicación."\n            ),\n        )\n        approved = st.checkbox(\n            "Confirmo que he revisado este paquete y autorizo únicamente este envío manual.",\n            value=False,\n        )\n        platform, oauth_platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]\n        configured = (\n            runtime["youtube_configured"]\n            if oauth_platform == OAuthPlatform.YOUTUBE\n            else runtime["tiktok_configured"]\n        )\n        submitted = st.form_submit_button(\n            "Conectar plataforma y ejecutar envío manual",\n            type="primary",\n            width="stretch",\n            disabled=not configured,\n        )\n\n    if not configured:\n        st.caption(\n            "Este destino está bloqueado hasta que sus credenciales OAuth de aplicación "\n            "estén configuradas en el proceso local."\n        )\n    if not submitted:\n        return\n    if not approved:\n        st.error("Marca la confirmación explícita antes de autenticar y ejecutar este envío.")\n        return\n\n    try:\n        with st.spinner(\n            "Abriendo OAuth, esperando el callback local y revalidando el paquete…",\n            show_time=True,\n        ):\n            result = _authorize_and_execute_manual_delivery(\n                service,\n                project_id,\n                platform,\n                oauth_platform,\n                approved=approved,\n            )\n    except CentinelaError as exc:\n        ui.render_error_state(\n            exc.safe_message,\n            action=(\n                "No hay reintento automático ni fallback de token pegado. "\n                "Revisa la configuración y vuelve a autorizar una acción nueva."\n            ),\n            technical_detail=f"{exc.code} · {exc.category.value}",\n        )\n        return\n    except Exception as exc:\n        LOGGER.exception("Desktop OAuth manual publication UI action failed")\n        ui.render_error_state(\n            "La autenticación o el envío manual no pudo completarse.",\n            action="Nada se reintenta automáticamente. Verifica el entorno antes de otra autorización.",\n            technical_detail=type(exc).__name__,\n        )\n        return\n\n    if platform == ManualPublicationPlatform.YOUTUBE:\n        st.success(\n            "Vídeo subido a YouTube como privado. Revísalo en YouTube Studio antes de cambiar su visibilidad."\n        )\n    else:\n        st.success(\n            "Vídeo enviado a la bandeja de TikTok. Completa allí la publicación cuando decidas."\n        )\n\n    with st.expander("Resultado del envío", expanded=False):\n        st.write(f"Estado remoto: {getattr(result, 'status', '—') or '—'}")\n        remote_id = str(getattr(result, "remote_id", "") or "").strip()\n        if remote_id:\n            st.code(remote_id, language=None)\n        if getattr(result, "requires_user_action", False):\n            st.caption("La plataforma requiere una acción humana posterior.")\n'''
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+          tests = Path("test/services/test_product_manual_publication_ui.py")
+          test_text = tests.read_text(encoding="utf-8")
+          test_text = test_text.replace(
+              "    assert 'type=\"password\"' in source\n",
+              "    assert 'type=\"password\"' not in source\n"
+              "    assert \"authorize_desktop\" in source\n"
+              "    assert '\"Conectar plataforma y ejecutar envío manual\"' in source\n"
+              "    assert \"No hay fallback de pegado manual de tokens\" in source\n"
+              "    assert \"st.session_state\" not in source\n",
+              1,
+          )
+          test_text = test_text.replace(
+              '    assert \'"Ejecutar envío manual"\' in source\n',
+              "",
+              1,
+          )
+          tests.write_text(test_text, encoding="utf-8")
+          PY
+      - name: Validate C9 Product OAuth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --python 3.11
+          uv run --no-sync pytest -q \
+            test/services/test_social_oauth.py \
+            test/services/test_social_oauth_desktop.py \
+            test/services/test_product_manual_publication_ui.py \
+            test/services/test_manual_publication.py \
+            test/services/test_social_publication.py \
+            test/services/test_product_ui_v3_reference.py \
+            test/services/test_product_ui_v3_mobile_acceptance_patch.py
+          uv run --no-sync ruff check \
+            app/services/social_oauth_desktop.py \
+            test/services/test_social_oauth_desktop.py \
+            webui/product/publication.py \
+            test/services/test_product_manual_publication_ui.py
+          uv run --no-sync python -m py_compile \
+            app/services/social_oauth_desktop.py \
+            webui/product/publication.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("webui/product/publication.py").read_text(encoding="utf-8")
+          required = (
+              "authorize_desktop",
+              "verify_publication_package(service.store, project_id)",
+              "clear_on_submit=True",
+              "enter_to_submit=False",
+              "disabled=not configured",
+              "Conectar plataforma y ejecutar envío manual",
+          )
+          missing = [value for value in required if value not in source]
+          if missing:
+              raise SystemExit(f"C9 Product OAuth contract missing: {missing}")
+          forbidden = (
+              'type="password"',
+              "st.session_state",
+              "Publicar ahora",
+              "config.toml",
+          )
+          present = [value for value in forbidden if value in source]
+          if present:
+              raise SystemExit(f"C9 forbidden persistence/token fallback markers: {present}")
+          PY
+      - name: Commit only C9 Product UI changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- webui/product/publication.py test/services/test_product_manual_publication_ui.py; then
+            echo "C9_UI_CHANGED=FALSE"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add webui/product/publication.py test/services/test_product_manual_publication_ui.py
+          mapfile -t files < <(git diff --cached --name-only)
+          test "${#files[@]}" -le 2
+          for file in "${files[@]}"; do
+            case "$file" in
+              webui/product/publication.py|test/services/test_product_manual_publication_ui.py) ;;
+              *) echo "unexpected staged file: $file" >&2; exit 1 ;;
+            esac
+          done
+          git commit -m "auth: connect Product publication flow to Desktop OAuth"
+          git push origin HEAD:centinela-engineering/c05-c9-product-desktop-oauth-ui-v0.1
