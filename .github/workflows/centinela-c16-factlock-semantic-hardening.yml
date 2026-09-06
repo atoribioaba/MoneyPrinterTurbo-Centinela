@@ -18,15 +18,18 @@ jobs:
         with:
           persist-credentials: true
           fetch-depth: 1
+
       - name: Set up Python 3.11
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
+
       - name: Install uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
           version: "0.12.10"
           enable-cache: false
+
       - name: Patch FactLock semantic integrity
         shell: python
         run: |
@@ -43,7 +46,11 @@ jobs:
           addition = '''\n\n_CONTEXT_HASH_RE = re.compile(r"^[0-9A-F]{64}$")\n\n\ndef compute_fact_lock_context_hash(\n    facts: list[GroundingFact],\n    source_ids: list[str],\n) -> str:\n    """Return the canonical semantic SHA-256 for a FactLock payload."""\n    canonical_source_ids = sorted(\n        {item.strip() for item in source_ids if item.strip()}\n    )\n    payload = {\n        "facts": [item.model_dump(mode="json") for item in facts],\n        "source_ids": canonical_source_ids,\n    }\n    raw = json.dumps(\n        payload,\n        ensure_ascii=False,\n        sort_keys=True,\n        separators=(",", ":"),\n    ).encode("utf-8")\n    return hashlib.sha256(raw).hexdigest().upper()\n'''
           if marker not in text:
               raise SystemExit("models marker missing")
-          text = text.replace(marker, ")" + addition + "\n\nclass StrictWriterModel(BaseModel):\n", 1)
+          text = text.replace(
+              marker,
+              ")" + addition + "\n\nclass StrictWriterModel(BaseModel):\n",
+              1,
+          )
 
           old = '''    @field_validator("source_ids")\n    @classmethod\n    def unique_source_ids(cls, value: list[str]) -> list[str]:\n        result: list[str] = []\n        seen: set[str] = set()\n        for item in value:\n            item = item.strip()\n            if item and item not in seen:\n                seen.add(item)\n                result.append(item)\n        return result\n'''
           new = '''    @field_validator("source_ids")\n    @classmethod\n    def canonical_source_ids(cls, value: list[str]) -> list[str]:\n        return sorted({item.strip() for item in value if item.strip()})\n\n    @model_validator(mode="after")\n    def validate_semantic_integrity(self):\n        fact_ids = [fact.fact_id.strip() for fact in self.facts]\n        if len(fact_ids) != len(set(fact_ids)):\n            raise ValueError("FactLock fact_id values must be unique")\n\n        expected_source_ids = sorted(\n            {\n                source_id.strip()\n                for fact in self.facts\n                for source_id in fact.source_ids\n                if source_id.strip()\n            }\n        )\n        if self.source_ids != expected_source_ids:\n            raise ValueError(\n                "FactLock source_ids must equal the canonical union of fact source_ids"\n            )\n\n        reference_ids = [source.source_id.strip() for source in self.sources]\n        if len(reference_ids) != len(set(reference_ids)):\n            raise ValueError("FactLock SourceReference source_id values must be unique")\n        missing = sorted(set(self.source_ids) - set(reference_ids))\n        if missing:\n            raise ValueError(\n                "FactLock source_ids missing SourceReference entries: "\n                + ", ".join(missing)\n            )\n\n        if not _CONTEXT_HASH_RE.fullmatch(self.context_hash):\n            raise ValueError("FactLock context_hash must be uppercase SHA-256 hex")\n        expected_hash = compute_fact_lock_context_hash(\n            self.facts,\n            self.source_ids,\n        )\n        if self.context_hash != expected_hash:\n            raise ValueError(\n                "FactLock context_hash does not match facts/source_ids"\n            )\n        return self\n'''
@@ -53,28 +60,31 @@ jobs:
 
           init = Path("app/services/centinela/writer_room/__init__.py")
           text = init.read_text(encoding="utf-8")
-          text = text.replace(
-              "    WriterRoomRequest,\n)",
-              "    WriterRoomRequest,\n    compute_fact_lock_context_hash,\n)",
-              1,
-          )
-          text = text.replace(
-              '    "build_fact_lock_stage_binding",\n',
-              '    "build_fact_lock_stage_binding",\n    "compute_fact_lock_context_hash",\n',
-              1,
-          )
+          if "compute_fact_lock_context_hash" not in text:
+              text = text.replace(
+                  "    WriterRoomRequest,\n)",
+                  "    WriterRoomRequest,\n    compute_fact_lock_context_hash,\n)",
+                  1,
+              )
+              text = text.replace(
+                  '    "build_fact_lock_stage_binding",\n',
+                  '    "build_fact_lock_stage_binding",\n'
+                  '    "compute_fact_lock_context_hash",\n',
+                  1,
+              )
           init.write_text(text, encoding="utf-8")
 
-          def patch_fixture(path_str, *, sourceful: bool):
+          def ensure_writer_helper_import(path_str: str) -> None:
               path = Path(path_str)
               src = path.read_text(encoding="utf-8")
               if "compute_fact_lock_context_hash" not in src:
-                  src = src.replace(
-                      "    WriterRoomRequest,\n)",
-                      "    WriterRoomRequest,\n    compute_fact_lock_context_hash,\n)",
-                      1,
-                  )
-                  if "WriterRoomRequest" not in src:
+                  if "    FactLock,\n" in src:
+                      src = src.replace(
+                          "    FactLock,\n",
+                          "    FactLock,\n    compute_fact_lock_context_hash,\n",
+                          1,
+                      )
+                  elif "from app.services.centinela.writer_room import FactLock\n" in src:
                       src = src.replace(
                           "from app.services.centinela.writer_room import FactLock\n",
                           "from app.services.centinela.writer_room import (\n"
@@ -83,7 +93,14 @@ jobs:
                           ")\n",
                           1,
                       )
-              if sourceful and "SourceReference" not in src:
+                  else:
+                      raise SystemExit(f"writer helper import anchor missing: {path_str}")
+              path.write_text(src, encoding="utf-8")
+
+          def ensure_source_reference_import(path_str: str) -> None:
+              path = Path(path_str)
+              src = path.read_text(encoding="utf-8")
+              if "SourceReference" not in src:
                   src = src.replace(
                       "from app.models.astronomy import ScientificStatus\n",
                       "from app.models.astronomy import ScientificStatus, SourceReference\n",
@@ -91,10 +108,17 @@ jobs:
                   )
               path.write_text(src, encoding="utf-8")
 
-          patch_fixture("test/services/test_writer_room.py", sourceful=False)
-          patch_fixture("test/services/test_writer_room_adversarial_regression.py", sourceful=True)
-          patch_fixture("test/services/test_factlock_writer_room_adversarial.py", sourceful=True)
-          patch_fixture("test/services/test_factlock_scientific_visuals.py", sourceful=True)
+          writer_tests = [
+              "test/services/test_writer_room.py",
+              "test/services/test_writer_room_adversarial_regression.py",
+              "test/services/test_factlock_writer_room_adversarial.py",
+              "test/services/test_factlock_scientific_visuals.py",
+              "test/services/test_scene_grounding_cloud.py",
+          ]
+          for path_str in writer_tests:
+              ensure_writer_helper_import(path_str)
+          for path_str in writer_tests[1:]:
+              ensure_source_reference_import(path_str)
 
           path = Path("test/services/test_writer_room.py")
           src = path.read_text(encoding="utf-8")
@@ -104,41 +128,82 @@ jobs:
               raise SystemExit("writer_room fixture anchor missing")
           path.write_text(src.replace(old, new, 1), encoding="utf-8")
 
-          source_expr = '''SourceReference(\n                source_id="source:test",\n                title="FactLock test source",\n                provider="TEST",\n                url="https://example.invalid/factlock",\n                license="TEST",\n                classification="PRIMARY_TEST_SOURCE",\n                role="scientific_fixture",\n                scientific_status=ScientificStatus.HECHO_VERIFICADO,\n            )'''
+          def source_expr(source_id: str) -> str:
+              return f'''SourceReference(\n                source_id="{source_id}",\n                title="FactLock test source",\n                provider="TEST",\n                url="https://example.invalid/factlock",\n                license="TEST",\n                classification="PRIMARY_TEST_SOURCE",\n                role="scientific_fixture",\n                scientific_status=ScientificStatus.HECHO_VERIFICADO,\n            )'''
 
-          for path_str, hash_literal in [
-              ("test/services/test_writer_room_adversarial_regression.py", '"B" * 64'),
-              ("test/services/test_factlock_writer_room_adversarial.py", '"A" * 64'),
-              ("test/services/test_factlock_scientific_visuals.py", '"F" * 64'),
+          for path_str, hash_literal, source_id in [
+              (
+                  "test/services/test_writer_room_adversarial_regression.py",
+                  '"B" * 64',
+                  "source:test",
+              ),
+              (
+                  "test/services/test_factlock_writer_room_adversarial.py",
+                  '"A" * 64',
+                  "source:test",
+              ),
+              (
+                  "test/services/test_factlock_scientific_visuals.py",
+                  '"F" * 64',
+                  "source:test",
+              ),
+              (
+                  "test/services/test_scene_grounding_cloud.py",
+                  '"D" * 64',
+                  "source:fixture",
+              ),
           ]:
               path = Path(path_str)
               src = path.read_text(encoding="utf-8")
-              func_start = src.index("def _fact_lock() -> FactLock:") if "def _fact_lock() -> FactLock:" in src else src.index("def _fact_lock(\n")
+              func_start = (
+                  src.index("def _fact_lock() -> FactLock:")
+                  if "def _fact_lock() -> FactLock:" in src
+                  else src.index("def _fact_lock(\n")
+              )
               return_idx = src.index("    return FactLock(\n", func_start)
               facts_start = src.index("        facts=[\n", return_idx)
               facts_end = src.index("        ],\n        sources=", facts_start)
-              facts_block = src[facts_start + len("        facts="):facts_end + len("        ]")]
+              facts_block = src[
+                  facts_start + len("        facts=") : facts_end + len("        ]")
+              ]
               prefix = src[:return_idx]
               suffix = src[return_idx:]
-              suffix = suffix.replace("        facts=" + facts_block, "        facts=facts", 1)
+              suffix = suffix.replace(
+                  "        facts=" + facts_block,
+                  "        facts=facts",
+                  1,
+              )
               suffix = suffix.replace(
                   "        context_hash=" + hash_literal + ",",
-                  "        context_hash=compute_fact_lock_context_hash(facts, [\"source:test\"]),",
+                  "        context_hash=compute_fact_lock_context_hash("
+                  f"facts, [\"{source_id}\"]),",
                   1,
               )
               suffix = suffix.replace(
                   "        sources=[],",
-                  "        sources=[\n            " + source_expr + "\n        ],",
+                  "        sources=[\n            "
+                  + source_expr(source_id)
+                  + "\n        ],",
                   1,
               )
               src = prefix + "    facts = " + facts_block + "\n" + suffix
+              if path_str.endswith("test_scene_grounding_cloud.py"):
+                  src = src.replace(
+                      '        fact_lock_hash="D" * 64,',
+                      "        fact_lock_hash=_fact_lock().context_hash,",
+                      1,
+                  )
               path.write_text(src, encoding="utf-8")
 
           test = Path("test/services/test_factlock_semantic_integrity_c16.py")
-          test.write_text('''from __future__ import annotations\n\nfrom datetime import datetime, timezone\n\nimport pytest\nfrom pydantic import ValidationError\n\nfrom app.models.astronomy import ScientificStatus, SourceReference\nfrom app.models.astronomy_director import GroundingFact\nfrom app.services.centinela.writer_room import (\n    FactLock,\n    compute_fact_lock_context_hash,\n)\n\n\ndef _source(source_id: str = "source:test") -> SourceReference:\n    return SourceReference(\n        source_id=source_id,\n        title="FactLock semantic integrity fixture",\n        provider="TEST",\n        url="https://example.invalid/factlock",\n        license="TEST",\n        classification="PRIMARY_TEST_SOURCE",\n        role="scientific_fixture",\n        scientific_status=ScientificStatus.HECHO_VERIFICADO,\n    )\n\n\ndef _fact(source_id: str = "source:test", value: float = 42.0) -> GroundingFact:\n    return GroundingFact(\n        fact_id="moon:distance_km",\n        label_es="Distancia lunar",\n        value=value,\n        unit="km",\n        scientific_status=ScientificStatus.HECHO_VERIFICADO,\n        source_ids=[source_id],\n    )\n\n\ndef _payload():\n    facts = [_fact()]\n    source_ids = ["source:test"]\n    return {\n        "subject": "La Luna",\n        "research_mode": "GENERIC_GEOCENTRIC",\n        "context_hash": compute_fact_lock_context_hash(facts, source_ids),\n        "facts": facts,\n        "sources": [_source()],\n        "source_ids": source_ids,\n        "scope_note": "C16 semantic-integrity fixture.",\n        "location_assumed": False,\n        "moment_basis": "fixture",\n        "primary_source_verification_required_for_publication": True,\n        "generated_at_utc": datetime.now(timezone.utc),\n    }\n\n\ndef test_factlock_accepts_canonical_semantic_hash():\n    lock = FactLock(**_payload())\n    assert lock.context_hash == compute_fact_lock_context_hash(\n        lock.facts, lock.source_ids\n    )\n\n\ndef test_factlock_rejects_well_formed_but_forged_hash():\n    payload = _payload()\n    payload["context_hash"] = "A" * 64\n    with pytest.raises(ValidationError, match="does not match facts/source_ids"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_fact_mutation_after_hash_was_computed():\n    payload = _payload()\n    payload["facts"] = [_fact(value=43.0)]\n    with pytest.raises(ValidationError, match="does not match facts/source_ids"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_missing_or_extra_source_ids():\n    for source_ids in ([], ["source:test", "source:extra"]):\n        payload = _payload()\n        payload["source_ids"] = source_ids\n        with pytest.raises(ValidationError, match="canonical union"):\n            FactLock(**payload)\n\n\ndef test_factlock_rejects_missing_source_reference():\n    payload = _payload()\n    payload["sources"] = []\n    with pytest.raises(ValidationError, match="missing SourceReference"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_duplicate_fact_ids():\n    payload = _payload()\n    duplicate = _fact(value=43.0)\n    payload["facts"] = [payload["facts"][0], duplicate]\n    payload["context_hash"] = compute_fact_lock_context_hash(\n        payload["facts"], payload["source_ids"]\n    )\n    with pytest.raises(ValidationError, match="fact_id values must be unique"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_lowercase_hash_even_if_semantically_equal():\n    payload = _payload()\n    payload["context_hash"] = payload["context_hash"].lower()\n    with pytest.raises(ValidationError, match="uppercase SHA-256"):\n        FactLock(**payload)\n\n\ndef test_hash_canonicalizes_source_id_order_and_duplicates():\n    facts = [_fact()]\n    assert compute_fact_lock_context_hash(\n        facts, ["source:test", "source:test"]\n    ) == compute_fact_lock_context_hash(facts, ["source:test"])\n''', encoding="utf-8")
+          test.write_text(
+              '''from __future__ import annotations\n\nfrom datetime import datetime, timezone\n\nimport pytest\nfrom pydantic import ValidationError\n\nfrom app.models.astronomy import ScientificStatus, SourceReference\nfrom app.models.astronomy_director import GroundingFact\nfrom app.services.centinela.writer_room import (\n    FactLock,\n    compute_fact_lock_context_hash,\n)\n\n\ndef _source(source_id: str = "source:test") -> SourceReference:\n    return SourceReference(\n        source_id=source_id,\n        title="FactLock semantic integrity fixture",\n        provider="TEST",\n        url="https://example.invalid/factlock",\n        license="TEST",\n        classification="PRIMARY_TEST_SOURCE",\n        role="scientific_fixture",\n        scientific_status=ScientificStatus.HECHO_VERIFICADO,\n    )\n\n\ndef _fact(source_id: str = "source:test", value: float = 42.0) -> GroundingFact:\n    return GroundingFact(\n        fact_id="moon:distance_km",\n        label_es="Distancia lunar",\n        value=value,\n        unit="km",\n        scientific_status=ScientificStatus.HECHO_VERIFICADO,\n        source_ids=[source_id],\n    )\n\n\ndef _payload():\n    facts = [_fact()]\n    source_ids = ["source:test"]\n    return {\n        "subject": "La Luna",\n        "research_mode": "GENERIC_GEOCENTRIC",\n        "context_hash": compute_fact_lock_context_hash(facts, source_ids),\n        "facts": facts,\n        "sources": [_source()],\n        "source_ids": source_ids,\n        "scope_note": "C16 semantic-integrity fixture.",\n        "location_assumed": False,\n        "moment_basis": "fixture",\n        "primary_source_verification_required_for_publication": True,\n        "generated_at_utc": datetime.now(timezone.utc),\n    }\n\n\ndef test_factlock_accepts_canonical_semantic_hash():\n    lock = FactLock(**_payload())\n    assert lock.context_hash == compute_fact_lock_context_hash(\n        lock.facts, lock.source_ids\n    )\n\n\ndef test_factlock_rejects_well_formed_but_forged_hash():\n    payload = _payload()\n    payload["context_hash"] = "A" * 64\n    with pytest.raises(ValidationError, match="does not match facts/source_ids"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_fact_mutation_after_hash_was_computed():\n    payload = _payload()\n    payload["facts"] = [_fact(value=43.0)]\n    with pytest.raises(ValidationError, match="does not match facts/source_ids"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_missing_or_extra_source_ids():\n    for source_ids in ([], ["source:test", "source:extra"]):\n        payload = _payload()\n        payload["source_ids"] = source_ids\n        with pytest.raises(ValidationError, match="canonical union"):\n            FactLock(**payload)\n\n\ndef test_factlock_rejects_missing_source_reference():\n    payload = _payload()\n    payload["sources"] = []\n    with pytest.raises(ValidationError, match="missing SourceReference"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_duplicate_fact_ids():\n    payload = _payload()\n    duplicate = _fact(value=43.0)\n    payload["facts"] = [payload["facts"][0], duplicate]\n    payload["context_hash"] = compute_fact_lock_context_hash(\n        payload["facts"], payload["source_ids"]\n    )\n    with pytest.raises(ValidationError, match="fact_id values must be unique"):\n        FactLock(**payload)\n\n\ndef test_factlock_rejects_lowercase_hash_even_if_semantically_equal():\n    payload = _payload()\n    payload["context_hash"] = payload["context_hash"].lower()\n    with pytest.raises(ValidationError, match="uppercase SHA-256"):\n        FactLock(**payload)\n\n\ndef test_hash_canonicalizes_source_id_order_and_duplicates():\n    facts = [_fact()]\n    assert compute_fact_lock_context_hash(\n        facts, ["source:test", "source:test"]\n    ) == compute_fact_lock_context_hash(facts, ["source:test"])\n''',
+              encoding="utf-8",
+          )
 
       - name: Install dependencies
         run: uv sync --frozen --python 3.11
+
       - name: Focused FactLock and Writer Room regression
         run: >-
           uv run --no-sync pytest -q
@@ -147,10 +212,28 @@ jobs:
           test/services/test_writer_room_adversarial_regression.py
           test/services/test_factlock_scientific_visuals.py
           test/services/test_writer_room.py
+          test/services/test_scene_grounding_cloud.py
+
+      - name: Diagnostic scan for stale synthetic FactLock hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git grep -n -E 'context_hash="[A-F]" \* 64' -- test/services || true
+
       - name: Ruff and compile
         run: |
-          uv run --no-sync ruff check app/services/centinela/writer_room test/services/test_factlock_semantic_integrity_c16.py test/services/test_factlock_writer_room_adversarial.py test/services/test_writer_room_adversarial_regression.py test/services/test_factlock_scientific_visuals.py test/services/test_writer_room.py
-          uv run --no-sync python -m compileall app/services/centinela/writer_room test/services/test_factlock_semantic_integrity_c16.py
+          uv run --no-sync ruff check \
+            app/services/centinela/writer_room \
+            test/services/test_factlock_semantic_integrity_c16.py \
+            test/services/test_factlock_writer_room_adversarial.py \
+            test/services/test_writer_room_adversarial_regression.py \
+            test/services/test_factlock_scientific_visuals.py \
+            test/services/test_writer_room.py \
+            test/services/test_scene_grounding_cloud.py
+          uv run --no-sync python -m compileall \
+            app/services/centinela/writer_room \
+            test/services/test_factlock_semantic_integrity_c16.py
+
       - name: Commit only C16 functional changes
         shell: bash
         run: |
@@ -164,9 +247,10 @@ jobs:
             test/services/test_factlock_writer_room_adversarial.py \
             test/services/test_writer_room_adversarial_regression.py \
             test/services/test_factlock_scientific_visuals.py \
-            test/services/test_writer_room.py
+            test/services/test_writer_room.py \
+            test/services/test_scene_grounding_cloud.py
           git diff --cached --quiet && exit 0
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(app/services/centinela/writer_room/(models|__init__)\.py|test/services/test_(factlock_semantic_integrity_c16|factlock_writer_room_adversarial|writer_room_adversarial_regression|factlock_scientific_visuals|writer_room)\.py)$' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(app/services/centinela/writer_room/(models|__init__)\.py|test/services/test_(factlock_semantic_integrity_c16|factlock_writer_room_adversarial|writer_room_adversarial_regression|factlock_scientific_visuals|writer_room|scene_grounding_cloud)\.py)$' || true)"
           test -z "$unexpected"
           git commit -m "hardening: make FactLock semantically self-verifying"
           git push
