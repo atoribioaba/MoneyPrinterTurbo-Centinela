@@ -1353,128 +1353,11 @@ class TestTaskService(unittest.TestCase):
             "RuntimeError: provider connection reset",
         )
 
-    def test_start_generates_youtube_metadata_for_each_cross_post(self):
-        """
-        自动发布到 YouTube 时只生成一次元数据，但要把同一份字段传给每个
-        成片，并在任务结果中保留每次上传成功或失败的独立结果。
-        """
-        params = VideoParams(
-            video_subject="Coffee",
-            video_language="en",
-        )
-        metadata = {
-            "title": "Morning Coffee",
-            "caption": "A better morning.",
-            "hashtags": ["coffee", "shorts"],
-        }
+    def test_start_never_schedules_legacy_cross_post_even_if_flags_true(self):
+        """Generation must stay publication-neutral even if legacy flags regress."""
+        params = VideoParams(video_subject="Coffee", video_language="en")
         service = tm.upload_post.upload_post_service
         state = MemoryState()
-
-        def run_immediately(function, *args):
-            future = Future()
-            try:
-                function(*args)
-            except Exception as exc:
-                future.set_exception(exc)
-            else:
-                future.set_result(None)
-            return future
-
-        with (
-            patch.object(tm, "generate_script", return_value="generated script"),
-            patch.object(tm, "generate_terms", return_value=["coffee"]),
-            patch.object(tm, "save_script_data"),
-            patch.object(
-                tm,
-                "generate_audio",
-                return_value=("audio.mp3", 5, object()),
-            ),
-            patch.object(tm, "generate_subtitle", return_value="subtitle.srt"),
-            patch.object(
-                tm,
-                "get_video_materials",
-                return_value=["clip.mp4"],
-            ),
-            patch.object(
-                tm,
-                "generate_final_videos",
-                return_value=(
-                    ["final-1.mp4", "final-2.mp4"],
-                    ["combined-1.mp4", "combined-2.mp4"],
-                    [],
-                ),
-            ),
-            patch.object(service, "is_configured", return_value=True),
-            patch.object(service, "auto_upload", True),
-            patch.object(service, "platforms", ["youtube"]),
-            patch.object(service, "youtube_privacy_status", "unlisted"),
-            patch.object(
-                tm.llm,
-                "generate_social_metadata",
-                return_value=metadata,
-            ) as generate_metadata,
-            patch.object(
-                tm.upload_post,
-                "cross_post_video",
-                side_effect=[
-                    {"success": True},
-                    {"success": False, "error": "upload failed"},
-                ],
-            ) as cross_post,
-            patch.object(tm.sm, "state", state),
-            patch.object(
-                tm._cross_post_executor,
-                "submit",
-                side_effect=run_immediately,
-            ),
-        ):
-            result = tm.start("youtube-cross-post", params)
-
-        generate_metadata.assert_called_once_with(
-            video_subject="Coffee",
-            video_script="generated script",
-            language="en",
-            platform="youtube_shorts",
-        )
-        expected_extra = {
-            "youtube_title": "Morning Coffee",
-            "youtube_description": "A better morning.",
-            "tags": ["coffee", "shorts"],
-            "privacyStatus": "unlisted",
-            "containsSyntheticMedia": True,
-        }
-        self.assertEqual(cross_post.call_count, 2)
-        for call in cross_post.call_args_list:
-            self.assertEqual(call.kwargs["youtube_extra"], expected_extra)
-            self.assertEqual(call.kwargs["platforms"], ["youtube"])
-
-        # start() 返回的是视频完成时的稳定快照；后台发布结果通过任务查询获取。
-        self.assertEqual(result["cross_post_state"], tm.const.CROSS_POST_STATE_PENDING)
-        self.assertIsNone(result["cross_post_results"])
-        published_task = state.get_task("youtube-cross-post")
-        self.assertEqual(published_task["state"], tm.const.TASK_STATE_COMPLETE)
-        self.assertEqual(
-            published_task["cross_post_state"], tm.const.CROSS_POST_STATE_FAILED
-        )
-        self.assertEqual(
-            published_task["cross_post_results"],
-            [
-                {"success": True},
-                {"success": False, "error": "upload failed"},
-            ],
-        )
-        self.assertEqual(published_task["cross_post_error"], "upload failed")
-
-    def test_start_returns_before_cross_post_worker_runs(self):
-        """视频任务完成时只提交发布工作，不能在生成线程中同步上传。"""
-        params = VideoParams(video_subject="Coffee")
-        service = tm.upload_post.upload_post_service
-        state = MemoryState()
-        submitted = []
-
-        def capture_submission(function, *args):
-            submitted.append((function, args))
-            return MagicMock(spec=Future)
 
         with (
             patch.object(tm, "generate_script", return_value="generated script"),
@@ -1492,44 +1375,31 @@ class TestTaskService(unittest.TestCase):
                 "generate_final_videos",
                 return_value=(["final.mp4"], ["combined.mp4"], []),
             ),
-            patch.object(service, "is_configured", return_value=True),
+            patch.object(service, "is_configured", return_value=True) as configured,
             patch.object(service, "auto_upload", True),
-            patch.object(service, "platforms", ["tiktok"]),
-            patch.object(service, "youtube_privacy_status", "private"),
+            patch.object(service, "platforms", ["youtube"]),
+            patch.object(service, "youtube_privacy_status", "public"),
+            patch.object(tm.llm, "generate_social_metadata") as metadata,
             patch.object(tm.upload_post, "cross_post_video") as cross_post,
+            patch.object(tm, "_schedule_cross_post") as schedule_cross_post,
             patch.object(tm.sm, "state", state),
-            patch.object(
-                tm._cross_post_executor,
-                "submit",
-                side_effect=capture_submission,
-            ) as submit,
         ):
-            result = tm.start("deferred-cross-post", params)
+            result = tm.start("pipeline-publication-neutral", params)
 
-        submit.assert_called_once()
+        configured.assert_not_called()
+        metadata.assert_not_called()
         cross_post.assert_not_called()
+        schedule_cross_post.assert_not_called()
         self.assertEqual(result["videos"], ["final.mp4"])
-        self.assertEqual(result["cross_post_state"], tm.const.CROSS_POST_STATE_PENDING)
-        completed_task = state.get_task("deferred-cross-post")
-        self.assertEqual(completed_task["state"], tm.const.TASK_STATE_COMPLETE)
-        self.assertEqual(completed_task["progress"], 100)
+        self.assertIsNone(result["cross_post_state"])
+        self.assertIsNone(result["cross_post_results"])
+        self.assertIsNone(result["cross_post_error"])
+        self.assertIsNone(result["cross_post_owner"])
+        persisted = state.get_task("pipeline-publication-neutral")
+        self.assertEqual(persisted["state"], tm.const.TASK_STATE_COMPLETE)
+        self.assertEqual(persisted["progress"], 100)
+        self.assertIsNone(persisted["cross_post_state"])
 
-        worker, worker_args = submitted[0]
-        with (
-            patch.object(tm.sm, "state", state),
-            patch.object(
-                tm.upload_post,
-                "cross_post_video",
-                return_value={"success": True, "request_id": "upload-1"},
-            ),
-        ):
-            worker(*worker_args)
-
-        published_task = state.get_task("deferred-cross-post")
-        self.assertEqual(published_task["videos"], ["final.mp4"])
-        self.assertEqual(
-            published_task["cross_post_state"], tm.const.CROSS_POST_STATE_COMPLETE
-        )
 
     def test_cross_post_worker_failure_does_not_change_video_completion(self):
         """发布线程异常只能更新发布状态，不能破坏已完成的视频结果。"""
@@ -1568,49 +1438,6 @@ class TestTaskService(unittest.TestCase):
         self.assertEqual(task["cross_post_state"], tm.const.CROSS_POST_STATE_FAILED)
         self.assertIn("metadata provider unavailable", task["cross_post_error"])
 
-    def test_start_returns_cross_post_scheduling_failure(self):
-        """同步调度失败必须同时体现在任务状态和 start() 返回快照中。"""
-        params = VideoParams(video_subject="Coffee")
-        service = tm.upload_post.upload_post_service
-        state = MemoryState()
-
-        with (
-            patch.object(tm, "generate_script", return_value="generated script"),
-            patch.object(tm, "generate_terms", return_value=["coffee"]),
-            patch.object(tm, "save_script_data"),
-            patch.object(
-                tm,
-                "generate_audio",
-                return_value=("audio.mp3", 5, object()),
-            ),
-            patch.object(tm, "generate_subtitle", return_value="subtitle.srt"),
-            patch.object(tm, "get_video_materials", return_value=["clip.mp4"]),
-            patch.object(
-                tm,
-                "generate_final_videos",
-                return_value=(["final.mp4"], ["combined.mp4"], []),
-            ),
-            patch.object(service, "is_configured", return_value=True),
-            patch.object(service, "auto_upload", True),
-            patch.object(service, "platforms", ["tiktok"]),
-            patch.object(service, "youtube_privacy_status", "private"),
-            patch.object(tm.sm, "state", state),
-            patch.object(tm._cross_post_slots, "acquire", return_value=False),
-            patch.object(tm._cross_post_executor, "submit") as submit,
-        ):
-            result = tm.start("cross-post-queue-full-result", params)
-
-        submit.assert_not_called()
-        self.assertEqual(result["cross_post_state"], tm.const.CROSS_POST_STATE_FAILED)
-        self.assertIn("queue is full", result["cross_post_error"])
-        persisted_task = state.get_task("cross-post-queue-full-result")
-        self.assertEqual(
-            persisted_task["cross_post_state"], tm.const.CROSS_POST_STATE_FAILED
-        )
-        self.assertEqual(
-            persisted_task["cross_post_error"],
-            result["cross_post_error"],
-        )
 
     def test_cross_post_schedule_failure_is_recorded_separately(self):
         """线程池拒绝新任务时应保留成片，并提供可查询的发布错误。"""

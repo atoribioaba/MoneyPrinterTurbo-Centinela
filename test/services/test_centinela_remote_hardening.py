@@ -31,11 +31,21 @@ def test_legacy_config_cannot_enable_automatic_publication():
     assert service.auto_upload is False
 
 
-def test_task_pipeline_still_gates_cross_post_on_fail_closed_auto_upload():
+def test_task_pipeline_is_detached_from_legacy_publication_controls():
     source = (ROOT / "app" / "services" / "task.py").read_text(
         encoding="utf-8"
     )
-    assert "upload_post.upload_post_service.auto_upload" in source
+    pipeline = source[
+        source.index("def _run_pipeline(") : source.index(
+            "\ndef start(", source.index("def _run_pipeline(")
+        )
+    ]
+
+    assert "upload_post.upload_post_service.is_configured()" not in pipeline
+    assert "upload_post.upload_post_service.auto_upload" not in pipeline
+    assert "_schedule_cross_post(" not in pipeline
+    assert '"cross_post_state": None' in pipeline
+    assert '"cross_post_owner": None' in pipeline
 
 
 def test_legacy_boolean_review_symbol_routes_to_structured_review():
