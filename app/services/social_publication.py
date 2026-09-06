@@ -242,46 +242,192 @@ class YouTubeAdapter:
                 component="youtube",
             )
 
-        try:
-            with path.open("rb") as file_handle:
-                upload_response = self.session.put(
-                    upload_url,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Length": str(size),
-                        "Content-Type": mime_type,
-                    },
-                    data=file_handle,
-                    timeout=(15, 600),
-                )
-        except (OSError, requests.RequestException) as exc:
-            raise boundary_error(
-                code="youtube_upload_transfer_failed",
-                category=(
-                    ErrorCategory.FILESYSTEM
-                    if isinstance(exc, OSError)
-                    else ErrorCategory.NETWORK
-                ),
-                message="La transferencia del vídeo a YouTube no se completó.",
-                operation=f"{operation}.transfer",
-                component="youtube",
-                retryable=isinstance(exc, (requests.Timeout, requests.ConnectionError)),
-                cause=exc,
-            ) from exc
+        recoverable_statuses = {500, 502, 503, 504}
+        max_resume_attempts = 5
 
-        try:
-            payload = upload_response.json() if upload_response.content else {}
-        except ValueError:
-            payload = {}
-        if upload_response.status_code not in {200, 201}:
+        def confirmed_offset(response: requests.Response) -> int:
+            range_header = str(response.headers.get("Range") or "").strip().lower()
+            if not range_header:
+                return 0
+            prefix = "bytes=0-"
+            if not range_header.startswith(prefix):
+                raise boundary_error(
+                    code="youtube_resume_range_invalid",
+                    category=ErrorCategory.UPSTREAM,
+                    message="YouTube devolvió un Range inválido al reanudar la subida.",
+                    operation=f"{operation}.resume",
+                    component="youtube",
+                )
+            try:
+                last_byte = int(range_header[len(prefix):])
+            except ValueError as exc:
+                raise boundary_error(
+                    code="youtube_resume_range_invalid",
+                    category=ErrorCategory.UPSTREAM,
+                    message="YouTube devolvió un Range no numérico al reanudar la subida.",
+                    operation=f"{operation}.resume",
+                    component="youtube",
+                    cause=exc,
+                ) from exc
+            if last_byte < 0 or last_byte >= size:
+                raise boundary_error(
+                    code="youtube_resume_range_out_of_bounds",
+                    category=ErrorCategory.UPSTREAM,
+                    message="YouTube devolvió progreso de subida fuera del tamaño del vídeo.",
+                    operation=f"{operation}.resume",
+                    component="youtube",
+                )
+            return last_byte + 1
+
+        def probe_progress() -> requests.Response:
+            last_network_error = None
+            for probe_attempt in range(max_resume_attempts):
+                try:
+                    probe = self.session.put(
+                        upload_url,
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Length": "0",
+                            "Content-Range": f"bytes */{size}",
+                        },
+                        data=b"",
+                        timeout=(15, 120),
+                    )
+                except (requests.Timeout, requests.ConnectionError) as exc:
+                    last_network_error = exc
+                    if probe_attempt + 1 < max_resume_attempts:
+                        continue
+                    raise boundary_error(
+                        code="youtube_resume_probe_network_failed",
+                        category=ErrorCategory.NETWORK,
+                        message="No se pudo consultar el progreso de la subida resumable de YouTube.",
+                        operation=f"{operation}.resume_probe",
+                        component="youtube",
+                        retryable=True,
+                        cause=exc,
+                    ) from exc
+                except requests.RequestException as exc:
+                    raise boundary_error(
+                        code="youtube_resume_probe_failed",
+                        category=ErrorCategory.NETWORK,
+                        message="Falló la consulta del progreso de subida de YouTube.",
+                        operation=f"{operation}.resume_probe",
+                        component="youtube",
+                        cause=exc,
+                    ) from exc
+
+                if probe.status_code in {200, 201, 308}:
+                    return probe
+                if probe.status_code in recoverable_statuses and probe_attempt + 1 < max_resume_attempts:
+                    continue
+                raise boundary_error(
+                    code=f"youtube_resume_probe_http_{probe.status_code}",
+                    category=ErrorCategory.UPSTREAM,
+                    message=f"YouTube devolvió HTTP {probe.status_code} al consultar el progreso.",
+                    operation=f"{operation}.resume_probe",
+                    component="youtube",
+                    retryable=probe.status_code in recoverable_statuses,
+                )
+
             raise boundary_error(
-                code=f"youtube_upload_http_{upload_response.status_code}",
+                code="youtube_resume_probe_exhausted",
+                category=ErrorCategory.NETWORK,
+                message="Se agotaron los intentos de consultar el progreso de YouTube.",
+                operation=f"{operation}.resume_probe",
+                component="youtube",
+                retryable=True,
+                cause=last_network_error,
+            )
+
+        offset = 0
+        payload: dict[str, Any] = {}
+        completed = False
+        for attempt in range(max_resume_attempts):
+            transfer_response = None
+            try:
+                with path.open("rb") as file_handle:
+                    file_handle.seek(offset)
+                    remaining = size - offset
+                    transfer_headers = {
+                        "Authorization": f"Bearer {token}",
+                        "Content-Length": str(remaining),
+                        "Content-Type": mime_type,
+                    }
+                    if offset:
+                        transfer_headers["Content-Range"] = (
+                            f"bytes {offset}-{size - 1}/{size}"
+                        )
+                    transfer_response = self.session.put(
+                        upload_url,
+                        headers=transfer_headers,
+                        data=file_handle,
+                        timeout=(15, 600),
+                    )
+            except (requests.Timeout, requests.ConnectionError):
+                transfer_response = probe_progress()
+            except requests.RequestException as exc:
+                raise boundary_error(
+                    code="youtube_upload_transfer_failed",
+                    category=ErrorCategory.NETWORK,
+                    message="La transferencia del vídeo a YouTube falló.",
+                    operation=f"{operation}.transfer",
+                    component="youtube",
+                    cause=exc,
+                ) from exc
+            except OSError as exc:
+                raise boundary_error(
+                    code="youtube_upload_file_failed",
+                    category=ErrorCategory.FILESYSTEM,
+                    message="No se pudo leer el vídeo durante la subida a YouTube.",
+                    operation=f"{operation}.transfer",
+                    component="youtube",
+                    cause=exc,
+                ) from exc
+
+            if transfer_response.status_code in recoverable_statuses:
+                transfer_response = probe_progress()
+
+            if transfer_response.status_code in {200, 201}:
+                try:
+                    candidate = transfer_response.json() if transfer_response.content else {}
+                except ValueError:
+                    candidate = {}
+                payload = candidate if isinstance(candidate, dict) else {}
+                completed = True
+                break
+
+            if transfer_response.status_code == 308:
+                next_offset = confirmed_offset(transfer_response)
+                if next_offset < offset:
+                    raise boundary_error(
+                        code="youtube_resume_progress_reversed",
+                        category=ErrorCategory.UPSTREAM,
+                        message="YouTube informó un progreso menor que el ya confirmado.",
+                        operation=f"{operation}.resume",
+                        component="youtube",
+                    )
+                offset = next_offset
+                continue
+
+            raise boundary_error(
+                code=f"youtube_upload_http_{transfer_response.status_code}",
                 category=ErrorCategory.UPSTREAM,
-                message=f"YouTube devolvió HTTP {upload_response.status_code} durante la subida.",
+                message=f"YouTube devolvió HTTP {transfer_response.status_code} durante la subida.",
                 operation=f"{operation}.transfer",
                 component="youtube",
-                retryable=is_retryable_http_status(upload_response.status_code),
+                retryable=is_retryable_http_status(transfer_response.status_code),
             )
+
+        if not completed:
+            raise boundary_error(
+                code="youtube_resume_exhausted",
+                category=ErrorCategory.NETWORK,
+                message="Se agotaron los intentos de reanudar la subida a YouTube.",
+                operation=f"{operation}.resume",
+                component="youtube",
+                retryable=True,
+            )
+
         video_id = str(payload.get("id") or "") if isinstance(payload, dict) else ""
         return SocialResult(
             success=True,
