@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           uv sync --frozen --no-default-groups
-          python - <<'PY'
+          .venv/bin/python - <<'PY'
           from importlib.metadata import version
           from packaging.version import Version
 
