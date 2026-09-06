@@ -1,0 +1,76 @@
+name: Centinela C14 Funnel Cleanup Hardening
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c14-instagram-unified-tailscale-funnel-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C14
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Preserve Funnel cleanup failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path("app/services/instagram_ephemeral_https.py")
+          text = service.read_text(encoding="utf-8")
+          old = '''            except Exception:\n                try:\n                    bridge.stop()\n                except Exception:\n                    pass\n                raise\n            self._tailscale_bridge = bridge\n'''
+          new = '''            except Exception as primary_exc:\n                try:\n                    bridge.stop()\n                except Exception as cleanup_exc:\n                    raise _error(\n                        "instagram_tailscale_cleanup_failed_after_start_error",\n                        (\n                            "El Funnel de Tailscale no pudo validarse y además no se confirmó "\n                            "su cierre. No continúes hasta verificar el estado de Funnel."\n                        ),\n                        category=ErrorCategory.SUBPROCESS,\n                        details={"primary_error": type(primary_exc).__name__},\n                        cause=cleanup_exc,\n                    ) from cleanup_exc\n                raise\n            self._tailscale_bridge = bridge\n'''
+          if old not in text:
+              raise SystemExit("cleanup anchor missing")
+          service.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test = Path("test/services/test_instagram_ephemeral_https.py")
+          text = test.read_text(encoding="utf-8")
+          anchor = '''class _FakeResponse:\n'''
+          extra = '''class _InvalidOriginCleanupFailBridge:\n    public_origin = "https://evil.example"\n\n    def start(self):\n        return None\n\n    def stop(self):\n        raise OSError("cannot confirm Funnel stop")\n\n\ndef test_tailscale_invalid_origin_with_cleanup_failure_is_explicit():\n    bridge = _InvalidOriginCleanupFailBridge()\n    tunnel = EphemeralTunnel(\n        InstagramTunnelProvider.TAILSCALE_FUNNEL,\n        "http://127.0.0.1:43126",\n        tailscale_bridge_factory=lambda **kwargs: bridge,\n    )\n\n    with pytest.raises(CentinelaError) as exc_info:\n        tunnel.__enter__()\n\n    assert exc_info.value.code == "instagram_tailscale_cleanup_failed_after_start_error"\n    assert exc_info.value.retryable is False\n    assert exc_info.value.details["primary_error"] == "CentinelaError"\n\n\n'''
+          if anchor not in text:
+              raise SystemExit("cleanup test insertion anchor missing")
+          test.write_text(text.replace(anchor, extra + anchor, 1), encoding="utf-8")
+          PY
+      - name: Validate C14 cleanup hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --group dev --python 3.11
+          uv run --python 3.11 pytest -q \
+            test/services/test_instagram_ephemeral_https.py \
+            test/services/test_instagram_oauth_callback.py \
+            test/services/test_instagram_manual_publication.py \
+            test/services/test_product_instagram_manual_publication_ui.py
+          uv run --python 3.11 ruff check \
+            app/services/instagram_ephemeral_https.py \
+            test/services/test_instagram_ephemeral_https.py
+          uv run --python 3.11 python -m py_compile app/services/instagram_ephemeral_https.py
+      - name: Commit only C14 cleanup hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/services/instagram_ephemeral_https.py test/services/test_instagram_ephemeral_https.py
+          git diff --cached --quiet && exit 0
+          test "$(git diff --cached --name-only | tr '\n' ' ')" = "app/services/instagram_ephemeral_https.py test/services/test_instagram_ephemeral_https.py "
+          git commit -m "instagram: fail closed on Tailscale cleanup uncertainty"
+          git push
