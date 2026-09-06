@@ -12,7 +12,8 @@ from app.utils import utils
 class TestTaskStaticFiles(unittest.TestCase):
     def setUp(self):
         self.original_app_config = dict(config.app)
-        # 普通静态文件测试验证默认开放模式，不能依赖开发者本机是否启用了 Key。
+        # Ordinary static-file tests exercise the local no-key mode and must
+        # not depend on a developer's machine configuration.
         config.app["api_key"] = ""
         self.client = TestClient(asgi.app)
 
@@ -34,7 +35,7 @@ class TestTaskStaticFiles(unittest.TestCase):
         self.assertEqual(response.text, "task artifact")
 
     def test_configured_key_protects_task_file(self):
-        """配置 Key 后，任务文件必须拒绝缺失或错误凭据，只接受正确请求头。"""
+        """Configured API key protects generated task artifacts."""
 
         config.app["api_key"] = "task-file-secret"
         with tempfile.TemporaryDirectory(
@@ -61,15 +62,20 @@ class TestTaskStaticFiles(unittest.TestCase):
         self.assertEqual(accepted.text, "protected task artifact")
 
     def test_configured_key_does_not_protect_health_or_docs(self):
-        """健康检查和 Swagger 文档保持公开，方便部署探针与人工配置。"""
+        """Health probe and Swagger remain public deployment/configuration surfaces."""
 
         config.app["api_key"] = "task-file-secret"
 
         self.assertEqual(self.client.get("/ping").status_code, 200)
         self.assertEqual(self.client.get("/docs").status_code, 200)
 
-    def test_options_request_is_left_to_cors_middleware(self):
-        """受保护文件的 CORS 预检不应被 API Key 校验提前拒绝。"""
+    def test_untrusted_preflight_is_blocked_by_origin_policy_not_api_key(self):
+        """Default same-origin policy must reject third-party browser preflight.
+
+        The task-file authentication middleware deliberately skips OPTIONS, so
+        an untrusted browser Origin must now be rejected by the v1.3.6 origin
+        policy with 403 rather than by API-key authentication with 401.
+        """
 
         config.app["api_key"] = "task-file-secret"
 
@@ -82,7 +88,9 @@ class TestTaskStaticFiles(unittest.TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
+        self.assertNotEqual(response.status_code, 401)
+        self.assertNotIn("access-control-allow-origin", response.headers)
 
     def test_does_not_serve_symlink_to_file_outside_tasks(self):
         with (
