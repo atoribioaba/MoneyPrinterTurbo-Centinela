@@ -42,11 +42,22 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _json_bytes(payload: dict) -> bytes:
+    return (
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+
+
 def _fixture(
     tmp_path: Path,
     *,
     ready: bool = True,
     manifest_auto_publication: bool = False,
+    invalid_social_size: bool = False,
+    review_rights_passed: bool = True,
+    provenance_publication_ready: bool = True,
+    package_hash: str | None = None,
 ):
     store = ArtifactStore(tmp_path / "store")
     project = store.create_project("C6 verified manual publication")
@@ -56,7 +67,7 @@ def _fixture(
         else ProjectState.FINAL_APPROVED
     )
 
-    # This unit fixture tests the C6 publication boundary only.  Seed the canonical
+    # This unit fixture tests the C6 publication boundary only. Seed the canonical
     # terminal state before an orchestration head exists instead of bypassing the
     # protected ProductionSpine guards with synthetic transition metadata.
     manifest_state = store.load_project(project.project_id)
@@ -74,24 +85,53 @@ def _fixture(
     )
     package_dir.mkdir(parents=True)
 
+    review_id = "c6-review-approved"
+    final_render_id = "c6-final-render"
     metadata = {
         "title": "Júpiter sobre el horizonte",
         "caption": "Júpiter, listo para publicación manual.",
         "hashtags": ["#astronomia", "#jupiter"],
         "youtube_description": "Descripción YouTube aprobada.",
     }
+    provenance = {
+        "version": "g006-publication-package-v0.1",
+        "project_id": project.project_id,
+        "final_render_manifest_artifact_id": final_render_id,
+        "human_review_artifact_id": review_id,
+        "rights_provenance": {
+            "upstream_publication_ready": provenance_publication_ready,
+            "human_review_rights_passed": True,
+        },
+    }
+    checklist = {
+        "version": "g006-publication-package-v0.1",
+        "project_id": project.project_id,
+        "human_review_artifact_id": review_id,
+        "review_7_of_7": True,
+        "review": {"rights_passed": review_rights_passed},
+        "auto_publication": False,
+    }
     payloads = {
         "master": b"C6 master video",
         "social": b"C6 approved social video",
         "thumbnail": b"C6 thumbnail",
         "subtitles_es": b"1\n00:00:00,000 --> 00:00:01,000\nJupiter.\n",
-        "provenance": b'{"rights":"verified"}\n',
-        "publication_checklist": b'{"review_7_of_7":true}\n',
+        "provenance": _json_bytes(provenance),
+        "publication_checklist": _json_bytes(checklist),
         "caption": metadata["caption"].encode("utf-8"),
-        "metadata": (json.dumps(metadata, ensure_ascii=False, sort_keys=True) + "\n").encode(
-            "utf-8"
-        ),
+        "metadata": _json_bytes(metadata),
     }
+
+    # C6 must prove that the materialized upload payload still matches the
+    # canonical ArtifactStore object used to build the G-006 package.
+    store.put_bytes(
+        project.project_id,
+        "final_social_video",
+        payloads["social"],
+        producer="c6-test",
+        artifact_id="c6-source-social",
+        suffix=".mp4",
+    )
 
     rows = []
     for logical_name, relative_path in TARGETS.items():
@@ -100,25 +140,27 @@ def _fixture(
         data = payloads[logical_name]
         path.write_bytes(data)
         digest = _sha(data)
+        size_bytes: int | str = len(data)
+        if logical_name == "social" and invalid_social_size:
+            size_bytes = "not-an-integer"
         rows.append(
             {
                 "logical_name": logical_name,
                 "relative_path": relative_path,
-                "size_bytes": len(data),
+                "size_bytes": size_bytes,
                 "sha256": digest,
                 "source_artifact_id": f"c6-source-{logical_name}",
                 "source_sha256": digest,
             }
         )
 
-    review_id = "c6-review-approved"
     manifest = {
         "version": "g006-publication-package-v0.1",
         "project_id": project.project_id,
         "package_id": "publication-package-c6fixture",
-        "publication_package_hash": "a" * 64,
+        "publication_package_hash": package_hash if package_hash is not None else "a" * 64,
         "human_review_artifact_id": review_id,
-        "final_render_artifact_id": "c6-final-render",
+        "final_render_artifact_id": final_render_id,
         "asset_count": 8,
         "assets": rows,
         "source_artifacts_preserved": True,
@@ -140,13 +182,17 @@ def _fixture(
         provenance={
             "package_dir": str(package_dir),
             "human_review_artifact_id": review_id,
-            "final_render_artifact_id": "c6-final-render",
+            "final_render_artifact_id": final_render_id,
         },
         metadata={
             "asset_count": 8,
             "manual_publication_only": True,
             "auto_publication": manifest_auto_publication,
             "authorization_to_publish": False,
+            "marks_published": False,
+            "uploads_files": False,
+            "webhook_calls": 0,
+            "package_network_calls": 0,
         },
     )
     return store, project.project_id, package_dir
@@ -257,6 +303,42 @@ def test_auto_publication_marker_regression_blocks_package(tmp_path: Path):
         verify_publication_package(store, project_id)
 
     assert exc_info.value.code == "publication_package_safety_contract_invalid"
+
+
+def test_invalid_asset_size_is_typed_fail_closed(tmp_path: Path):
+    store, project_id, _ = _fixture(tmp_path, invalid_social_size=True)
+
+    with pytest.raises(CentinelaError) as exc_info:
+        verify_publication_package(store, project_id)
+
+    assert exc_info.value.code == "publication_package_asset_size_invalid"
+
+
+def test_review_rights_regression_blocks_publication(tmp_path: Path):
+    store, project_id, _ = _fixture(tmp_path, review_rights_passed=False)
+
+    with pytest.raises(CentinelaError) as exc_info:
+        verify_publication_package(store, project_id)
+
+    assert exc_info.value.code == "publication_review_evidence_invalid"
+
+
+def test_provenance_readiness_regression_blocks_publication(tmp_path: Path):
+    store, project_id, _ = _fixture(tmp_path, provenance_publication_ready=False)
+
+    with pytest.raises(CentinelaError) as exc_info:
+        verify_publication_package(store, project_id)
+
+    assert exc_info.value.code == "publication_rights_evidence_invalid"
+
+
+def test_invalid_package_hash_is_typed_fail_closed(tmp_path: Path):
+    store, project_id, _ = _fixture(tmp_path, package_hash="not-a-sha256")
+
+    with pytest.raises(CentinelaError) as exc_info:
+        verify_publication_package(store, project_id)
+
+    assert exc_info.value.code == "publication_package_hash_invalid"
 
 
 def test_instagram_is_fail_closed_until_hosted_bytes_can_be_verified(tmp_path: Path):
