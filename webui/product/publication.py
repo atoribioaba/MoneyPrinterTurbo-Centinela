@@ -13,6 +13,25 @@ from app.services.centinela.manual_publication import (
 from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE
 from app.services.error_control import CentinelaError, ErrorCategory, boundary_error
+from app.services.instagram_ephemeral_https import (
+    INSTAGRAM_EPHEMERAL_HTTPS_ENABLED_ENV,
+    INSTAGRAM_TUNNEL_PROVIDER_ENV,
+    ephemeral_https_settings,
+)
+from app.services.instagram_manual_publication import (
+    get_instagram_publish_receipt,
+    load_latest_prepared_instagram_reel,
+    prepare_instagram_manual_publication,
+    publish_instagram_manual_publication,
+)
+from app.services.instagram_oauth_callback import (
+    INSTAGRAM_CALLBACK_ENABLED_ENV,
+    INSTAGRAM_CALLBACK_PROVIDER_ENV,
+    INSTAGRAM_CLIENT_ID_ENV,
+    INSTAGRAM_CLIENT_SECRET_ENV,
+    INSTAGRAM_REDIRECT_URI_ENV,
+    callback_runtime_status,
+)
 from app.services.social_oauth import OAuthPlatform
 from app.services.social_oauth_desktop import (
     DESKTOP_OAUTH_ENABLED_ENV,
@@ -192,7 +211,8 @@ def _render_manual_delivery_action(service, project_id: str) -> None:
         )
 
     st.caption(
-        "Instagram sigue bloqueado: requiere hosting HTTPS verificable del mismo vídeo aprobado."
+        "Instagram usa un flujo separado de dos aprobaciones con OAuth y hosting HTTPS verificable; "
+        "se configura en el bloque específico de Instagram más abajo."
     )
 
     with st.form(
@@ -285,6 +305,268 @@ def _render_manual_delivery_action(service, project_id: str) -> None:
             st.caption("La plataforma requiere una acción humana posterior.")
 
 
+def _instagram_product_runtime_status() -> dict[str, object]:
+    callback = callback_runtime_status()
+    try:
+        transport = ephemeral_https_settings()
+        transport_gate_valid = True
+        transport_enabled = bool(transport.enabled)
+        transport_provider = (
+            transport.provider.value if transport.provider is not None else ""
+        )
+    except Exception:
+        transport_gate_valid = False
+        transport_enabled = False
+        transport_provider = ""
+
+    ready = bool(
+        callback.get("gate_valid")
+        and callback.get("enabled")
+        and callback.get("configured")
+        and transport_gate_valid
+        and transport_enabled
+        and transport_provider
+    )
+    return {
+        "callback_gate_valid": bool(callback.get("gate_valid")),
+        "callback_enabled": bool(callback.get("enabled")),
+        "callback_configured": bool(callback.get("configured")),
+        "callback_provider": str(callback.get("provider") or ""),
+        "transport_gate_valid": transport_gate_valid,
+        "transport_enabled": transport_enabled,
+        "transport_provider": transport_provider,
+        "ready": ready,
+        "token_persistence": False,
+        "auto_publication": False,
+    }
+
+
+def _prepare_instagram_product_action(
+    service,
+    project_id: str,
+    *,
+    approved: bool,
+):
+    return prepare_instagram_manual_publication(
+        service.store,
+        project_id,
+        approved=approved,
+    )
+
+
+def _publish_instagram_product_action(
+    service,
+    project_id: str,
+    *,
+    approved: bool,
+):
+    return publish_instagram_manual_publication(
+        service.store,
+        project_id,
+        approved=approved,
+    )
+
+
+def _render_instagram_manual_action(service, project_id: str) -> None:
+    ui.render_section_heading(
+        "Instagram Reel",
+        (
+            "Instagram se ejecuta en dos acciones humanas separadas. Primero autenticas y preparas "
+            "un contenedor FINISHED; después una segunda aprobación exige autenticar de nuevo la "
+            "misma cuenta antes de media_publish."
+        ),
+        eyebrow="DOS APROBACIONES",
+    )
+
+    runtime = _instagram_product_runtime_status()
+    if not runtime["callback_gate_valid"]:
+        st.error(f"{INSTAGRAM_CALLBACK_ENABLED_ENV} contiene un valor no válido.")
+    elif not runtime["callback_enabled"]:
+        st.warning("El callback HTTPS de Instagram está desactivado.")
+    elif not runtime["callback_configured"]:
+        st.warning("Falta completar la configuración OAuth de Instagram en el proceso local.")
+
+    if not runtime["transport_gate_valid"]:
+        st.error(f"{INSTAGRAM_EPHEMERAL_HTTPS_ENABLED_ENV} contiene una configuración no válida.")
+    elif not runtime["transport_enabled"]:
+        st.warning("El hosting HTTPS verificable del Reel está desactivado.")
+
+    with st.expander("Configuración local de Instagram", expanded=False):
+        st.caption(
+            "Define únicamente estas variables en el proceso local. La interfaz nunca muestra ni "
+            "persiste sus valores."
+        )
+        for variable in (
+            INSTAGRAM_CALLBACK_ENABLED_ENV,
+            INSTAGRAM_CALLBACK_PROVIDER_ENV,
+            INSTAGRAM_CLIENT_ID_ENV,
+            INSTAGRAM_CLIENT_SECRET_ENV,
+            INSTAGRAM_REDIRECT_URI_ENV,
+            INSTAGRAM_EPHEMERAL_HTTPS_ENABLED_ENV,
+            INSTAGRAM_TUNNEL_PROVIDER_ENV,
+        ):
+            st.code(variable, language=None)
+        st.caption(
+            "Tailscale y el proveedor de hosting del vídeo deben instalarse/configurarse de forma "
+            "explícita en el PC. Centinela no descarga binarios ni guarda tokens por su cuenta."
+        )
+
+    try:
+        prepared = load_latest_prepared_instagram_reel(service.store, project_id)
+        receipt = get_instagram_publish_receipt(service.store, project_id)
+    except CentinelaError as exc:
+        ui.render_error_state(
+            exc.safe_message,
+            action="No continúes con Instagram hasta recuperar la trazabilidad del contenedor.",
+            technical_detail=f"{exc.code} · {exc.category.value}",
+        )
+        return
+    except Exception as exc:
+        LOGGER.exception("Instagram Product state could not be loaded")
+        ui.render_error_state(
+            "No se pudo verificar el estado persistido de Instagram.",
+            action="No se abrirá OAuth ni se publicará mientras el estado no sea verificable.",
+            technical_detail=type(exc).__name__,
+        )
+        return
+
+    if receipt is not None:
+        st.success("Instagram ya tiene un recibo local de publicación para este contenedor.")
+        with st.expander("Recibo de Instagram", expanded=False):
+            st.write(f"Estado remoto: {receipt.status or '—'}")
+            if receipt.remote_id:
+                st.code(receipt.remote_id, language=None)
+        st.caption("No se ofrece otro media_publish para este contenedor.")
+        return
+
+    if prepared is None:
+        st.info(
+            "**Fase 1 de 2.** Se abrirá Instagram Business Login y después se preparará el Reel "
+            "mediante hosting HTTPS verificable. Esta acción no ejecuta media_publish."
+        )
+        with st.form(
+            f"centinela-instagram-prepare-{project_id}",
+            clear_on_submit=True,
+            enter_to_submit=False,
+        ):
+            approved = st.checkbox(
+                "Confirmo que he revisado el paquete y autorizo únicamente preparar el Reel en Instagram.",
+                value=False,
+            )
+            submitted = st.form_submit_button(
+                "Autenticar y preparar Reel",
+                type="primary",
+                width="stretch",
+                disabled=not bool(runtime["ready"]),
+            )
+        if not runtime["ready"]:
+            st.caption("Fase 1 bloqueada hasta completar OAuth, callback y hosting HTTPS verificable.")
+        if not submitted:
+            return
+        if not approved:
+            st.error("Marca la confirmación explícita antes de autenticar y preparar Instagram.")
+            return
+        try:
+            with st.spinner(
+                "Autenticando Instagram y preparando el contenedor…",
+                show_time=True,
+            ):
+                record = _prepare_instagram_product_action(
+                    service,
+                    project_id,
+                    approved=True,
+                )
+        except CentinelaError as exc:
+            ui.render_error_state(
+                exc.safe_message,
+                action="Nada se reintenta automáticamente. Revisa el entorno antes de otra aprobación.",
+                technical_detail=f"{exc.code} · {exc.category.value}",
+            )
+            return
+        except Exception as exc:
+            LOGGER.exception("Instagram Product preparation failed")
+            ui.render_error_state(
+                "Instagram no pudo completar la preparación manual del Reel.",
+                action="No se ha autorizado media_publish. Verifica el entorno antes de repetir la fase 1.",
+                technical_detail=type(exc).__name__,
+            )
+            return
+        st.success("Reel preparado y FINISHED. Todavía no se ha publicado.")
+        st.code(record.prepared.container_id, language=None)
+        st.caption("La publicación exige una segunda aprobación y una nueva autenticación de la misma cuenta.")
+        return
+
+    st.info(
+        "**Fase 2 de 2.** El contenedor está FINISHED. Para publicar debes dar una segunda aprobación "
+        "y autenticar de nuevo la misma cuenta de Instagram."
+    )
+    with st.container(border=True):
+        st.markdown("### ✓ Contenedor preparado")
+        st.write("Estado: FINISHED")
+        st.code(prepared.prepared.container_id, language=None)
+        st.caption(f"Cuenta Instagram ID: {prepared.prepared.ig_user_id}")
+
+    with st.form(
+        f"centinela-instagram-publish-{project_id}",
+        clear_on_submit=True,
+        enter_to_submit=False,
+    ):
+        approved = st.checkbox(
+            "Segunda aprobación: autorizo publicar únicamente este Reel preparado en la misma cuenta.",
+            value=False,
+        )
+        submitted = st.form_submit_button(
+            "Autenticar de nuevo y publicar Reel",
+            type="primary",
+            width="stretch",
+            disabled=not bool(runtime["ready"]),
+        )
+    if not runtime["ready"]:
+        st.caption("Fase 2 bloqueada hasta que OAuth/callback vuelvan a estar disponibles.")
+    if not submitted:
+        return
+    if not approved:
+        st.error("La segunda aprobación explícita es obligatoria antes de media_publish.")
+        return
+
+    try:
+        with st.spinner(
+            "Autenticando de nuevo la misma cuenta y ejecutando media_publish…",
+            show_time=True,
+        ):
+            result = _publish_instagram_product_action(
+                service,
+                project_id,
+                approved=True,
+            )
+    except CentinelaError as exc:
+        ui.render_error_state(
+            exc.safe_message,
+            action=(
+                "No hay reintento automático. Si Instagram pudo publicar pero falló el recibo local, "
+                "verifica primero el estado remoto antes de hacer otra acción."
+            ),
+            technical_detail=f"{exc.code} · {exc.category.value}",
+        )
+        return
+    except Exception as exc:
+        LOGGER.exception("Instagram Product publish failed")
+        ui.render_error_state(
+            "La publicación manual de Instagram no pudo confirmarse.",
+            action="No se reintenta automáticamente; verifica Instagram antes de otra aprobación.",
+            technical_detail=type(exc).__name__,
+        )
+        return
+
+    if getattr(result, "success", False):
+        st.success("Reel publicado en Instagram y recibo local registrado.")
+        remote_id = str(getattr(result, "remote_id", "") or "").strip()
+        if remote_id:
+            st.code(remote_id, language=None)
+    else:
+        st.warning("Instagram devolvió un resultado no exitoso; no se hará ningún reintento automático.")
+
+
 def _render_ready_package(service, project_id: str) -> None:
     try:
         ref = service.store.get_latest_artifact(
@@ -369,6 +651,7 @@ def _render_ready_package(service, project_id: str) -> None:
         "No hay scheduler, webhook ni autoposting: cualquier subida requiere la acción humana separada de abajo."
     )
     _render_manual_delivery_action(service, project_id)
+    _render_instagram_manual_action(service, project_id)
 
 
 def publication_page() -> None:
