@@ -1,6 +1,6 @@
 """Verified manual publication bridge for EL CENTINELA DEL UNIVERSO.
 
-This module is intentionally outside the automatic production spine.  It accepts
+This module is intentionally outside the automatic production spine. It accepts
 only a project whose certified publication package already reached
 ``PUBLICATION_PACKAGE_READY`` and requires a fresh explicit human approval for
 every network operation.
@@ -76,6 +76,22 @@ def _blocked(
     )
 
 
+def _validated_sha256(value: Any, *, label: str, code: str) -> str:
+    normalized = str(value or "").strip().lower()
+    try:
+        if len(normalized) != 64:
+            raise ValueError
+        int(normalized, 16)
+    except ValueError as exc:
+        raise _blocked(
+            code,
+            f"El SHA-256 de {label} no es válido.",
+            cause=exc,
+            details={"logical_name": label},
+        ) from exc
+    return normalized
+
+
 def _sha256_file(path: Path) -> tuple[str, int]:
     digest = hashlib.sha256()
     size = 0
@@ -124,12 +140,7 @@ def _safe_package_file(package_dir: Path, relative_path: str, logical_name: str)
     return resolved
 
 
-def _verify_asset(
-    package_dir: Path,
-    row: dict[str, Any],
-    *,
-    require_source_identity: bool = True,
-) -> Path:
+def _verify_asset(package_dir: Path, row: dict[str, Any]) -> Path:
     logical_name = str(row.get("logical_name") or "")
     expected_relative = TARGETS.get(logical_name)
     if expected_relative is None or row.get("relative_path") != expected_relative:
@@ -139,18 +150,18 @@ def _verify_asset(
             details={"logical_name": logical_name or "missing"},
         )
 
-    expected_sha = str(row.get("sha256") or "").lower()
-    try:
-        if len(expected_sha) != 64:
-            raise ValueError
-        int(expected_sha, 16)
-    except ValueError as exc:
+    expected_sha = _validated_sha256(
+        row.get("sha256"),
+        label=logical_name,
+        code="publication_package_asset_sha_invalid",
+    )
+    size_value = row.get("size_bytes")
+    if isinstance(size_value, bool) or not isinstance(size_value, int) or size_value < 0:
         raise _blocked(
-            "publication_package_asset_sha_invalid",
-            f"El SHA-256 de {logical_name} no es válido.",
-            cause=exc,
+            "publication_package_asset_size_invalid",
+            f"El tamaño declarado de {logical_name} no es válido.",
             details={"logical_name": logical_name},
-        ) from exc
+        )
 
     path = _safe_package_file(package_dir, expected_relative, logical_name)
     try:
@@ -163,19 +174,38 @@ def _verify_asset(
             details={"logical_name": logical_name},
         ) from exc
 
-    if actual_sha != expected_sha or actual_size != int(row.get("size_bytes") or -1):
+    if actual_sha != expected_sha or actual_size != size_value:
         raise _blocked(
             "publication_package_asset_integrity_mismatch",
             f"La integridad de {logical_name} ha cambiado desde la aprobación.",
             details={"logical_name": logical_name},
         )
-    if require_source_identity and str(row.get("source_sha256") or "").lower() != expected_sha:
+    if str(row.get("source_sha256") or "").lower() != expected_sha:
         raise _blocked(
             "publication_package_source_identity_mismatch",
             f"La identidad de origen de {logical_name} no coincide con el paquete aprobado.",
             details={"logical_name": logical_name},
         )
     return path
+
+
+def _read_json_evidence(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _blocked(
+            "publication_package_evidence_invalid",
+            f"No se puede validar {label} del paquete aprobado.",
+            cause=exc,
+            details={"logical_name": label},
+        ) from exc
+    if not isinstance(payload, dict):
+        raise _blocked(
+            "publication_package_evidence_invalid",
+            f"{label} no tiene un formato JSON válido.",
+            details={"logical_name": label},
+        )
+    return payload
 
 
 def verify_publication_package(
@@ -217,12 +247,17 @@ def verify_publication_package(
         )
 
     review_id = str(manifest.get("human_review_artifact_id") or "").strip()
-    package_hash = str(manifest.get("publication_package_hash") or "").strip()
+    package_hash = _validated_sha256(
+        manifest.get("publication_package_hash"),
+        label="publication_package_hash",
+        code="publication_package_hash_invalid",
+    )
+    final_render_id = str(manifest.get("final_render_artifact_id") or "").strip()
     safe_contract = (
         manifest.get("project_id") == project_id
         and manifest.get("asset_count") == 8
         and bool(review_id)
-        and bool(package_hash)
+        and bool(final_render_id)
         and manifest.get("source_artifacts_preserved") is True
         and manifest.get("post_review_content_mutation") is False
         and manifest.get("manual_publication_only") is True
@@ -233,8 +268,14 @@ def verify_publication_package(
         and manifest.get("webhook_calls") == 0
         and manifest.get("package_network_calls") == 0
         and ref.provenance.get("human_review_artifact_id") == review_id
+        and ref.provenance.get("final_render_artifact_id") == final_render_id
         and ref.metadata.get("manual_publication_only") is True
         and ref.metadata.get("auto_publication") is False
+        and ref.metadata.get("authorization_to_publish") is False
+        and ref.metadata.get("marks_published") is False
+        and ref.metadata.get("uploads_files") is False
+        and ref.metadata.get("webhook_calls") == 0
+        and ref.metadata.get("package_network_calls") == 0
     )
     if not safe_contract:
         raise _blocked(
@@ -291,7 +332,7 @@ def verify_publication_package(
         )
 
     # Re-hash the exact asset that will leave the machine plus the small evidence
-    # files that authorize its use.  The 4K master is deliberately not reread here
+    # files that authorize its use. The 4K master is deliberately not reread here
     # because it is not the publication payload and may be very large.
     publish_boundary_assets = (
         "social",
@@ -306,15 +347,88 @@ def verify_publication_package(
         name: _verify_asset(package_dir, by_name[name]) for name in publish_boundary_assets
     }
 
+    social_source_id = str(by_name["social"].get("source_artifact_id") or "").strip()
+    if not social_source_id:
+        raise _blocked(
+            "publication_social_source_missing",
+            "El vídeo social aprobado no conserva su artifact_id de origen.",
+        )
+    try:
+        social_source = store.get_artifact(project_id, social_source_id)
+        social_source_bytes = store.read_bytes(
+            project_id,
+            social_source_id,
+            verify_integrity=True,
+        )
+    except (ArtifactNotFoundError, IntegrityError, OSError, ValueError) as exc:
+        raise _blocked(
+            "publication_social_source_unavailable",
+            "No se puede revalidar el artefacto social canónico.",
+            cause=exc,
+        ) from exc
+    social_sha = str(by_name["social"]["sha256"]).lower()
+    if social_source.sha256.lower() != social_sha or _sha256_file(
+        verified_paths["social"]
+    )[0] != _sha256_file(Path(store.resolve_artifact_path(project_id, social_source_id)))[0]:
+        raise _blocked(
+            "publication_social_source_identity_mismatch",
+            "El vídeo social materializado ya no coincide con su artefacto canónico.",
+        )
+    del social_source_bytes
+
+    checklist = _read_json_evidence(
+        verified_paths["publication_checklist"],
+        label="publication_checklist",
+    )
+    review_payload = checklist.get("review")
+    if (
+        checklist.get("human_review_artifact_id") != review_id
+        or checklist.get("review_7_of_7") is not True
+        or checklist.get("auto_publication") is not False
+        or not isinstance(review_payload, dict)
+        or review_payload.get("rights_passed") is not True
+    ):
+        raise _blocked(
+            "publication_review_evidence_invalid",
+            "Review 7/7 y derechos deben seguir aprobados justo antes de publicar.",
+        )
+
+    provenance = _read_json_evidence(
+        verified_paths["provenance"],
+        label="sources-licenses-provenance",
+    )
+    rights_provenance = provenance.get("rights_provenance")
+    if (
+        provenance.get("human_review_artifact_id") != review_id
+        or not isinstance(rights_provenance, dict)
+        or rights_provenance.get("upstream_publication_ready") is not True
+        or rights_provenance.get("human_review_rights_passed") is not True
+    ):
+        raise _blocked(
+            "publication_rights_evidence_invalid",
+            "La procedencia y los derechos del paquete ya no certifican publicación.",
+        )
+
     try:
         metadata_payload = json.loads(verified_paths["metadata"].read_text(encoding="utf-8"))
         metadata = PublicationMetadata.model_validate(metadata_payload)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
+        caption = verified_paths["caption"].read_text(encoding="utf-8")
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValidationError,
+    ) as exc:
         raise _blocked(
             "publication_metadata_invalid",
             "Los metadatos aprobados no pueden validarse.",
             cause=exc,
         ) from exc
+    if caption != metadata.caption:
+        raise _blocked(
+            "publication_caption_metadata_mismatch",
+            "El caption aprobado no coincide con metadata.json.",
+        )
 
     return VerifiedPublicationPackage(
         project_id=project_id,
@@ -323,7 +437,7 @@ def verify_publication_package(
         human_review_artifact_id=review_id,
         package_dir=package_dir,
         social_video_path=verified_paths["social"],
-        social_video_sha256=str(by_name["social"]["sha256"]).lower(),
+        social_video_sha256=social_sha,
         metadata=metadata,
     )
 
@@ -359,8 +473,8 @@ def publish_verified_package(
     package = verify_publication_package(store, project_id)
 
     if normalized == ManualPublicationPlatform.INSTAGRAM:
-        # Instagram Graph API requires a public HTTPS video URL.  Accepting a URL
-        # supplied ad hoc here would break package->payload identity.  Keep this
+        # Instagram Graph API requires a public HTTPS video URL. Accepting a URL
+        # supplied ad hoc here would break package->payload identity. Keep this
         # fail-closed until a temporary hosting adapter can prove the hosted bytes
         # match ``social_video_sha256`` before container creation.
         raise _blocked(
