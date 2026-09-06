@@ -4,8 +4,8 @@
     Read-only evidence collector for the EL CENTINELA DEL UNIVERSO PC return.
 
 .DESCRIPTION
-    Collects Git, Windows, storage, NVIDIA/CUDA, FFmpeg, Python/uv and Ollama
-    evidence without changing the repository, installing packages, starting
+    Collects Git, Windows, storage, NVIDIA/CUDA, FFmpeg, Python/uv, Ollama and
+    Tailscale readiness evidence without changing the repository, installing packages, starting
     services, pulling/rebasing/merging, modifying drivers, or deleting files.
 
     Output is written under %TEMP% (or -OutputRoot), never inside the repository.
@@ -62,6 +62,12 @@ $StatusReadable = $false
 $StashInventoryComplete = $false
 $CriticalFileInventoryComplete = $false
 $GitEvidenceComplete = $false
+$TailscaleAvailable = $false
+$TailscaleStatusReadable = $false
+$TailscaleBackendState = 'UNKNOWN'
+$TailscaleDnsNamePresent = $false
+$TailscaleFunnelStatusReadable = $false
+$TailscaleFunnel443Present = $false
 
 function Bool-Text {
     param([bool]$Value)
@@ -305,6 +311,12 @@ function Write-TerminalState {
     Write-Host ("STASH_INVENTORY_COMPLETE={0}" -f (Bool-Text $StashInventoryComplete))
     Write-Host ("CRITICAL_FILE_INVENTORY_COMPLETE={0}" -f (Bool-Text $CriticalFileInventoryComplete))
     Write-Host ("GIT_EVIDENCE_COMPLETE={0}" -f (Bool-Text $GitEvidenceComplete))
+    Write-Host ("TAILSCALE_AVAILABLE={0}" -f (Bool-Text $TailscaleAvailable))
+    Write-Host ("TAILSCALE_STATUS_READABLE={0}" -f (Bool-Text $TailscaleStatusReadable))
+    Write-Host ("TAILSCALE_BACKEND_STATE={0}" -f $TailscaleBackendState)
+    Write-Host ("TAILSCALE_DNS_NAME_PRESENT={0}" -f (Bool-Text $TailscaleDnsNamePresent))
+    Write-Host ("TAILSCALE_FUNNEL_STATUS_READABLE={0}" -f (Bool-Text $TailscaleFunnelStatusReadable))
+    Write-Host ("TAILSCALE_FUNNEL_443_PRESENT={0}" -f (Bool-Text $TailscaleFunnel443Present))
     Write-Host ("PREFLIGHT_GATE_COMPLETE={0}" -f (Bool-Text $PreflightGateComplete))
     Write-Host ("PREFLIGHT_COMPLETE={0}" -f (Bool-Text $PreflightGateComplete))
     Write-Host 'PREFLIGHT_COMPLETE_SEMANTICS=ALIAS_OF_PREFLIGHT_GATE_COMPLETE'
@@ -690,7 +702,7 @@ try {
     )
 
     Add-Section '4. TOOLCHAIN VERSIONS'
-    foreach ($Tool in @('git', 'python', 'py', 'uv', 'ffmpeg', 'ffprobe', 'nvidia-smi', 'nvcc', 'ollama')) {
+    foreach ($Tool in @('git', 'python', 'py', 'uv', 'ffmpeg', 'ffprobe', 'nvidia-smi', 'nvcc', 'ollama', 'tailscale')) {
         $Command = Command-Application $Tool
         if ($null -eq $Command) {
             Add-Line ("COMMAND_AVAILABLE | FALSE | {0}" -f $Tool)
@@ -784,7 +796,93 @@ try {
     }
     Add-Line ''
 
-    Add-Section '8. CANONICAL LOCAL COMPONENT PATH SNAPSHOT'
+    Add-Section '8. TAILSCALE INSTAGRAM READINESS - READ ONLY / NO FUNNEL CHANGE'
+    $TailscaleCommand = Command-Application 'tailscale'
+    if ($null -eq $TailscaleCommand) {
+        Add-Warning 'W_TAILSCALE_NOT_AVAILABLE' 'tailscale command is not available; Instagram Funnel readiness remains pending.'
+    }
+    else {
+        $TailscaleAvailable = $true
+        [void](Invoke-OptionalNativeCapture 'tailscale version' $TailscaleCommand.Source @(
+            'version'
+        ) 'W_TAILSCALE_VERSION_QUERY_FAILED')
+
+        Add-Line '--- tailscale status --json (curated, no raw profile dump) ---'
+        $TailscaleStatusResult = Invoke-NativeCommand $TailscaleCommand.Source @(
+            'status', '--json'
+        )
+        Add-Line ("EXIT_CODE={0}" -f $TailscaleStatusResult.ExitCode)
+        if ($TailscaleStatusResult.Success) {
+            try {
+                $TailscaleStatus = $TailscaleStatusResult.Stdout | ConvertFrom-Json -ErrorAction Stop
+                $TailscaleStatusReadable = $true
+                $TailscaleBackendState = [string]$TailscaleStatus.BackendState
+                $DnsName = ''
+                if ($null -ne $TailscaleStatus.Self) {
+                    $DnsName = ([string]$TailscaleStatus.Self.DNSName).Trim().TrimEnd('.')
+                }
+                $TailscaleDnsNamePresent = (
+                    -not [string]::IsNullOrWhiteSpace($DnsName) -and
+                    $DnsName.EndsWith('.ts.net', [System.StringComparison]::OrdinalIgnoreCase)
+                )
+                Add-Line ("TAILSCALE_BACKEND_STATE={0}" -f $TailscaleBackendState)
+                Add-Line ("TAILSCALE_DNS_NAME_PRESENT={0}" -f (Bool-Text $TailscaleDnsNamePresent))
+                if ($TailscaleDnsNamePresent) {
+                    Add-Line ("TAILSCALE_DNS_NAME={0}" -f $DnsName)
+                }
+                if ($TailscaleBackendState -ne 'Running') {
+                    Add-Warning 'W_TAILSCALE_NOT_RUNNING' 'Tailscale is installed but BackendState is not Running.'
+                }
+                if (-not $TailscaleDnsNamePresent) {
+                    Add-Warning 'W_TAILSCALE_DNS_NAME_MISSING' 'Tailscale did not expose a usable *.ts.net DNS name for this node.'
+                }
+            }
+            catch {
+                Add-Line ("PARSE_ERROR={0}" -f $_.Exception.Message)
+                Add-Warning 'W_TAILSCALE_STATUS_PARSE_FAILED' 'tailscale status --json could not be parsed.'
+            }
+        }
+        else {
+            Add-Line ("CLI_MESSAGE={0}" -f $TailscaleStatusResult.Stderr)
+            Add-Warning 'W_TAILSCALE_STATUS_QUERY_FAILED' 'tailscale status --json failed.'
+        }
+        Add-Line ''
+
+        Add-Line '--- tailscale funnel status --json (curated, no state change) ---'
+        $TailscaleFunnelResult = Invoke-NativeCommand $TailscaleCommand.Source @(
+            'funnel', 'status', '--json'
+        )
+        Add-Line ("EXIT_CODE={0}" -f $TailscaleFunnelResult.ExitCode)
+        if ($TailscaleFunnelResult.Success) {
+            try {
+                $TailscaleFunnel = $TailscaleFunnelResult.Stdout | ConvertFrom-Json -ErrorAction Stop
+                $TailscaleFunnelStatusReadable = $true
+                $Web = $TailscaleFunnel.Web
+                if ($null -ne $Web) {
+                    foreach ($Property in @($Web.PSObject.Properties)) {
+                        if ($Property.Name -match ':443$' -and $null -ne $Property.Value) {
+                            $TailscaleFunnel443Present = $true
+                        }
+                    }
+                }
+                Add-Line ("TAILSCALE_FUNNEL_443_PRESENT={0}" -f (Bool-Text $TailscaleFunnel443Present))
+                if ($TailscaleFunnel443Present) {
+                    Add-Warning 'W_TAILSCALE_FUNNEL_443_ALREADY_PRESENT' 'An existing Funnel on public port 443 was observed; Centinela must not overwrite it.'
+                }
+            }
+            catch {
+                Add-Line ("PARSE_ERROR={0}" -f $_.Exception.Message)
+                Add-Warning 'W_TAILSCALE_FUNNEL_STATUS_PARSE_FAILED' 'tailscale funnel status --json could not be parsed.'
+            }
+        }
+        else {
+            Add-Line ("CLI_MESSAGE={0}" -f $TailscaleFunnelResult.Stderr)
+            Add-Warning 'W_TAILSCALE_FUNNEL_STATUS_QUERY_FAILED' 'tailscale funnel status --json failed.'
+        }
+        Add-Line ''
+    }
+
+    Add-Section '9. CANONICAL LOCAL COMPONENT PATH SNAPSHOT'
     foreach ($Path in @('E:\IA\AstroMedia', 'E:\IA\Qwen3-TTS', 'D:\ASTRONOMÍA\Medios\R9_Golden_Local')) {
         Add-Line "--- $Path ---"
         try {
@@ -809,7 +907,7 @@ try {
         Add-Line ''
     }
 
-    Add-Section '9. PREFLIGHT INTERPRETATION'
+    Add-Section '10. PREFLIGHT INTERPRETATION'
     Add-Line 'This script has not certified CUDA execution, NVENC encoding, Qwen3-TTS quality, Whisper alignment, AstroMedia correctness, F57 local 8/8, Golden E2E, or Publication Package readiness.'
     Add-Line 'It only captures the initial state needed before selective reconciliation and real certification.'
     Add-Line 'COLLECTION_FAILURE_IS_NOT_COLLECTED_NEGATIVE_EVIDENCE=TRUE'
@@ -834,7 +932,7 @@ else {
     $PreflightCollectorStatus = 'VALID'
 }
 
-Add-Section '10. PREFLIGHT COMPLETION STATE'
+Add-Section '11. PREFLIGHT COMPLETION STATE'
 Add-Line ("REPOSITORY_FOUND={0}" -f (Bool-Text $RepositoryFound))
 Add-Line ("REPOSITORY_ACCESSIBLE={0}" -f (Bool-Text $RepositoryAccessible))
 Add-Line ("GIT_AVAILABLE={0}" -f (Bool-Text $GitAvailable))
@@ -848,6 +946,12 @@ Add-Line ("STATUS_READABLE={0}" -f (Bool-Text $StatusReadable))
 Add-Line ("STASH_INVENTORY_COMPLETE={0}" -f (Bool-Text $StashInventoryComplete))
 Add-Line ("CRITICAL_FILE_INVENTORY_COMPLETE={0}" -f (Bool-Text $CriticalFileInventoryComplete))
 Add-Line ("GIT_EVIDENCE_COMPLETE={0}" -f (Bool-Text $GitEvidenceComplete))
+Add-Line ("TAILSCALE_AVAILABLE={0}" -f (Bool-Text $TailscaleAvailable))
+Add-Line ("TAILSCALE_STATUS_READABLE={0}" -f (Bool-Text $TailscaleStatusReadable))
+Add-Line ("TAILSCALE_BACKEND_STATE={0}" -f $TailscaleBackendState)
+Add-Line ("TAILSCALE_DNS_NAME_PRESENT={0}" -f (Bool-Text $TailscaleDnsNamePresent))
+Add-Line ("TAILSCALE_FUNNEL_STATUS_READABLE={0}" -f (Bool-Text $TailscaleFunnelStatusReadable))
+Add-Line ("TAILSCALE_FUNNEL_443_PRESENT={0}" -f (Bool-Text $TailscaleFunnel443Present))
 Add-Line ("PREFLIGHT_BLOCKER_COUNT={0}" -f $script:Blockers.Count)
 Add-Line ("PREFLIGHT_WARNING_COUNT={0}" -f $script:Warnings.Count)
 Add-Line ("PREFLIGHT_BLOCKERS={0}" -f ($script:Blockers -join ';'))

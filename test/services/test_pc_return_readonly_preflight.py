@@ -393,6 +393,7 @@ def test_t14_optional_tool_absence_is_warning_not_blocker() -> None:
         "W_FFPROBE_NOT_AVAILABLE",
         "W_NVCC_NOT_AVAILABLE",
         "W_OLLAMA_NOT_AVAILABLE",
+        "W_TAILSCALE_NOT_AVAILABLE",
     )
     for code in warning_codes:
         assert f"Add-Warning '{code}'" in content
@@ -402,3 +403,49 @@ def test_t14_optional_tool_absence_is_warning_not_blocker() -> None:
         "COLLECTION_FAILURE_IS_NOT_COLLECTED_NEGATIVE_EVIDENCE=TRUE"
         in content
     )
+
+
+def test_t15_tailscale_probe_is_read_only_and_privacy_minimized() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    assert "'ollama', 'tailscale'" in content
+    assert "W_TAILSCALE_NOT_AVAILABLE" in content
+    assert "TAILSCALE_AVAILABLE=" in content
+    assert "TAILSCALE_STATUS_READABLE=" in content
+    assert "TAILSCALE_DNS_NAME_PRESENT=" in content
+    assert "TAILSCALE_FUNNEL_STATUS_READABLE=" in content
+    assert "TAILSCALE_FUNNEL_443_PRESENT=" in content
+    assert "tailscale status --json (curated, no raw profile dump)" in content
+    assert "tailscale funnel status --json (curated, no state change)" in content
+
+    prohibited_fragments = (
+        "'funnel', '--bg'",
+        "'funnel', 'off'",
+        "'up'",
+        "'login'",
+        "'logout'",
+        "'set'",
+        "'switch'",
+    )
+    for fragment in prohibited_fragments:
+        assert fragment not in content
+
+
+def test_t16_tailscale_absence_cannot_block_global_preflight() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+
+    tailscale_codes = (
+        "W_TAILSCALE_NOT_AVAILABLE",
+        "W_TAILSCALE_VERSION_QUERY_FAILED",
+        "W_TAILSCALE_NOT_RUNNING",
+        "W_TAILSCALE_DNS_NAME_MISSING",
+        "W_TAILSCALE_STATUS_PARSE_FAILED",
+        "W_TAILSCALE_STATUS_QUERY_FAILED",
+        "W_TAILSCALE_FUNNEL_443_ALREADY_PRESENT",
+        "W_TAILSCALE_FUNNEL_STATUS_PARSE_FAILED",
+        "W_TAILSCALE_FUNNEL_STATUS_QUERY_FAILED",
+    )
+    for code in tailscale_codes:
+        assert f"Add-Blocker '{code}'" not in content
+
+    assert "Instagram Funnel readiness remains pending" in content
