@@ -1,0 +1,106 @@
+name: Centinela B2 Optional Adapter Patch
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-b2-litellm-optional-v0.1
+    paths:
+      - .github/workflows/centinela-b2-optional-adapter-patch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    name: Patch and test LiteLLM optional dependency guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Apply exact LiteLLM guard patch and focused test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path("app/services/llm.py")
+          text = service.read_text(encoding="utf-8")
+          old = '''        if adapter == "litellm":\n            import litellm\n\n            if not model_name:\n'''
+          new = '''        if adapter == "litellm":\n            try:\n                import litellm\n            except ImportError as exc:\n                raise RuntimeError(\n                    "LiteLLM adapter requires the optional dependency; "\n                    "install it with `uv sync --extra litellm`."\n                ) from exc\n\n            if not model_name:\n'''
+          if text.count(old) != 1:
+              raise SystemExit("B2 exact LiteLLM adapter patch target not found exactly once")
+          service.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test_path = Path("test/services/test_llm_optional_dependency.py")
+          if test_path.exists():
+              raise SystemExit("B2 focused test path already exists")
+          test_path.write_text(
+              '''from app.services import llm\n\n\ndef test_litellm_adapter_without_optional_dependency_is_fail_closed():\n    result = llm._generate_response(\n        "Reply with exactly: OK",\n        app_config={"llm_provider": "litellm"},\n    )\n\n    assert result.startswith("Error:")\n    assert "uv sync --extra litellm" in result\n\n''',
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Install baseline without optional LiteLLM extra
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          if uv pip show litellm >/dev/null 2>&1; then
+            echo "B2_BASELINE_LITELLM_PRESENT=TRUE"
+            exit 2
+          fi
+          echo "B2_BASELINE_LITELLM_PRESENT=FALSE"
+
+      - name: Run focused optional-dependency test
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pytest -q test/services/test_llm_optional_dependency.py
+
+      - name: Compile and lint patched files
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python -m compileall -q app/services/llm.py test/services/test_llm_optional_dependency.py
+          uv run ruff check app/services/llm.py test/services/test_llm_optional_dependency.py
+
+      - name: Commit only guarded adapter and focused test
+        shell: bash
+        run: |
+          set -euo pipefail
+          unexpected="$(git status --short | grep -vE '^( M app/services/llm.py|\?\? test/services/test_llm_optional_dependency.py|\?\? \.venv/)' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "B2_CODE_PATCH_UNEXPECTED_CHANGE=TRUE"
+            printf '%s\n' "$unexpected"
+            exit 2
+          fi
+          git add -- app/services/llm.py test/services/test_llm_optional_dependency.py
+          staged="$(git diff --cached --name-only)"
+          expected=$'app/services/llm.py\ntest/services/test_llm_optional_dependency.py'
+          if [ "$staged" != "$expected" ]; then
+            echo "B2_CODE_PATCH_SCOPE_INVALID=TRUE"
+            printf '%s\n' "$staged"
+            exit 2
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "llm: fail closed when optional LiteLLM extra is missing"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
