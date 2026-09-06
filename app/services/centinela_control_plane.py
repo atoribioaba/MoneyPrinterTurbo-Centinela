@@ -1,18 +1,23 @@
 """Unified control-plane facade for EL CENTINELA DEL UNIVERSO.
 
-MoneyPrinterTurbo remains the rendering/generation engine. This module gives the
-Centinela-specific engineering services one truthful inventory and one orchestration
-surface instead of exposing unrelated modules as if they were all fully wired.
+The repository already contains many independently tested engineering services and
+WebUI pages. This facade does not pretend that those pages are one executable
+pipeline. It exposes the current integration truth and wraps the existing
+``build_production_orchestrator`` service safely.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any, Callable
 
+from app.models.production_orchestrator import (
+    ProductionOrchestratorPlan,
+    ProductionOrchestratorRequest,
+)
 from app.services.error_control import ErrorCategory, boundary_error
-from app.services.production_orchestrator import ProductionOrchestrator, ProductionPlan
+from app.services.production_orchestrator import build_production_orchestrator
 
 
 class IntegrationStatus(StrEnum):
@@ -44,102 +49,96 @@ class EngineeringIntegration:
         }
 
 
-# This registry deliberately distinguishes "module exists" from "executed by the
-# production orchestrator". It is the source used by the WebUI status page and docs.
+# Core integration inventory. This is intentionally not a claim that it lists every
+# Fxx engineering page in the repository; those remain individually accessible.
 _ENGINEERING_INVENTORY = (
     EngineeringIntegration(
         key="astronomy",
         name="Astronomy Director",
         module="app.services.astronomy_director",
         role="Planificación astronómica con contexto temporal y evidencia.",
-        status=IntegrationStatus.WIRED,
-        pipeline_stage="astronomy",
+        status=IntegrationStatus.AVAILABLE,
+        pipeline_stage="planning",
+        note="Servicio y página propios; aún no es entrada directa del F51 orquestador.",
     ),
     EngineeringIntegration(
         key="story",
         name="Visual Story Graph",
         module="app.services.visual_story_graph",
         role="Estructura narrativa y secuenciación de escenas.",
-        status=IntegrationStatus.WIRED,
-        pipeline_stage="script",
+        status=IntegrationStatus.AVAILABLE,
+        pipeline_stage="story",
+        note="Servicio y página propios; F51 recibe productos ya preparados.",
     ),
     EngineeringIntegration(
         key="material",
-        name="Semantic Matcher",
-        module="app.services.semantic_matcher",
-        role="Matching semántico guion → material.",
+        name="Material Selection / Semantic Matching",
+        module="app.services.material_selection",
+        role="Selección y matching de material para escenas.",
         status=IntegrationStatus.AVAILABLE,
         pipeline_stage="material",
-        note="El handler por defecto de material del orquestador aún es passthrough.",
     ),
     EngineeringIntegration(
         key="cinematic",
-        name="Cinematic Director",
+        name="Cinematic / Reframing Toolchain",
         module="app.services.cinematic_director",
-        role="Dirección cinematográfica y continuidad visual.",
+        role="Dirección cinematográfica, reframing, focal y movimiento visual.",
         status=IntegrationStatus.AVAILABLE,
-        note="Servicio disponible; todavía no es una etapa propia del orquestador.",
-    ),
-    EngineeringIntegration(
-        key="smart_reframing",
-        name="Smart Reframing / Focal / Ken Burns",
-        module="app.services.smart_reframing",
-        role="Composición 9:16 y movimiento visual inteligente.",
-        status=IntegrationStatus.AVAILABLE,
-        pipeline_stage="video",
-        note="La etapa video del orquestador sigue siendo un placeholder.",
-    ),
-    EngineeringIntegration(
-        key="video",
-        name="Video Base Renderer",
-        module="app.services.video_base_renderer",
-        role="Renderizado del vídeo base.",
-        status=IntegrationStatus.PLACEHOLDER,
-        pipeline_stage="video",
-        note="Existe renderer, pero el handler por defecto aún devuelve pending_video_render.",
-    ),
-    EngineeringIntegration(
-        key="subtitles",
-        name="Subtitles",
-        module="app.services.subtitle",
-        role="Generación/render de subtítulos.",
-        status=IntegrationStatus.PLACEHOLDER,
-        pipeline_stage="subtitles",
-        note="La etapa del orquestador todavía devuelve pending_subtitle_render.",
-    ),
-    EngineeringIntegration(
-        key="audio",
-        name="Voice / TTS",
-        module="app.services.voice",
-        role="Narración y audio.",
-        status=IntegrationStatus.PLACEHOLDER,
-        pipeline_stage="audio",
-        note="La etapa del orquestador todavía devuelve pending_audio_render.",
+        pipeline_stage="creative_video",
     ),
     EngineeringIntegration(
         key="quality",
         name="Quality Gates",
         module="app.services.quality_gates",
-        role="Preflight de autenticidad, calidad y compliance.",
-        status=IntegrationStatus.AVAILABLE,
-        note="Disponible como servicio; se debe integrar como gate visible antes de revisión.",
+        role="Gate técnico/científico previo a entrega y orquestación.",
+        status=IntegrationStatus.WIRED,
+        pipeline_stage="quality",
+        note="F51 consume QualityGatesPlan y bloquea si technical_ready no es verdadero.",
+    ),
+    EngineeringIntegration(
+        key="delivery",
+        name="Delivery Render",
+        module="app.services.delivery_render",
+        role="Prepara la entrega previa al render final.",
+        status=IntegrationStatus.WIRED,
+        pipeline_stage="delivery",
+        note="F51 consume DeliveryRenderPlan y exige READY_FOR_EXPLICIT_RENDER_APPROVAL.",
+    ),
+    EngineeringIntegration(
+        key="production_orchestrator",
+        name="Production Orchestrator F51",
+        module="app.services.production_orchestrator",
+        role="Orquestación declarativa fail-closed previa a VideoBaseE2E/FinalizationE2E.",
+        status=IntegrationStatus.WIRED,
+        pipeline_stage="orchestration",
+        note="No renderiza, no llama red, no autoriza publicación.",
+    ),
+    EngineeringIntegration(
+        key="video_base",
+        name="Video Base / Video Base E2E",
+        module="app.services.video_base_e2e",
+        role="Construcción y certificación del vídeo base.",
+        status=IntegrationStatus.PARTIAL,
+        pipeline_stage="video",
+        note="Tiene flujo/página propios; F51 solo indica el siguiente paso, no lo ejecuta.",
     ),
     EngineeringIntegration(
         key="finalization",
         name="Finalization E2E",
         module="app.services.finalization_e2e",
-        role="Finalización y revisión humana.",
-        status=IntegrationStatus.WIRED,
-        pipeline_stage="finalization",
+        role="Finalización y autoridad de revisión humana.",
+        status=IntegrationStatus.PARTIAL,
+        pipeline_stage="human_review",
+        note="Es downstream de F51 y conserva autoridad separada por diseño.",
     ),
     EngineeringIntegration(
         key="publication_package",
         name="Publication Package",
         module="app.services.publication_package",
-        role="Preparación del paquete de publicación después de la revisión.",
-        status=IntegrationStatus.WIRED,
-        pipeline_stage="publication",
-        note="Fail-closed: requiere ready_for_manual_publication.",
+        role="Materializa el paquete después de la aprobación humana válida.",
+        status=IntegrationStatus.PARTIAL,
+        pipeline_stage="publication_package",
+        note="No equivale a publicar en una red social; esa acción permanece separada.",
     ),
 )
 
@@ -158,35 +157,40 @@ def inventory_summary() -> dict[str, int]:
 @dataclass(slots=True)
 class ControlPlaneResult:
     success: bool
-    run: dict[str, Any] | None
+    plan: dict[str, Any] | None
     error: dict[str, Any] | None = None
 
 
 class CentinelaControlPlane:
-    """Small facade over the production orchestrator with safe boundary errors."""
+    """Safe facade over the repository's real F51 builder function."""
 
-    def __init__(self, orchestrator: ProductionOrchestrator | None = None) -> None:
-        self.orchestrator = orchestrator or ProductionOrchestrator()
-
-    def execute(
+    def __init__(
         self,
-        plan: ProductionPlan,
-        *,
-        handlers: Mapping[Any, Any] | None = None,
-    ) -> ControlPlaneResult:
+        builder: Callable[
+            [ProductionOrchestratorRequest], ProductionOrchestratorPlan
+        ] = build_production_orchestrator,
+    ) -> None:
+        self.builder = builder
+
+    def build(self, request: ProductionOrchestratorRequest) -> ControlPlaneResult:
         try:
-            run = self.orchestrator.execute(plan, handlers=handlers)
+            plan = self.builder(request)
         except Exception as exc:
             error = boundary_error(
-                code="control_plane_execution_failed",
-                category=ErrorCategory.UNKNOWN,
-                message="La ejecución del pipeline falló antes de producir un estado recuperable.",
-                operation="control_plane.execute",
+                code="control_plane_build_failed",
+                category=ErrorCategory.VALIDATION,
+                message=(
+                    "El orquestador de producción rechazó la entrada o no pudo "
+                    "construir un plan seguro."
+                ),
+                operation="control_plane.build",
                 component="production_orchestrator",
                 cause=exc,
             )
-            return ControlPlaneResult(success=False, run=None, error=error.as_dict())
+            return ControlPlaneResult(success=False, plan=None, error=error.as_dict())
 
-        run_payload = run.as_dict() if hasattr(run, "as_dict") else {"result": str(run)}
-        success = bool(getattr(run, "succeeded", False))
-        return ControlPlaneResult(success=success, run=run_payload)
+        if hasattr(plan, "model_dump"):
+            payload = plan.model_dump(mode="json")
+        else:
+            payload = {"result": str(plan)}
+        return ControlPlaneResult(success=True, plan=payload)
