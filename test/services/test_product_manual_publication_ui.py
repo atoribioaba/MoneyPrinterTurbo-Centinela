@@ -20,8 +20,11 @@ def test_product_manual_publication_form_is_explicit_and_ephemeral():
     assert "ManualPublicationPlatform.TIKTOK" in source
     assert 'clear_on_submit=True' in source
     assert 'enter_to_submit=False' in source
-    assert 'type="password"' in source
-    assert '"Ejecutar envío manual"' in source
+    assert 'type="password"' not in source
+    assert "authorize_desktop" in source
+    assert '"Conectar plataforma y ejecutar envío manual"' in source
+    assert "No hay fallback de pegado manual de tokens" in source
+    assert "st.session_state" not in source
     assert 'approved=approved' in source
     assert "Publicar ahora" not in source
     assert "AUTO_PUBLICATION=FALSE" in source

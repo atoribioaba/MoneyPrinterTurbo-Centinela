@@ -8,10 +8,21 @@ import streamlit as st
 from app.services.centinela.manual_publication import (
     ManualPublicationPlatform,
     publish_verified_package,
+    verify_publication_package,
 )
 from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE
-from app.services.error_control import CentinelaError
+from app.services.error_control import CentinelaError, ErrorCategory, boundary_error
+from app.services.social_oauth import OAuthPlatform
+from app.services.social_oauth_desktop import (
+    DESKTOP_OAUTH_ENABLED_ENV,
+    TIKTOK_CLIENT_KEY_ENV,
+    TIKTOK_CLIENT_SECRET_ENV,
+    YOUTUBE_CLIENT_ID_ENV,
+    YOUTUBE_CLIENT_SECRET_ENV,
+    authorize_desktop,
+    oauth_runtime_status,
+)
 from webui.product import pages, ui
 
 
@@ -43,8 +54,14 @@ _PUBLICATION_UI_COMPATIBILITY_MARKERS = (
 )
 
 _MANUAL_DELIVERY_OPTIONS = {
-    "YouTube · subir como privado": ManualPublicationPlatform.YOUTUBE,
-    "TikTok · enviar a bandeja": ManualPublicationPlatform.TIKTOK,
+    "YouTube · subir como privado": (
+        ManualPublicationPlatform.YOUTUBE,
+        OAuthPlatform.YOUTUBE,
+    ),
+    "TikTok · enviar a bandeja": (
+        ManualPublicationPlatform.TIKTOK,
+        OAuthPlatform.TIKTOK,
+    ),
 }
 
 
@@ -98,22 +115,84 @@ def _execute_manual_delivery(
     )
 
 
+def _authorize_and_execute_manual_delivery(
+    service,
+    project_id: str,
+    platform: ManualPublicationPlatform,
+    oauth_platform: OAuthPlatform,
+    *,
+    approved: bool,
+    oauth_authorize=authorize_desktop,
+):
+    """Authenticate in browser and immediately delegate one approved action to C6."""
+    if not approved:
+        raise boundary_error(
+            code="human_approval_required",
+            category=ErrorCategory.VALIDATION,
+            message="La publicación requiere confirmación humana explícita antes de OAuth.",
+            operation="product.publication.desktop_oauth",
+            component=platform.value,
+        )
+
+    # Reject stale/tampered packages before opening a vendor login. C6 intentionally
+    # repeats this verification after OAuth, immediately before the network upload.
+    verify_publication_package(service.store, project_id)
+    oauth_result = oauth_authorize(oauth_platform)
+    access_token = oauth_result.token.access_token
+    try:
+        return _execute_manual_delivery(
+            service,
+            project_id,
+            platform,
+            access_token=access_token,
+            approved=True,
+        )
+    finally:
+        # Python strings cannot be zeroized reliably. Drop the local reference as
+        # soon as C6 returns; no token is copied into config/project/session state.
+        access_token = ""
+        oauth_result = None
+
+
 def _render_manual_delivery_action(service, project_id: str) -> None:
     ui.render_section_heading(
         "Envío manual verificado",
         (
             "Después del paquete aprobado puedes iniciar una única acción de envío. "
-            "C6 vuelve a verificar estado, Review 7/7, derechos, rutas y SHA-256 justo antes de salir del equipo."
+            "El navegador autentica la plataforma y C6 revalida el paquete justo antes de subirlo."
         ),
         eyebrow="ACCIÓN HUMANA",
     )
-    st.info(
-        "**Nada se envía al abrir esta pantalla.** El token se usa solo para el "
-        "envío que confirmes en este formulario; no se guarda en el proyecto ni en sus artefactos."
-    )
+
+    runtime = oauth_runtime_status()
+    if not runtime["gate_valid"]:
+        st.error(f"{DESKTOP_OAUTH_ENABLED_ENV} contiene un valor no válido.")
+    elif not runtime["enabled"]:
+        st.warning(
+            "OAuth Desktop está desactivado. No hay fallback de pegado manual de tokens."
+        )
+    else:
+        st.info(
+            "**Nada se envía al abrir esta pantalla.** La autenticación se realiza en el "
+            "navegador del sistema y los tokens solo viven en memoria durante esta acción."
+        )
+
+    with st.expander("Configuración local de OAuth", expanded=False):
+        st.caption(
+            "Define estas variables en el proceso local. No introduzcas sus valores en el proyecto."
+        )
+        st.code(DESKTOP_OAUTH_ENABLED_ENV, language=None)
+        st.code(YOUTUBE_CLIENT_ID_ENV, language=None)
+        st.caption(f"Opcional para Google Desktop: {YOUTUBE_CLIENT_SECRET_ENV}")
+        st.code(TIKTOK_CLIENT_KEY_ENV, language=None)
+        st.code(TIKTOK_CLIENT_SECRET_ENV, language=None)
+        st.caption(
+            "Refresh tokens: no se guardan. La persistencia segura queda pendiente de certificar "
+            "con Windows Credential Manager/DPAPI en el PC físico."
+        )
+
     st.caption(
-        "Instagram sigue bloqueado: requiere hosting HTTPS verificable del mismo vídeo aprobado "
-        "antes de poder conectarlo con seguridad."
+        "Instagram sigue bloqueado: requiere hosting HTTPS verificable del mismo vídeo aprobado."
     )
 
     with st.form(
@@ -125,57 +204,65 @@ def _render_manual_delivery_action(service, project_id: str) -> None:
             "Destino",
             options=tuple(_MANUAL_DELIVERY_OPTIONS),
             help=(
-                "YouTube siempre se inicia como privado. TikTok se envía a su bandeja "
+                "YouTube se inicia como privado. TikTok se envía a su bandeja "
                 "para completar allí la publicación."
             ),
-        )
-        access_token = st.text_input(
-            "Access token de esta sesión",
-            type="password",
-            help="Credencial efímera: no se escribe en configuración, proyecto ni artefactos.",
         )
         approved = st.checkbox(
             "Confirmo que he revisado este paquete y autorizo únicamente este envío manual.",
             value=False,
         )
+        platform, oauth_platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]
+        configured = (
+            runtime["youtube_configured"]
+            if oauth_platform == OAuthPlatform.YOUTUBE
+            else runtime["tiktok_configured"]
+        )
         submitted = st.form_submit_button(
-            "Ejecutar envío manual",
+            "Conectar plataforma y ejecutar envío manual",
             type="primary",
             width="stretch",
+            disabled=not configured,
         )
 
+    if not configured:
+        st.caption(
+            "Este destino está bloqueado hasta que sus credenciales OAuth de aplicación "
+            "estén configuradas en el proceso local."
+        )
     if not submitted:
         return
     if not approved:
-        st.error("Marca la confirmación explícita antes de ejecutar este envío.")
-        return
-    token = access_token.strip()
-    if not token:
-        st.error("Introduce el access token de la plataforma para esta sesión.")
+        st.error("Marca la confirmación explícita antes de autenticar y ejecutar este envío.")
         return
 
-    platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]
     try:
-        with st.spinner("Revalidando paquete y ejecutando el envío manual…", show_time=True):
-            result = _execute_manual_delivery(
+        with st.spinner(
+            "Abriendo OAuth, esperando el callback local y revalidando el paquete…",
+            show_time=True,
+        ):
+            result = _authorize_and_execute_manual_delivery(
                 service,
                 project_id,
                 platform,
-                access_token=token,
+                oauth_platform,
                 approved=approved,
             )
     except CentinelaError as exc:
         ui.render_error_state(
             exc.safe_message,
-            action="No hay reintento automático. Revisa el estado antes de volver a autorizar otra acción.",
+            action=(
+                "No hay reintento automático ni fallback de token pegado. "
+                "Revisa la configuración y vuelve a autorizar una acción nueva."
+            ),
             technical_detail=f"{exc.code} · {exc.category.value}",
         )
         return
     except Exception as exc:
-        LOGGER.exception("Manual publication UI action failed")
+        LOGGER.exception("Desktop OAuth manual publication UI action failed")
         ui.render_error_state(
-            "La acción manual no pudo completarse.",
-            action="No hay reintento automático. Verifica la plataforma y el paquete antes de intentar otra vez.",
+            "La autenticación o el envío manual no pudo completarse.",
+            action="Nada se reintenta automáticamente. Verifica el entorno antes de otra autorización.",
             technical_detail=type(exc).__name__,
         )
         return
