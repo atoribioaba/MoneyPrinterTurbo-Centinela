@@ -74,9 +74,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # uv audit 0.12.10 has no --extra selector. Extras are included unless
+          # explicitly disabled, so exclude TwelveLabs and leave LiteLLM active.
           uv --preview-features audit-command audit \
             --no-default-groups \
-            --extra litellm \
             --no-extra twelvelabs
 
       - name: Commit validated uv.lock only
