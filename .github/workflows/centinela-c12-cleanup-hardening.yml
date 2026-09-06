@@ -1,0 +1,98 @@
+name: Centinela C12 Funnel Cleanup Hardening
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c12-instagram-tailscale-callback-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out C12
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Harden verified Funnel cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/services/instagram_oauth_callback.py")
+          text = path.read_text(encoding="utf-8")
+
+          old = '''        if handler is None or str(handler.get("Proxy") or "") != expected_proxy:\n            try:\n                self.stop()\n            finally:\n                raise _error(\n                    "tailscale_funnel_route_unverified",\n                    ErrorCategory.UPSTREAM,\n                    "Tailscale Funnel no confirmó el proxy HTTPS esperado.",\n                    operation="instagram_oauth_callback.funnel_start",\n                )\n'''
+          new = '''        if handler is None or str(handler.get("Proxy") or "") != expected_proxy:\n            try:\n                self.stop()\n            except BaseException as cleanup_exc:\n                raise _error(\n                    "tailscale_funnel_cleanup_failed_after_route_mismatch",\n                    ErrorCategory.SUBPROCESS,\n                    "El route de Funnel era inválido y además no se confirmó su cierre.",\n                    operation="instagram_oauth_callback.funnel_start",\n                    cause=cleanup_exc,\n                ) from cleanup_exc\n            raise _error(\n                "tailscale_funnel_route_unverified",\n                ErrorCategory.UPSTREAM,\n                "Tailscale Funnel no confirmó el proxy HTTPS esperado.",\n                operation="instagram_oauth_callback.funnel_start",\n            )\n'''
+          if old not in text:
+              raise SystemExit("route cleanup anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''        if not isinstance(allowed, Mapping) or allowed.get(\n            f"{self.host}:{_PUBLIC_HTTPS_PORT}"\n        ) is not True:\n            try:\n                self.stop()\n            finally:\n                raise _error(\n                    "tailscale_funnel_public_not_confirmed",\n                    ErrorCategory.UPSTREAM,\n                    "Tailscale no confirmó que el endpoint esté expuesto mediante Funnel.",\n                    operation="instagram_oauth_callback.funnel_start",\n                )\n'''
+          new = '''        if not isinstance(allowed, Mapping) or allowed.get(\n            f"{self.host}:{_PUBLIC_HTTPS_PORT}"\n        ) is not True:\n            try:\n                self.stop()\n            except BaseException as cleanup_exc:\n                raise _error(\n                    "tailscale_funnel_cleanup_failed_after_public_mismatch",\n                    ErrorCategory.SUBPROCESS,\n                    "Funnel no confirmó exposición pública y tampoco su cierre posterior.",\n                    operation="instagram_oauth_callback.funnel_start",\n                    cause=cleanup_exc,\n                ) from cleanup_exc\n            raise _error(\n                "tailscale_funnel_public_not_confirmed",\n                ErrorCategory.UPSTREAM,\n                "Tailscale no confirmó que el endpoint esté expuesto mediante Funnel.",\n                operation="instagram_oauth_callback.funnel_start",\n            )\n'''
+          if old not in text:
+              raise SystemExit("public cleanup anchor missing")
+          text = text.replace(old, new, 1)
+
+          old = '''        self._active = False\n        if _funnel_handler(self._funnel_status(), host=self.host) is not None:\n            raise _error(\n                "tailscale_funnel_still_active",\n                ErrorCategory.UPSTREAM,\n                "Tailscale sigue mostrando el Funnel de Instagram como activo.",\n                operation="instagram_oauth_callback.funnel_stop",\n            )\n'''
+          new = '''        if _funnel_handler(self._funnel_status(), host=self.host) is not None:\n            raise _error(\n                "tailscale_funnel_still_active",\n                ErrorCategory.UPSTREAM,\n                "Tailscale sigue mostrando el Funnel de Instagram como activo.",\n                operation="instagram_oauth_callback.funnel_stop",\n            )\n        self._active = False\n'''
+          if old not in text:
+              raise SystemExit("active state anchor missing")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          test_path = Path("test/services/test_instagram_oauth_callback.py")
+          tests = test_path.read_text(encoding="utf-8")
+          old = '''        stop_returncode: int = 0,\n    ) -> None:\n        self.dns_name = dns_name\n        self.preexisting = preexisting\n        self.start_returncode = start_returncode\n        self.stop_returncode = stop_returncode\n'''
+          new = '''        stop_returncode: int = 0,\n        sticky_after_stop: bool = False,\n    ) -> None:\n        self.dns_name = dns_name\n        self.preexisting = preexisting\n        self.start_returncode = start_returncode\n        self.stop_returncode = stop_returncode\n        self.sticky_after_stop = sticky_after_stop\n'''
+          if old not in tests:
+              raise SystemExit("runner init anchor missing")
+          tests = tests.replace(old, new, 1)
+
+          old = '''            self.active = False\n            self.preexisting = False\n            self.proxy = ""\n            return CliResult(0, "stopped")\n'''
+          new = '''            if not self.sticky_after_stop:\n                self.active = False\n                self.preexisting = False\n                self.proxy = ""\n            return CliResult(0, "stopped")\n'''
+          if old not in tests:
+              raise SystemExit("runner stop anchor missing")
+          tests = tests.replace(old, new, 1)
+
+          marker = '''def test_authorization_lifecycle_closes_public_boundary_before_token_exchange():\n'''
+          extra = '''def test_tailscale_sticky_route_keeps_bridge_active_for_safe_retry():\n    runner = _TailscaleRunner(sticky_after_stop=True)\n    bridge = TailscaleFunnelBridge(\n        local_port=43123,\n        redirect_uri=REDIRECT,\n        executable="tailscale",\n        runner=runner,\n    )\n    bridge.start()\n\n    with pytest.raises(CentinelaError) as exc_info:\n        bridge.stop()\n\n    assert exc_info.value.code == "tailscale_funnel_still_active"\n    assert runner.active is True\n\n    runner.sticky_after_stop = False\n    bridge.stop()\n    assert runner.active is False\n\n\n'''
+          if marker not in tests:
+              raise SystemExit("test insertion anchor missing")
+          if extra not in tests:
+              tests = tests.replace(marker, extra + marker, 1)
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+      - name: Validate focused C12 stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen --group dev --python 3.11
+          uv run --python 3.11 pytest -q test/services/test_instagram_oauth_callback.py test/services/test_instagram_oauth.py
+          uv run --python 3.11 ruff check app/services/instagram_oauth_callback.py test/services/test_instagram_oauth_callback.py
+          uv run --python 3.11 python -m py_compile app/services/instagram_oauth_callback.py
+      - name: Commit only production and focused tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/services/instagram_oauth_callback.py test/services/test_instagram_oauth_callback.py
+          git diff --cached --quiet && exit 0
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = "app/services/instagram_oauth_callback.py test/services/test_instagram_oauth_callback.py "
+          git commit -m "auth: harden verified Tailscale Funnel cleanup"
+          git push
