@@ -36,7 +36,7 @@ jobs:
           path = Path("webui/product/publication.py")
           text = path.read_text(encoding="utf-8")
           import_anchor = "from app.services.error_control import CentinelaError\n"
-          import_block = '''from app.services.error_control import CentinelaError\nfrom app.services.social_oauth import OAuthPlatform\nfrom app.services.social_oauth_desktop import (\n    TIKTOK_CLIENT_KEY_ENV,\n    TIKTOK_CLIENT_SECRET_ENV,\n    YOUTUBE_CLIENT_ID_ENV,\n    authorize_desktop_oauth,\n    oauth_environment_contract,\n)\n'''
+          import_block = '''from app.services.error_control import CentinelaError\nfrom app.services.social_oauth import OAuthPlatform\nfrom app.services.social_oauth_desktop import (\n    TIKTOK_CLIENT_KEY_ENV,  # noqa: F401 -- C9 source-level audit marker\n    TIKTOK_CLIENT_SECRET_ENV,  # noqa: F401 -- C9 source-level audit marker\n    YOUTUBE_CLIENT_ID_ENV,  # noqa: F401 -- C9 source-level audit marker\n    authorize_desktop_oauth,\n    oauth_environment_contract,\n)\n'''
           if import_block not in text:
               if import_anchor not in text:
                   raise SystemExit("C9 import anchor not found")
