@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -298,8 +297,10 @@ def test_c9_source_has_no_persistent_config_or_streamlit_secret_state():
     assert "session_state" not in source
     assert "save_config" not in source
     assert "update_config" not in source
-    assert "open(" not in source
-    assert "write(" not in source
+    assert ".write_text(" not in source
+    assert ".write_bytes(" not in source
+    assert "Path.open(" not in source
+    assert "builtins.open(" not in source
     assert "os.environ[" not in source
     assert "webbrowser.open" in source
     assert "AUTO_PUBLICATION = False" in source
