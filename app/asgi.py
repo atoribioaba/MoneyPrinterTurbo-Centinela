@@ -2,6 +2,7 @@
 
 import os
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -67,13 +68,91 @@ def validation_exception_handler(request: Request, e: RequestValidationError):
     )
 
 
-def get_application() -> FastAPI:
-    """Initialize FastAPI application.
+def parse_cors_allowed_origins(raw_origins: str | None) -> list[str]:
+    """Parse the explicit browser cross-origin allowlist.
 
-    Returns:
-       FastAPI: Application object instance.
-
+    CORS applies to browser JavaScript only. Server-side clients without an Origin
+    header (curl, Postman, n8n, SDKs) remain compatible. An empty configuration
+    means no cross-origin browser access: normal same-origin requests still work.
     """
+    if not raw_origins:
+        return []
+    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+
+def configure_cors(instance: FastAPI, allowed_origins: list[str]) -> None:
+    """Configure CORS only when the user explicitly supplied trusted origins."""
+    if not allowed_origins:
+        logger.info(
+            "browser cross-origin API access is disabled; set "
+            "CORS_ALLOWED_ORIGINS to enable trusted origins"
+        )
+        return
+
+    allow_all_origins = "*" in allowed_origins
+    configured_api_key = config.app.get("api_key", "")
+    if allow_all_origins and configured_api_key in (None, ""):
+        logger.warning(
+            "CORS allows every browser origin while API key authentication is "
+            "disabled; configure app.api_key or restrict CORS_ALLOWED_ORIGINS"
+        )
+
+    instance.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        # Never combine wildcard origin reflection with browser credentials.
+        allow_credentials=not allow_all_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        # Exact allowlists may opt into modern Private Network Access preflights.
+        # Wildcard mode deliberately does not expose private-network access.
+        allow_private_network=not allow_all_origins,
+    )
+
+
+def is_browser_origin_allowed(
+    request: Request, allowed_origins: list[str]
+) -> bool:
+    """Return True for server clients, same-origin browsers, or explicit allowlist."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    if "*" in allowed_origins or origin in allowed_origins:
+        return True
+
+    request_url = urlsplit(str(request.url))
+    request_origin = f"{request_url.scheme}://{request_url.netloc}"
+    return origin == request_origin
+
+
+def configure_browser_access(instance: FastAPI, allowed_origins: list[str]) -> None:
+    """Apply active Origin rejection plus CORS response policy."""
+
+    @instance.middleware("http")
+    async def reject_untrusted_browser_origin(request: Request, call_next):
+        if not is_browser_origin_allowed(request, allowed_origins):
+            # Origin is navigation metadata, not a credential, but avoid echoing
+            # arbitrary attacker-controlled strings into normal application logs.
+            logger.warning(
+                "blocked untrusted browser origin: "
+                f"method={request.method}, path={request.url.path}"
+            )
+            return JSONResponse(
+                status_code=403,
+                content=utils.get_response(
+                    status=403,
+                    message="cross-origin browser request is not allowed",
+                ),
+            )
+        return await call_next(request)
+
+    # Register CORS last so trusted preflight requests are handled by Starlette;
+    # actual simple requests still pass through the active Origin guard above.
+    configure_cors(instance, allowed_origins)
+
+
+def get_application() -> FastAPI:
+    """Initialize FastAPI application."""
     instance = FastAPI(
         title=config.project_name,
         description=config.project_description,
@@ -92,13 +171,7 @@ app = get_application()
 
 @app.middleware("http")
 async def protect_generated_task_files(request: Request, call_next):
-    """保护任务产物静态路由，防止绕过 API 鉴权直接下载。
-
-    ``/tasks`` 由 StaticFiles 独立挂载，无法复用 APIRouter 的依赖，
-    因此在中间件中调用同一个 verify_token。鉴权函数会在未配置
-    api_key 时放行；OPTIONS 预检请求也保留给 CORS 中间件处理。
-    """
-
+    """保护任务产物静态路由，防止绕过 API 鉴权直接下载。"""
     request_path = request.url.path
     is_task_file = request_path == "/tasks" or request_path.startswith("/tasks/")
     if is_task_file and request.method != "OPTIONS":
@@ -110,16 +183,12 @@ async def protect_generated_task_files(request: Request, call_next):
     return await call_next(request)
 
 
-# Configures the CORS middleware for the FastAPI app
-cors_allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "")
-origins = cors_allowed_origins_str.split(",") if cors_allowed_origins_str else ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# MoneyPrinterTurbo v1.3.6 security policy, selectively backported while preserving
+# Centinela's deferred StaticFiles directory creation behavior.
+cors_allowed_origins = parse_cors_allowed_origins(
+    os.getenv("CORS_ALLOWED_ORIGINS", "")
 )
+configure_browser_access(app, cors_allowed_origins)
 
 task_dir = os.path.join(utils.storage_dir(), "tasks")
 app.mount(
