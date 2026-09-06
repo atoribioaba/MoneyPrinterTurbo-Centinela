@@ -1,0 +1,95 @@
+name: Centinela B1 Lock Regeneration
+
+on:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - requirements.txt
+      - uv.lock
+      - .github/workflows/centinela-b1-lockgen.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centinela-b1-lockgen-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate-lock:
+    name: Regenerate python-multipart lock only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out B1 head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.12.10"
+          enable-cache: false
+
+      - name: Regenerate only python-multipart
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp uv.lock "$RUNNER_TEMP/uv.lock.before"
+          uv lock --upgrade-package python-multipart==0.0.32
+          uv lock --check
+
+      - name: Verify lock drift is restricted
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_LOCK="$RUNNER_TEMP/uv.lock.before" python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          before = tomllib.loads(Path(os.environ["BEFORE_LOCK"]).read_text(encoding="utf-8"))
+          after = tomllib.loads(Path("uv.lock").read_text(encoding="utf-8"))
+
+          def records(lock: dict, name: str) -> list[dict]:
+              return [pkg for pkg in lock.get("package", []) if pkg.get("name") == name]
+
+          old_target = records(before, "python-multipart")
+          new_target = records(after, "python-multipart")
+          if len(old_target) != 1 or old_target[0].get("version") != "0.0.27":
+              raise SystemExit("unexpected starting python-multipart lock state")
+          if len(new_target) != 1 or new_target[0].get("version") != "0.0.32":
+              raise SystemExit("python-multipart was not locked to 0.0.32")
+
+          ignored = {"python-multipart", "moneyprinterturbo"}
+          before_other = [pkg for pkg in before.get("package", []) if pkg.get("name") not in ignored]
+          after_other = [pkg for pkg in after.get("package", []) if pkg.get("name") not in ignored]
+          if before_other != after_other:
+              raise SystemExit("non-target dependency drift detected")
+
+          root = records(after, "moneyprinterturbo")
+          if len(root) != 1:
+              raise SystemExit("unexpected project root lock record")
+
+          print("PYTHON_MULTIPART_LOCK_BEFORE=0.0.27")
+          print("PYTHON_MULTIPART_LOCK_AFTER=0.0.32")
+          print("LOCK_NON_TARGET_PACKAGE_DRIFT=0")
+          PY
+
+      - name: Validate frozen install
+        run: uv sync --frozen --python 3.11
+
+      - name: Upload regenerated lock only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: centinela-b1-uv-lock-${{ github.run_id }}
+          path: uv.lock
+          retention-days: 1
+          if-no-files-found: error
