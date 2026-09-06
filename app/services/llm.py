@@ -308,7 +308,13 @@ def _generate_response(prompt: str, app_config=None) -> str:
             return _extract_chat_completion_text(response, llm_provider)
 
         if adapter == "litellm":
-            import litellm
+            try:
+                import litellm
+            except ImportError as exc:
+                raise RuntimeError(
+                    "LiteLLM adapter requires the optional dependency; "
+                    "install it with `uv sync --extra litellm`."
+                ) from exc
 
             if not model_name:
                 raise ValueError(
