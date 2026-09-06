@@ -355,11 +355,10 @@ def verify_publication_package(
         )
     try:
         social_source = store.get_artifact(project_id, social_source_id)
-        social_source_bytes = store.read_bytes(
-            project_id,
-            social_source_id,
-            verify_integrity=True,
-        )
+        social_source_path = store.resolve_artifact_path(project_id, social_source_id)
+        if social_source_path.is_symlink() or not social_source_path.is_file():
+            raise OSError("canonical social source is not a regular file")
+        source_actual_sha, source_actual_size = _sha256_file(social_source_path)
     except (ArtifactNotFoundError, IntegrityError, OSError, ValueError) as exc:
         raise _blocked(
             "publication_social_source_unavailable",
@@ -367,14 +366,15 @@ def verify_publication_package(
             cause=exc,
         ) from exc
     social_sha = str(by_name["social"]["sha256"]).lower()
-    if social_source.sha256.lower() != social_sha or _sha256_file(
-        verified_paths["social"]
-    )[0] != _sha256_file(Path(store.resolve_artifact_path(project_id, social_source_id)))[0]:
+    if (
+        social_source.sha256.lower() != social_sha
+        or source_actual_sha != social_sha
+        or source_actual_size != social_source.size_bytes
+    ):
         raise _blocked(
             "publication_social_source_identity_mismatch",
             "El vídeo social materializado ya no coincide con su artefacto canónico.",
         )
-    del social_source_bytes
 
     checklist = _read_json_evidence(
         verified_paths["publication_checklist"],
