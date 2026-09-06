@@ -77,13 +77,17 @@ def test_feature_gate_is_fail_closed_and_provider_is_explicit():
 def test_provider_audit_rows_are_stable_and_cost_truthful():
     rows = list(iter_tunnel_provider_audit_rows())
     assert [row["provider"] for row in rows] == [
+        "tailscale_funnel",
         "cloudflare_quick",
         "zrok_public",
     ]
-    assert rows[0]["software_license"] == "Apache-2.0"
-    assert "propietario" in rows[0]["classification"].lower()
-    assert rows[1]["classification"] == "OPEN SOURCE + 100 % GRATUITA"
-    assert all(row["conclusion"] == "PRUEBA A/B" for row in rows)
+    assert rows[0]["software_license"].startswith("BSD-3-Clause")
+    assert rows[0]["classification"].startswith("FREEMIUM")
+    assert rows[0]["conclusion"] == "MANTENER"
+    assert rows[1]["software_license"] == "Apache-2.0"
+    assert "propietario" in rows[1]["classification"].lower()
+    assert rows[2]["classification"] == "OPEN SOURCE + 100 % GRATUITA"
+    assert rows[1]["conclusion"] == rows[2]["conclusion"] == "PRUEBA A/B"
 
 
 def test_single_file_server_serves_only_exact_mp4_and_supports_range(tmp_path):
@@ -149,6 +153,25 @@ def test_single_file_server_blocks_media_mutation(tmp_path):
 
 
 def test_tunnel_commands_and_hostname_allowlists_are_fail_closed():
+    tailscale = EphemeralTunnel(
+        InstagramTunnelProvider.TAILSCALE_FUNNEL,
+        "http://127.0.0.1:43122",
+    )
+    assert tailscale._command("tailscale") == [
+        "tailscale",
+        "funnel",
+        "--https=443",
+        "http://127.0.0.1:43122",
+    ]
+    assert (
+        tailscale._accepted_public_origin("https://centinela.tail123456.ts.net")
+        == "https://centinela.tail123456.ts.net"
+    )
+    assert (
+        tailscale._accepted_public_origin("https://centinela.tail123456.ts.net.evil.example")
+        is None
+    )
+
     cloudflare = EphemeralTunnel(
         InstagramTunnelProvider.CLOUDFLARE_QUICK,
         "http://127.0.0.1:43123",
@@ -193,6 +216,60 @@ def test_tunnel_commands_and_hostname_allowlists_are_fail_closed():
         zrok._accepted_public_origin("https://abc.share.zrok.io")
         == "https://abc.share.zrok.io"
     )
+
+
+class _FakeTailscaleBridge:
+    def __init__(self):
+        self.public_origin = "https://centinela.tail123456.ts.net"
+        self.started = False
+        self.stopped = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_tailscale_ephemeral_tunnel_reuses_certified_bridge_and_cleans_up():
+    bridge = _FakeTailscaleBridge()
+    tunnel = EphemeralTunnel(
+        InstagramTunnelProvider.TAILSCALE_FUNNEL,
+        "http://127.0.0.1:43125",
+        tailscale_bridge_factory=lambda **kwargs: bridge,
+    )
+    with tunnel as active:
+        assert active.public_origin == "https://centinela.tail123456.ts.net"
+        assert bridge.started is True
+        assert bridge.stopped is False
+    assert bridge.stopped is True
+    assert tunnel.public_origin == ""
+
+
+class _InvalidOriginCleanupFailBridge:
+    public_origin = "https://evil.example"
+
+    def start(self):
+        return None
+
+    def stop(self):
+        raise OSError("cannot confirm Funnel stop")
+
+
+def test_tailscale_invalid_origin_with_cleanup_failure_is_explicit():
+    bridge = _InvalidOriginCleanupFailBridge()
+    tunnel = EphemeralTunnel(
+        InstagramTunnelProvider.TAILSCALE_FUNNEL,
+        "http://127.0.0.1:43126",
+        tailscale_bridge_factory=lambda **kwargs: bridge,
+    )
+
+    with pytest.raises(CentinelaError) as exc_info:
+        tunnel.__enter__()
+
+    assert exc_info.value.code == "instagram_tailscale_cleanup_failed_after_start_error"
+    assert exc_info.value.retryable is False
+    assert exc_info.value.as_dict()["details"]["primary_error"] == "CentinelaError"
 
 
 class _FakeResponse:
@@ -272,6 +349,24 @@ def test_remote_transport_requires_exact_sha_size_type_and_range(tmp_path):
     assert evidence.get_status == 200
     assert evidence.range_status == 206
     assert evidence.public_origin == "https://unit-test.trycloudflare.com"
+
+
+def test_remote_transport_accepts_verified_tailscale_origin(tmp_path):
+    _, payload, sha256 = _write_mp4(tmp_path)
+    evidence = _validate_remote_transport(
+        public_url=(
+            "https://centinela.tail123456.ts.net/"
+            "opaque/social_1080x1920.mp4"
+        ),
+        provider=InstagramTunnelProvider.TAILSCALE_FUNNEL,
+        expected_sha256=sha256,
+        expected_size=len(payload),
+        public_path_sha256="e" * 64,
+        session=_RemoteSession(payload),
+    )
+    assert evidence.provider == InstagramTunnelProvider.TAILSCALE_FUNNEL
+    assert evidence.public_origin == "https://centinela.tail123456.ts.net"
+    assert evidence.remote_media_sha256 == sha256
 
 
 def test_remote_transport_rejects_untrusted_host_and_changed_bytes(tmp_path):

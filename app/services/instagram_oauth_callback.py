@@ -519,7 +519,7 @@ class TailscaleFunnelBridge:
         self,
         *,
         local_port: int,
-        redirect_uri: str,
+        redirect_uri: str | None = None,
         executable: str | None = None,
         runner: CommandRunner = _default_command_runner,
         command_timeout_seconds: float = 15.0,
@@ -529,12 +529,20 @@ class TailscaleFunnelBridge:
         if command_timeout_seconds <= 0:
             raise ValueError("command_timeout_seconds must be positive")
         self.local_port = int(local_port)
-        self.redirect_uri = validate_tailscale_instagram_redirect_uri(redirect_uri)
-        self.host = (urlsplit(self.redirect_uri).hostname or "").lower()
+        self.redirect_uri = (
+            validate_tailscale_instagram_redirect_uri(redirect_uri)
+            if redirect_uri is not None
+            else ""
+        )
+        self.host = (urlsplit(self.redirect_uri).hostname or "").lower() if self.redirect_uri else ""
         self.executable = executable or shutil.which("tailscale") or ""
         self.runner = runner
         self.command_timeout_seconds = command_timeout_seconds
         self._active = False
+
+    @property
+    def public_origin(self) -> str:
+        return f"https://{self.host}" if self.host else ""
 
     def _run(self, args: list[str]) -> CliResult:
         if not self.executable:
@@ -576,13 +584,22 @@ class TailscaleFunnelBridge:
         dns_name = ""
         if isinstance(own, Mapping):
             dns_name = str(own.get("DNSName") or "").strip().rstrip(".").lower()
-        if dns_name != self.host:
+        if not dns_name or not dns_name.endswith(".ts.net"):
+            raise _error(
+                "tailscale_dns_identity_missing",
+                ErrorCategory.VALIDATION,
+                "Tailscale no devolvió un hostname *.ts.net verificable para este nodo.",
+                operation="instagram_oauth_callback.tailscale_preflight",
+            )
+        if self.host and dns_name != self.host:
             raise _error(
                 "tailscale_dns_identity_mismatch",
                 ErrorCategory.VALIDATION,
                 "El hostname del redirect de Instagram no coincide con este nodo Tailscale.",
                 operation="instagram_oauth_callback.tailscale_preflight",
             )
+        if not self.host:
+            self.host = dns_name
 
         existing = _funnel_handler(self._funnel_status(), host=self.host)
         if existing is not None:

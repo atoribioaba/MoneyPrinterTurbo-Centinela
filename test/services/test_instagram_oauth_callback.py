@@ -274,6 +274,21 @@ def test_tailscale_bridge_verifies_stable_dns_route_and_cleanup():
     assert ["tailscale", "funnel", "--https=443", "off"] in runner.calls
 
 
+def test_tailscale_bridge_can_derive_self_dns_for_media_transport():
+    runner = _TailscaleRunner()
+    bridge = TailscaleFunnelBridge(
+        local_port=43123,
+        executable="tailscale",
+        runner=runner,
+    )
+
+    bridge.start()
+    assert bridge.public_origin == "https://centinela.tail123456.ts.net"
+    assert runner.proxy == "http://127.0.0.1:43123"
+    bridge.stop()
+    assert runner.active is False
+
+
 def test_tailscale_bridge_refuses_to_overwrite_existing_443_funnel():
     runner = _TailscaleRunner(preexisting=True)
     bridge = TailscaleFunnelBridge(

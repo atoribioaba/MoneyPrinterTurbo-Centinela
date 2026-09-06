@@ -31,6 +31,7 @@ from app.services.instagram_oauth_callback import (
     INSTAGRAM_CLIENT_ID_ENV,
     INSTAGRAM_CLIENT_SECRET_ENV,
     INSTAGRAM_REDIRECT_URI_ENV,
+    TAILSCALE_PROVIDER,
     callback_runtime_status,
 )
 from app.services.social_oauth import OAuthPlatform
@@ -320,6 +321,11 @@ def _instagram_product_runtime_status() -> dict[str, object]:
         transport_enabled = False
         transport_provider = ""
 
+    callback_provider = str(callback.get("provider") or "")
+    unified_tailscale = bool(
+        callback_provider == TAILSCALE_PROVIDER
+        and transport_provider == TAILSCALE_PROVIDER
+    )
     ready = bool(
         callback.get("gate_valid")
         and callback.get("enabled")
@@ -332,10 +338,11 @@ def _instagram_product_runtime_status() -> dict[str, object]:
         "callback_gate_valid": bool(callback.get("gate_valid")),
         "callback_enabled": bool(callback.get("enabled")),
         "callback_configured": bool(callback.get("configured")),
-        "callback_provider": str(callback.get("provider") or ""),
+        "callback_provider": callback_provider,
         "transport_gate_valid": transport_gate_valid,
         "transport_enabled": transport_enabled,
         "transport_provider": transport_provider,
+        "unified_tailscale": unified_tailscale,
         "ready": ready,
         "token_persistence": False,
         "auto_publication": False,
@@ -391,6 +398,14 @@ def _render_instagram_manual_action(service, project_id: str) -> None:
         st.error(f"{INSTAGRAM_EPHEMERAL_HTTPS_ENABLED_ENV} contiene una configuración no válida.")
     elif not runtime["transport_enabled"]:
         st.warning("El hosting HTTPS verificable del Reel está desactivado.")
+    elif runtime["unified_tailscale"]:
+        st.success(
+            "Tailscale Funnel está seleccionado como transporte unificado para OAuth y MP4."
+        )
+    elif runtime["transport_provider"]:
+        st.info(
+            "Instagram usa Tailscale Funnel para OAuth y un proveedor HTTPS alternativo para el MP4."
+        )
 
     with st.expander("Configuración local de Instagram", expanded=False):
         st.caption(
@@ -408,8 +423,9 @@ def _render_instagram_manual_action(service, project_id: str) -> None:
         ):
             st.code(variable, language=None)
         st.caption(
-            "Tailscale y el proveedor de hosting del vídeo deben instalarse/configurarse de forma "
-            "explícita en el PC. Centinela no descarga binarios ni guarda tokens por su cuenta."
+            "Recomendado: usa tailscale_funnel también en el transporte del MP4 para que una sola "
+            "herramienta cubra OAuth + vídeo. cloudflare_quick y zrok_public quedan como fallback "
+            "explícito. Centinela no descarga binarios ni guarda tokens por su cuenta."
         )
 
     try:
