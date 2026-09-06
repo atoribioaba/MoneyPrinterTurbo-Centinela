@@ -11,11 +11,7 @@ from app.services.centinela.manual_publication import (
     publish_verified_package,
     verify_publication_package,
 )
-from app.services.centinela.orchestration import (
-    PROGRESSION_STATES,
-    ProjectState,
-    ProjectStateMachine,
-)
+from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.project_foundation import ArtifactStore
 from app.services.centinela.publication_package import (
     PUBLICATION_MANIFEST_ARTIFACT_TYPE,
@@ -46,20 +42,6 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _advance(store: ArtifactStore, project_id: str, target: ProjectState) -> None:
-    machine = ProjectStateMachine(store)
-    current = machine.current_state(project_id)
-    start = PROGRESSION_STATES.index(current) + 1
-    stop = PROGRESSION_STATES.index(target) + 1
-    for state in PROGRESSION_STATES[start:stop]:
-        machine.transition(
-            project_id,
-            state,
-            reason="C6 test progression",
-            actor="c6-test",
-        )
-
-
 def _fixture(
     tmp_path: Path,
     *,
@@ -73,7 +55,13 @@ def _fixture(
         if ready
         else ProjectState.FINAL_APPROVED
     )
-    _advance(store, project.project_id, target)
+
+    # This unit fixture tests the C6 publication boundary only.  Seed the canonical
+    # terminal state before an orchestration head exists instead of bypassing the
+    # protected ProductionSpine guards with synthetic transition metadata.
+    manifest_state = store.load_project(project.project_id)
+    manifest_state.status = target.value
+    store.save_project(manifest_state)
 
     if not ready:
         return store, project.project_id, None
