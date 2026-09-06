@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from app.models.astronomy import ScientificStatus
+from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import (
     AstronomyVideoPlan,
     GenerationOrigin,
@@ -18,16 +18,15 @@ from app.models.astromedia import HashMode, IndexRequest, Sidecar
 from app.services.astromedia import AstroMediaCatalog
 from app.services.centinela.media_resolver import MediaResolver, MediaResolverRequest
 from app.services.centinela.scientific_visuals import render_factlock_scientific_visual
-from app.services.centinela.writer_room import FactLock
+from app.services.centinela.writer_room import (
+    FactLock,
+    compute_fact_lock_context_hash,
+)
 from app.models.astronomy_director import GroundingFact
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
-        subject="La Luna",
-        research_mode="GENERIC_GEOCENTRIC",
-        context_hash="C" * 64,
-        facts=[
+    facts = [
             GroundingFact(
                 fact_id="moon:illuminated_fraction",
                 label_es="Fraccion iluminada lunar",
@@ -81,8 +80,26 @@ def _fact_lock() -> FactLock:
                 scientific_status=ScientificStatus.HECHO_VERIFICADO,
                 source_ids=["source:fixture"],
             ),
+        ]
+    return FactLock(
+        subject="La Luna",
+        research_mode="GENERIC_GEOCENTRIC",
+        context_hash=compute_fact_lock_context_hash(
+            facts, ["source:fixture"]
+        ),
+        facts=facts,
+        sources=[
+            SourceReference(
+                source_id="source:fixture",
+                title="FactLock fixture source",
+                provider="TEST",
+                url="https://example.invalid/factlock",
+                license="TEST",
+                classification="PRIMARY_TEST_SOURCE",
+                role="scientific_fixture",
+                scientific_status=ScientificStatus.HECHO_VERIFICADO,
+            )
         ],
-        sources=[],
         source_ids=["source:fixture"],
         scope_note="Replay hermetico de las cinco clases de escena del Lunar V31.",
         location_assumed=False,
