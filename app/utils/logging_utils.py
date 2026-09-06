@@ -20,6 +20,26 @@ _terminal_handler_id: int | None = 0
 _terminal_handler_lock = threading.RLock()
 
 
+def _project_relative_path(file_path: str) -> str:
+    """Return a stable project-relative display path when that is safe.
+
+    On Windows, mapped/subst drives may put the source path and PROJECT_ROOT on
+    different mounts. ``os.path.relpath`` raises ValueError in that case; letting
+    the formatter propagate it makes Loguru discard the whole record. Paths
+    outside the project also stay absolute instead of becoming confusing ./../..
+    paths. Project-relative paths always use forward slashes for stable UI output.
+    """
+    try:
+        relative_path = os.path.relpath(file_path, PROJECT_ROOT)
+    except ValueError:
+        return file_path
+
+    if relative_path == os.pardir or relative_path.startswith(os.pardir + os.sep):
+        return file_path
+
+    return f"./{relative_path.replace(os.sep, '/')}"
+
+
 def format_log_record(record):
     """
     统一格式化终端与 WebUI 日志。
@@ -30,7 +50,7 @@ def format_log_record(record):
     """
     file_path = record["file"].path
     if os.path.isabs(file_path):
-        file_path = f"./{os.path.relpath(file_path, PROJECT_ROOT)}"
+        file_path = _project_relative_path(file_path)
 
     # file.path is display-only at this point. Normalize separators so
     # terminal and WebUI logs are stable across operating systems. This
