@@ -37,41 +37,58 @@ jobs:
           from pathlib import Path
 
           path = Path("config.example.toml")
-          text = path.read_text(encoding="utf-8")
-          old = '''# Upload-Post can publish generated videos to TikTok, Instagram, and YouTube.
-# Create an account and API key at https://upload-post.com/
-# API documentation: https://docs.upload-post.com/
-upload_post_enabled = false
-upload_post_api_key = ""
-upload_post_username = ""
-# Available values: "tiktok", "instagram", "youtube".
-upload_post_platforms = ["tiktok", "instagram"]
-# Automatically publish successful video outputs after generation.
-upload_post_auto_upload = false
-# YouTube privacy: "public", "unlisted", or "private".
-upload_post_youtube_privacy_status = "public"
-'''
-          new = '''# Optional legacy/fallback aggregator. Direct official YouTube, TikTok and
-# Instagram adapters are the canonical Centinela publication path.
-# Upload-Post is never invoked automatically: every upload requires explicit
-# human approval at the service boundary. Configuration is not approval.
-# Service: https://upload-post.com/ | API docs: https://docs.upload-post.com/
-upload_post_enabled = false
-upload_post_api_key = ""
-upload_post_username = ""
-# Available values: "tiktok", "instagram", "youtube".
-upload_post_platforms = ["tiktok", "instagram"]
-# Manual YouTube fallback defaults to the safest visibility.
-# Available values: "private", "unlisted", or "public".
-upload_post_youtube_privacy_status = "private"
-'''
-          if old in text:
-              text = text.replace(old, new, 1)
-              path.write_text(text, encoding="utf-8")
-          elif "upload_post_auto_upload" in text:
+          lines = path.read_text(encoding="utf-8").splitlines()
+          output = []
+          in_upload_post = False
+          replaced_intro = False
+
+          for line in lines:
+              if line == "# Upload-Post can publish generated videos to TikTok, Instagram, and YouTube.":
+                  in_upload_post = True
+                  replaced_intro = True
+                  output.extend([
+                      "# Optional legacy/fallback aggregator. Direct official YouTube, TikTok and",
+                      "# Instagram adapters are the canonical Centinela publication path.",
+                      "# Upload-Post is never invoked automatically: every upload requires explicit",
+                      "# human approval at the service boundary. Configuration is not approval.",
+                  ])
+                  continue
+              if in_upload_post and line in {
+                  "# Create an account and API key at https://upload-post.com/",
+                  "# API documentation: https://docs.upload-post.com/",
+              }:
+                  if line.startswith("# API documentation"):
+                      output.append("# Service: https://upload-post.com/ | API docs: https://docs.upload-post.com/")
+                  continue
+              if in_upload_post and line == "# Automatically publish successful video outputs after generation.":
+                  continue
+              if in_upload_post and line.startswith("upload_post_auto_upload"):
+                  continue
+              if in_upload_post and line == '# YouTube privacy: "public", "unlisted", or "private".':
+                  output.extend([
+                      "# Manual YouTube fallback defaults to the safest visibility.",
+                      '# Available values: "private", "unlisted", or "public".',
+                  ])
+                  continue
+              if in_upload_post and line.startswith("upload_post_youtube_privacy_status"):
+                  output.append('upload_post_youtube_privacy_status = "private"')
+                  in_upload_post = False
+                  continue
+              output.append(line)
+
+          if not replaced_intro and any(
+              line.startswith("upload_post_auto_upload") for line in lines
+          ):
               raise SystemExit("Upload-Post config block changed unexpectedly")
-          elif 'upload_post_youtube_privacy_status = "private"' not in text:
-              raise SystemExit("Upload-Post config cleanup is neither pending nor applied")
+          if not any(
+              line == 'upload_post_youtube_privacy_status = "private"'
+              for line in output
+          ):
+              raise SystemExit("safe Upload-Post privacy default was not produced")
+          if any(line.startswith("upload_post_auto_upload") for line in output):
+              raise SystemExit("legacy auto-upload setting was not removed")
+
+          path.write_text("\n".join(output) + "\n", encoding="utf-8")
           PY
 
       - name: Validate C4 regressions
