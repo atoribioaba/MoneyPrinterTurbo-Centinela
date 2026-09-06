@@ -81,7 +81,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run --frozen --no-default-groups pytest -q test/services/test_moviepy_pillow_compat.py
+          # pytest belongs to the dev group. Add only that locked group for the
+          # compatibility smoke; the vulnerability profiles below still exclude
+          # dependency groups explicitly.
+          uv sync --frozen --no-default-groups --group dev --no-extra litellm --no-extra twelvelabs
+          .venv/bin/pytest -q test/services/test_moviepy_pillow_compat.py
 
       - name: Audit zero-cost baseline
         shell: bash
