@@ -416,7 +416,7 @@ def test_prepare_instagram_reel_is_phase_one_only_and_cleans_transport(
         tunnel_factory=tunnel_factory,
         sleep=lambda _: None,
         processing_timeout_seconds=5,
-        poll_interval_seconds=0.01,
+        poll_interval_seconds=60,
     )
 
     assert prepared.container_id == "container-123"
@@ -496,7 +496,7 @@ def test_prepare_cleans_transport_when_meta_processing_fails(tmp_path, monkeypat
             tunnel_factory=tunnel_factory,
             sleep=lambda _: None,
             processing_timeout_seconds=5,
-            poll_interval_seconds=0.01,
+            poll_interval_seconds=60,
         )
     assert exc_info.value.code == "instagram_container_processing_failed"
     assert servers[0].exited is True
@@ -587,6 +587,30 @@ def test_second_phase_rejects_stale_package_identity(tmp_path, monkeypatch):
         )
     assert exc_info.value.code == "instagram_prepared_package_identity_mismatch"
     assert adapter.published == []
+
+
+def test_meta_polling_contract_is_rate_limit_conservative():
+    with pytest.raises(ValueError, match="<= 300"):
+        prepare_instagram_reel(
+            object(),
+            "project-c10",
+            ig_user_id="123",
+            access_token="token",
+            approved=True,
+            environ=_enabled_env(),
+            processing_timeout_seconds=301,
+        )
+
+    with pytest.raises(ValueError, match=">= 60"):
+        prepare_instagram_reel(
+            object(),
+            "project-c10",
+            ig_user_id="123",
+            access_token="token",
+            approved=True,
+            environ=_enabled_env(),
+            poll_interval_seconds=59,
+        )
 
 
 def test_c10_source_has_no_secret_persistence_or_auto_publish():

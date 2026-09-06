@@ -65,8 +65,9 @@ _LOOPBACK_HOST = "127.0.0.1"
 _DEFAULT_TTL_SECONDS = 15 * 60.0
 _MAX_TTL_SECONDS = 30 * 60.0
 _DEFAULT_STARTUP_TIMEOUT_SECONDS = 45.0
-_DEFAULT_PROCESSING_TIMEOUT_SECONDS = 15 * 60.0
-_DEFAULT_POLL_INTERVAL_SECONDS = 2.0
+_DEFAULT_PROCESSING_TIMEOUT_SECONDS = 5 * 60.0
+_DEFAULT_POLL_INTERVAL_SECONDS = 60.0
+_MAX_STATUS_CHECKS = 5
 _DEFAULT_HTTP_TIMEOUT = (15.0, 120.0)
 _MAX_CONNECTIONS = 8
 _READ_SIZE = 1024 * 1024
@@ -941,8 +942,10 @@ def prepare_instagram_reel(
             "Preparar Instagram requiere una aprobación humana nueva y explícita.",
             component="instagram",
         )
-    if processing_timeout_seconds <= 0 or poll_interval_seconds <= 0:
-        raise ValueError("processing timeout and poll interval must be positive")
+    if not 0 < processing_timeout_seconds <= _DEFAULT_PROCESSING_TIMEOUT_SECONDS:
+        raise ValueError("processing_timeout_seconds must be > 0 and <= 300")
+    if poll_interval_seconds < _DEFAULT_POLL_INTERVAL_SECONDS:
+        raise ValueError("poll_interval_seconds must be >= 60")
 
     settings = ephemeral_https_settings(environ)
     if not settings.enabled:
@@ -1058,12 +1061,18 @@ def prepare_instagram_reel(
                     container_id,
                     access_token=token,
                 )
-                while status.status == "IN_PROGRESS" and time.monotonic() < deadline:
+                status_checks = 1
+                while (
+                    status.status == "IN_PROGRESS"
+                    and status_checks < _MAX_STATUS_CHECKS
+                    and time.monotonic() < deadline
+                ):
                     sleep(poll_interval_seconds)
                     status = adapter.get_container_status(
                         container_id,
                         access_token=token,
                     )
+                    status_checks += 1
                 if status.status != "FINISHED":
                     retryable = status.status == "IN_PROGRESS"
                     raise _error(
