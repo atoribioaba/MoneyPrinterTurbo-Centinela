@@ -1,0 +1,32 @@
+title = "Centinela Gitleaks policy"
+
+# Keep the released Gitleaks 8.30.1 default rules, but override only the
+# generic-api-key detector to close upstream issue #2223 while no fixed
+# Gitleaks release exists.
+# Derived from gitleaks/gitleaks PR #2229 head 0ba927fe692d1c5515fccc0233dfc0ed73869e24.
+# Remove this override only after an official release contains an equivalent
+# fix and the Centinela regression canary passes against that release.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+regex = '''(?i)[\w.-]{0,50}?(?:access|auth|(?-i:[Aa]pi|API)|credential|creds|key|passw(?:or)?d|secret|token)(?:(?:[ \t\w.-]{0,20})[\s'"]{0,3}(?:=|>|:{1,3}=|\|\||:|=>|\?=)|[\s'"]{0,3},)[\x60'"\s=]{0,5}([\w.=-]{10,150}|[a-z0-9][a-z0-9+/]{11,}={0,3})(?:[\x60'"\s;]|\\[nr]|$)'''
+
+    # Eight inherited findings were individually inspected at the C01 base
+    # (050040688bccce96c7f3f968be4c3cd24e2a07a8) and confirmed to be
+    # Streamlit widget state identifiers, not credentials. Match only the
+    # extracted secret value; do not allowlist files, lines, or paths.
+    [[rules.allowlists]]
+    description = "Confirmed Centinela Streamlit widget state identifiers"
+    regexTarget = "secret"
+    regexes = [
+      '''^f21-matching$''',
+      '''^f28-upscaling$''',
+      '''^f30-capability-probe-invocations$''',
+      '''^f35_retention_plan$''',
+      '''^f41-recommendations$''',
+      '''^f43-simulations$''',
+      '''^f45-previous$''',
+      '''^f58-hardening$''',
+    ]
