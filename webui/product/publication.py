@@ -12,6 +12,14 @@ from app.services.centinela.manual_publication import (
 from app.services.centinela.orchestration import ProjectState
 from app.services.centinela.publication_package import PUBLICATION_MANIFEST_ARTIFACT_TYPE
 from app.services.error_control import CentinelaError
+from app.services.social_oauth import OAuthPlatform
+from app.services.social_oauth_desktop import (
+    TIKTOK_CLIENT_KEY_ENV,  # noqa: F401 -- C9 source-level audit marker
+    TIKTOK_CLIENT_SECRET_ENV,  # noqa: F401 -- C9 source-level audit marker
+    YOUTUBE_CLIENT_ID_ENV,  # noqa: F401 -- C9 source-level audit marker
+    authorize_desktop_oauth,
+    oauth_environment_contract,
+)
 from webui.product import pages, ui
 
 
@@ -98,22 +106,27 @@ def _execute_manual_delivery(
     )
 
 
+def _authorize_manual_delivery(platform: ManualPublicationPlatform):
+    """Acquire one runtime-only OAuth token after the user's fresh action."""
+    return authorize_desktop_oauth(OAuthPlatform(platform.value))
+
+
 def _render_manual_delivery_action(service, project_id: str) -> None:
     ui.render_section_heading(
         "Envío manual verificado",
         (
-            "Después del paquete aprobado puedes iniciar una única acción de envío. "
+            "Después del paquete aprobado puedes autorizar una única acción desde el navegador. "
             "C6 vuelve a verificar estado, Review 7/7, derechos, rutas y SHA-256 justo antes de salir del equipo."
         ),
         eyebrow="ACCIÓN HUMANA",
     )
     st.info(
-        "**Nada se envía al abrir esta pantalla.** El token se usa solo para el "
-        "envío que confirmes en este formulario; no se guarda en el proyecto ni en sus artefactos."
+        "**Nada se envía al abrir esta pantalla.** Al confirmar, El Centinela abre OAuth en el "
+        "navegador del sistema. Los tokens resultantes se usan solo en memoria para este envío y no se guardan."
     )
     st.caption(
-        "Instagram sigue bloqueado: requiere hosting HTTPS verificable del mismo vídeo aprobado "
-        "antes de poder conectarlo con seguridad."
+        "Las credenciales de la app OAuth se leen del entorno del proceso; Product UI no las escribe en config.toml. "
+        "Instagram sigue bloqueado porque requiere hosting HTTPS verificable del mismo vídeo aprobado."
     )
 
     with st.form(
@@ -129,17 +142,18 @@ def _render_manual_delivery_action(service, project_id: str) -> None:
                 "para completar allí la publicación."
             ),
         )
-        access_token = st.text_input(
-            "Access token de esta sesión",
-            type="password",
-            help="Credencial efímera: no se escribe en configuración, proyecto ni artefactos.",
+        platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]
+        required_environment = oauth_environment_contract(OAuthPlatform(platform.value))
+        st.caption(
+            "OAuth Desktop debe estar configurado antes de iniciar la autorización: "
+            + ", ".join(f"`{name}`" for name in required_environment)
         )
         approved = st.checkbox(
             "Confirmo que he revisado este paquete y autorizo únicamente este envío manual.",
             value=False,
         )
         submitted = st.form_submit_button(
-            "Ejecutar envío manual",
+            "Autorizar cuenta y ejecutar envío manual",
             type="primary",
             width="stretch",
         )
@@ -147,35 +161,41 @@ def _render_manual_delivery_action(service, project_id: str) -> None:
     if not submitted:
         return
     if not approved:
-        st.error("Marca la confirmación explícita antes de ejecutar este envío.")
-        return
-    token = access_token.strip()
-    if not token:
-        st.error("Introduce el access token de la plataforma para esta sesión.")
+        st.error("Marca la confirmación explícita antes de abrir OAuth o ejecutar este envío.")
         return
 
-    platform = _MANUAL_DELIVERY_OPTIONS[delivery_label]
     try:
+        with st.spinner(
+            "Abriendo el navegador y esperando la autorización OAuth local…",
+            show_time=True,
+        ):
+            token_set = _authorize_manual_delivery(platform)
         with st.spinner("Revalidando paquete y ejecutando el envío manual…", show_time=True):
             result = _execute_manual_delivery(
                 service,
                 project_id,
                 platform,
-                access_token=token,
+                access_token=token_set.access_token,
                 approved=approved,
             )
     except CentinelaError as exc:
         ui.render_error_state(
             exc.safe_message,
-            action="No hay reintento automático. Revisa el estado antes de volver a autorizar otra acción.",
+            action=(
+                "No hay reintento automático. Revisa la configuración OAuth y el estado "
+                "del paquete antes de volver a autorizar otra acción."
+            ),
             technical_detail=f"{exc.code} · {exc.category.value}",
         )
         return
     except Exception as exc:
-        LOGGER.exception("Manual publication UI action failed")
+        LOGGER.exception("Manual OAuth publication UI action failed")
         ui.render_error_state(
-            "La acción manual no pudo completarse.",
-            action="No hay reintento automático. Verifica la plataforma y el paquete antes de intentar otra vez.",
+            "La autorización o el envío manual no pudo completarse.",
+            action=(
+                "No hay reintento automático. Verifica OAuth, la plataforma y el paquete "
+                "antes de intentarlo otra vez."
+            ),
             technical_detail=type(exc).__name__,
         )
         return
@@ -196,7 +216,6 @@ def _render_manual_delivery_action(service, project_id: str) -> None:
             st.code(remote_id, language=None)
         if getattr(result, "requires_user_action", False):
             st.caption("La plataforma requiere una acción humana posterior.")
-
 
 def _render_ready_package(service, project_id: str) -> None:
     try:
