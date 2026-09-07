@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
@@ -23,6 +21,7 @@ from .models import (
     WRITER_ROOM_VERSION,
     FactLock,
     WriterRoomRequest,
+    compute_fact_lock_context_hash,
 )
 from .room import WriterRoom
 
@@ -83,20 +82,6 @@ def _fold(value: str) -> str:
     return "".join(
         ch for ch in normalized if not unicodedata.combining(ch)
     ).casefold()
-
-
-def _hash_facts(facts, source_ids) -> str:
-    payload = {
-        "facts": [item.model_dump(mode="json") for item in facts],
-        "source_ids": list(source_ids),
-    }
-    raw = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()
 
 
 def _subject_is_time_sensitive(subject: str) -> bool:
@@ -228,7 +213,7 @@ class FactLockStageAdapter:
         return FactLock(
             subject=subject,
             research_mode="GENERIC_GEOCENTRIC",
-            context_hash=_hash_facts(facts, source_ids),
+            context_hash=compute_fact_lock_context_hash(facts, source_ids),
             facts=facts,
             sources=astronomy.sources,
             source_ids=source_ids,

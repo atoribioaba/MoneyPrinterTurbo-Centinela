@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from PIL import Image
 
-from app.models.astronomy import ScientificStatus
+from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import GroundingFact
 from app.models.astromedia import Sidecar
 from app.services.centinela.scientific_visuals import (
@@ -15,15 +15,14 @@ from app.services.centinela.scientific_visuals import (
     ScientificVisualError,
     render_factlock_scientific_visual,
 )
-from app.services.centinela.writer_room import FactLock
+from app.services.centinela.writer_room import (
+    FactLock,
+    compute_fact_lock_context_hash,
+)
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
-        subject="La Luna",
-        research_mode="GENERIC_GEOCENTRIC",
-        context_hash="F" * 64,
-        facts=[
+    facts = [
             GroundingFact(
                 fact_id="moon:angular_diameter_deg",
                 label_es="Diametro angular lunar",
@@ -47,8 +46,24 @@ def _fact_lock() -> FactLock:
                 scientific_status=ScientificStatus.HECHO_VERIFICADO,
                 source_ids=["source:test"],
             ),
+        ]
+    return FactLock(
+        subject="La Luna",
+        research_mode="GENERIC_GEOCENTRIC",
+        context_hash=compute_fact_lock_context_hash(facts, ["source:test"]),
+        facts=facts,
+        sources=[
+            SourceReference(
+                source_id="source:test",
+                title="FactLock test source",
+                provider="TEST",
+                url="https://example.invalid/factlock",
+                license="TEST",
+                classification="PRIMARY_TEST_SOURCE",
+                role="scientific_fixture",
+                scientific_status=ScientificStatus.HECHO_VERIFICADO,
+            )
         ],
-        sources=[],
         source_ids=["source:test"],
         scope_note="Fixture hermetico de certificacion cloud.",
         location_assumed=False,
@@ -145,6 +160,22 @@ def test_factlock_scientific_visual_refuses_unsupported_fact_type(tmp_path):
         render_factlock_scientific_visual(
             fact_lock,
             "context:moment_utc",
+            tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_factlock_scientific_visual_revalidates_tampered_model_copy(tmp_path):
+    valid = _fact_lock()
+    facts = list(valid.facts)
+    facts[0] = facts[0].model_copy(update={"value": 0.75})
+    tampered = valid.model_copy(update={"facts": facts})
+
+    with pytest.raises(ScientificVisualError, match="semantic integrity"):
+        render_factlock_scientific_visual(
+            tampered,
+            "moon:angular_diameter_deg",
             tmp_path,
         )
 

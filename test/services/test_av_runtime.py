@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.models.astronomy import ScientificStatus
+from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import GroundingFact, NarrativeAct
 from app.services.centinela.av_runtime.audio import (
     _align_script_tokens,
@@ -23,6 +23,7 @@ from app.services.centinela.orchestration import ResourceClass
 from app.services.centinela.writer_room import (
     WRITER_ROOM_LOGICAL_STAGES,
     FactLock,
+    compute_fact_lock_context_hash,
     FinalScript,
     FinalScriptSegment,
     PronunciationEntry,
@@ -31,21 +32,35 @@ from app.services.centinela.writer_room import (
 
 
 def _fact_lock() -> FactLock:
+    facts = [
+        GroundingFact(
+            fact_id="body:moon:geocentric_distance_km",
+            label_es="Distancia geocéntrica lunar",
+            value=384400.0,
+            unit="km",
+            scientific_status=ScientificStatus.HECHO_VERIFICADO,
+            source_ids=["astronomy-engine"],
+        )
+    ]
     return FactLock(
         subject="La Luna",
         research_mode="GENERIC_GEOCENTRIC",
-        context_hash="A" * 64,
-        facts=[
-            GroundingFact(
-                fact_id="body:moon:geocentric_distance_km",
-                label_es="Distancia geocéntrica lunar",
-                value=384400.0,
-                unit="km",
+        context_hash=compute_fact_lock_context_hash(
+            facts, ["astronomy-engine"]
+        ),
+        facts=facts,
+        sources=[
+            SourceReference(
+                source_id="astronomy-engine",
+                title="FactLock fixture source",
+                provider="TEST",
+                url="https://example.invalid/factlock",
+                license="TEST",
+                classification="PRIMARY_TEST_SOURCE",
+                role="scientific_fixture",
                 scientific_status=ScientificStatus.HECHO_VERIFICADO,
-                source_ids=["astronomy-engine"],
             )
         ],
-        sources=[],
         source_ids=["astronomy-engine"],
         scope_note="Prueba determinista.",
         location_assumed=False,
@@ -118,7 +133,7 @@ def _final_script() -> FinalScript:
             "entender el mismo cielo."
         ),
         closing_line="Seguimos mirando el cielo.",
-        fact_lock_hash="A" * 64,
+        fact_lock_hash=_fact_lock().context_hash,
         model_used="qwen3.5:4b-q4_K_M",
         logical_stages=list(WRITER_ROOM_LOGICAL_STAGES),
         inference_passes=3,
@@ -141,7 +156,7 @@ def test_duration_allocator_preserves_total_and_bounds():
 
 def test_scene_plan_is_deterministic_five_act_bridge():
     plan = build_scene_plan(_final_script(), _fact_lock())
-    assert plan.context_hash == "A" * 64
+    assert plan.context_hash == _fact_lock().context_hash
     assert len(plan.scenes) == 5
     assert [scene.act for scene in plan.scenes] == list(NarrativeAct)
     assert plan.total_duration_seconds == 60

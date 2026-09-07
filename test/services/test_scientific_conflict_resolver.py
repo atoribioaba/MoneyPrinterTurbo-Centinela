@@ -22,7 +22,10 @@ from app.services.centinela.research_adapters.contracts import (
     ResearchDatum,
     ResearchSource,
 )
-from app.services.centinela.writer_room.models import FactLock
+from app.services.centinela.writer_room.models import (
+    FactLock,
+    compute_fact_lock_context_hash,
+)
 
 
 def _quantity(
@@ -70,20 +73,21 @@ def _source(source_id: str) -> ResearchSource:
 
 
 def _base_adapter() -> Mock:
+    facts = [
+        GroundingFact(
+            fact_id="base-fact",
+            label_es="Hecho base sintético",
+            value=1,
+            unit=None,
+            scientific_status=ScientificStatus.NO_VERIFICADO,
+            source_ids=[],
+        )
+    ]
     base_fact_lock = FactLock(
         subject="Synthetic target",
         research_mode="GENERIC_GEOCENTRIC",
-        context_hash="A" * 64,
-        facts=[
-            GroundingFact(
-                fact_id="base-fact",
-                label_es="Hecho base sintético",
-                value=1,
-                unit=None,
-                scientific_status=ScientificStatus.NO_VERIFICADO,
-                source_ids=[],
-            )
-        ],
+        context_hash=compute_fact_lock_context_hash(facts, []),
+        facts=facts,
         sources=[],
         source_ids=[],
         scope_note="Synthetic test fixture.",

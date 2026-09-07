@@ -22,6 +22,7 @@ from app.services.centinela.writer_room import (
     CritiqueBundle,
     DraftPacket,
     FactLock,
+    compute_fact_lock_context_hash,
     FinalScriptCandidate,
     FinalScriptSegment,
     PronunciationEntry,
@@ -62,17 +63,18 @@ def fact(
 
 
 def fact_lock(subject="Saturno"):
+    facts = [
+        fact("context:moment_utc", "2026-08-23T20:00:00+00:00"),
+        fact("observer:latitude_deg", 0.0, unit="deg"),
+        fact("observer:longitude_deg", 0.0, unit="deg"),
+        fact("body:saturn:altitude_apparent_deg", 25.0, unit="deg"),
+        fact("body:saturn:azimuth_deg", 120.0, unit="deg"),
+    ]
     return FactLock(
         subject=subject,
         research_mode="OBSERVATION_CONTEXT",
-        context_hash="A" * 64,
-        facts=[
-            fact("context:moment_utc", "2026-08-23T20:00:00+00:00"),
-            fact("observer:latitude_deg", 0.0, unit="deg"),
-            fact("observer:longitude_deg", 0.0, unit="deg"),
-            fact("body:saturn:altitude_apparent_deg", 25.0, unit="deg"),
-            fact("body:saturn:azimuth_deg", 120.0, unit="deg"),
-        ],
+        context_hash=compute_fact_lock_context_hash(facts, []),
+        facts=facts,
         sources=[],
         source_ids=[],
         scope_note="test",

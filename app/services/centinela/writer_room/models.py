@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -25,6 +28,29 @@ WRITER_ROOM_LOGICAL_STAGES = (
     "FINAL_POLISH",
     "SOCIAL_COMPRESSION",
 )
+
+_CONTEXT_HASH_RE = re.compile(r"^[0-9A-F]{64}$")
+
+
+def compute_fact_lock_context_hash(
+    facts: list[GroundingFact],
+    source_ids: list[str],
+) -> str:
+    """Return the canonical semantic SHA-256 for a FactLock payload."""
+    canonical_source_ids = sorted(
+        {item.strip() for item in source_ids if item.strip()}
+    )
+    payload = {
+        "facts": [item.model_dump(mode="json") for item in facts],
+        "source_ids": canonical_source_ids,
+    }
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest().upper()
 
 
 class StrictWriterModel(BaseModel):
@@ -60,15 +86,49 @@ class FactLock(StrictWriterModel):
 
     @field_validator("source_ids")
     @classmethod
-    def unique_source_ids(cls, value: list[str]) -> list[str]:
-        result: list[str] = []
-        seen: set[str] = set()
-        for item in value:
-            item = item.strip()
-            if item and item not in seen:
-                seen.add(item)
-                result.append(item)
-        return result
+    def canonical_source_ids(cls, value: list[str]) -> list[str]:
+        return sorted({item.strip() for item in value if item.strip()})
+
+    @model_validator(mode="after")
+    def validate_semantic_integrity(self):
+        fact_ids = [fact.fact_id.strip() for fact in self.facts]
+        if len(fact_ids) != len(set(fact_ids)):
+            raise ValueError("FactLock fact_id values must be unique")
+
+        expected_source_ids = sorted(
+            {
+                source_id.strip()
+                for fact in self.facts
+                for source_id in fact.source_ids
+                if source_id.strip()
+            }
+        )
+        if self.source_ids != expected_source_ids:
+            raise ValueError(
+                "FactLock source_ids must equal the canonical union of fact source_ids"
+            )
+
+        reference_ids = [source.source_id.strip() for source in self.sources]
+        if len(reference_ids) != len(set(reference_ids)):
+            raise ValueError("FactLock SourceReference source_id values must be unique")
+        missing = sorted(set(self.source_ids) - set(reference_ids))
+        if missing:
+            raise ValueError(
+                "FactLock source_ids missing SourceReference entries: "
+                + ", ".join(missing)
+            )
+
+        if not _CONTEXT_HASH_RE.fullmatch(self.context_hash):
+            raise ValueError("FactLock context_hash must be uppercase SHA-256 hex")
+        expected_hash = compute_fact_lock_context_hash(
+            self.facts,
+            self.source_ids,
+        )
+        if self.context_hash != expected_hash:
+            raise ValueError(
+                "FactLock context_hash does not match facts/source_ids"
+            )
+        return self
 
 
 class ScriptClaim(StrictWriterModel):

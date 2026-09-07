@@ -4,13 +4,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models.astronomy import ScientificStatus
+from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import GroundingFact, NarrativeAct
 from app.services.astronomy_director import AstronomyDirectorError
 from app.services.centinela.writer_room import (
     CritiqueBundle,
     DraftPacket,
     FactLock,
+    compute_fact_lock_context_hash,
     FinalScriptCandidate,
     FinalScriptSegment,
     ScriptClaim,
@@ -33,11 +34,7 @@ def _fact_lock(
     *,
     status: ScientificStatus = ScientificStatus.HECHO_VERIFICADO,
 ) -> FactLock:
-    return FactLock(
-        subject="Saturno",
-        research_mode="GENERIC_GEOCENTRIC",
-        context_hash="B" * 64,
-        facts=[
+    facts = [
             GroundingFact(
                 fact_id=FACT_ID,
                 label_es="Constelación de Saturno",
@@ -46,8 +43,24 @@ def _fact_lock(
                 scientific_status=status,
                 source_ids=["source:test"],
             )
+        ]
+    return FactLock(
+        subject="Saturno",
+        research_mode="GENERIC_GEOCENTRIC",
+        context_hash=compute_fact_lock_context_hash(facts, ["source:test"]),
+        facts=facts,
+        sources=[
+            SourceReference(
+                source_id="source:test",
+                title="FactLock test source",
+                provider="TEST",
+                url="https://example.invalid/factlock",
+                license="TEST",
+                classification="PRIMARY_TEST_SOURCE",
+                role="scientific_fixture",
+                scientific_status=ScientificStatus.HECHO_VERIFICADO,
+            )
         ],
-        sources=[],
         source_ids=["source:test"],
         scope_note="Fixture adversarial Writer Room C3.",
         location_assumed=False,

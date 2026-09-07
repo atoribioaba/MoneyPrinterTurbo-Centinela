@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
+from pydantic import ValidationError
 
 from app.models.astromedia import Sidecar
 from app.services.centinela.writer_room import FactLock
@@ -222,6 +223,12 @@ def render_factlock_scientific_visual(
 
     if not isinstance(fact_lock, FactLock):
         raise TypeError("fact_lock must be FactLock")
+    try:
+        fact_lock = FactLock.model_validate(fact_lock.model_dump(mode="json"))
+    except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+        raise ScientificVisualError(
+            "FactLock semantic integrity validation failed"
+        ) from exc
     fact_id = str(fact_id or "").strip()
     if not fact_id:
         raise ScientificVisualError("fact_id is required")
