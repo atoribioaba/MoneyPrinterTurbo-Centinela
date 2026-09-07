@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 from datetime import datetime, timezone
 
 from app.models.astronomy import ScientificStatus
@@ -15,7 +17,7 @@ from app.services.centinela.writer_room import (
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
+    return make_semantically_valid_fact_lock(
         subject="La Luna",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="D" * 64,
@@ -101,7 +103,7 @@ def _final_script() -> FinalScript:
         social_30s="La Luna como referencia observacional y cientifica.",
         social_15s="Mirar la Luna tambien es medirla.",
         closing_line="Seguimos mirando el cielo.",
-        fact_lock_hash="D" * 64,
+        fact_lock_hash=_fact_lock().context_hash,
         model_used="cloud-cert-fixture",
         logical_stages=list(WRITER_ROOM_LOGICAL_STAGES),
         inference_passes=3,

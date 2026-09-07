@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 from datetime import datetime, timezone
 
 import pytest
@@ -33,7 +35,7 @@ def _fact_lock(
     *,
     status: ScientificStatus = ScientificStatus.HECHO_VERIFICADO,
 ) -> FactLock:
-    return FactLock(
+    return make_semantically_valid_fact_lock(
         subject="Saturno",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="B" * 64,

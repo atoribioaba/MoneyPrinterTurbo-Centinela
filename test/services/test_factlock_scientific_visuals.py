@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 import json
 from datetime import datetime, timezone
 
@@ -19,7 +21,7 @@ from app.services.centinela.writer_room import FactLock
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
+    return make_semantically_valid_fact_lock(
         subject="La Luna",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="F" * 64,

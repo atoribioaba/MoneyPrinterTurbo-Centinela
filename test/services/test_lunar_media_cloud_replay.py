@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +25,7 @@ from app.models.astronomy_director import GroundingFact
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
+    return make_semantically_valid_fact_lock(
         subject="La Luna",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="C" * 64,

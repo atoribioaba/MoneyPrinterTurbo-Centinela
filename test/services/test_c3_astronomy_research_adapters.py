@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import Mock
@@ -40,7 +42,6 @@ from app.services.centinela.research_adapters import (
     build_eso_tap_adapter,
 )
 from app.services.centinela.research_adapters import canonicalized as canonicalized_module
-from app.services.centinela.writer_room.models import FactLock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -132,7 +133,7 @@ def _datum(
 
 
 def _base_fact_lock_adapter() -> Mock:
-    fact_lock = FactLock(
+    fact_lock = make_semantically_valid_fact_lock(
         subject="Synthetic target",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="A" * 64,

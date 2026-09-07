@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 from datetime import datetime, timezone
 
 import pytest
@@ -29,7 +31,7 @@ ILLUMINATION_FACT_ID = "moon:illuminated_fraction"
 
 
 def _fact_lock() -> FactLock:
-    return FactLock(
+    return make_semantically_valid_fact_lock(
         subject="La Luna",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="A" * 64,

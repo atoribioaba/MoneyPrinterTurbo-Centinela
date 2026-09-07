@@ -1,3 +1,5 @@
+from test.services.factlock_test_utils import make_semantically_valid_fact_lock
+
 from datetime import UTC, datetime
 from unittest.mock import Mock
 
@@ -22,7 +24,6 @@ from app.services.centinela.research_adapters.contracts import (
     ResearchDatum,
     ResearchSource,
 )
-from app.services.centinela.writer_room.models import FactLock
 
 
 def _quantity(
@@ -70,7 +71,7 @@ def _source(source_id: str) -> ResearchSource:
 
 
 def _base_adapter() -> Mock:
-    base_fact_lock = FactLock(
+    base_fact_lock = make_semantically_valid_fact_lock(
         subject="Synthetic target",
         research_mode="GENERIC_GEOCENTRIC",
         context_hash="A" * 64,
