@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -29,6 +29,7 @@ from app.services.centinela.generative.mpt_bridge import (
 )
 from app.services.centinela.generative.provenance import (
     build_generated_visual_provenance,
+    compute_visual_request_fingerprint,
 )
 from app.services.centinela.generative.providers import (
     build_local_generative_provider_definitions,
@@ -42,6 +43,7 @@ from app.services.centinela.media_resolver.models import (
     MediaResolutionReport,
     NormalizedMediaCandidate,
 )
+from app.services.centinela.writer_room import FactLock
 
 from . import ui
 
@@ -99,6 +101,8 @@ class SceneVisualContext:
     selection_status: str
     selected_media_id: str | None
     candidates: tuple[NormalizedMediaCandidate, ...]
+    fact_lock_hash: str
+    source_fact_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +131,8 @@ class _ObservedAdapter:
 def build_visual_request(
     *,
     scene_id: str,
+    fact_lock_hash: str,
+    source_fact_ids: tuple[str, ...],
     mode: VisualGenerationMode,
     prompt: str,
     quality: GenerationQuality = GenerationQuality.STANDARD,
@@ -140,6 +146,8 @@ def build_visual_request(
         scene_id=scene_id,
         mode=mode,
         prompt=prompt,
+        fact_lock_hash=fact_lock_hash,
+        source_fact_ids=source_fact_ids,
         quality=quality,
         aspect_ratio=aspect_ratio,
         source_image=source_image,
@@ -209,12 +217,23 @@ def quality_attempts_label(qualities: list[GenerationQuality]) -> str:
 def correlate_scene_contexts(
     plan: AstronomyVideoPlan,
     report: MediaResolutionReport,
+    *,
+    fact_lock: FactLock | None = None,
 ) -> tuple[SceneVisualContext, ...]:
     by_number = {item.scene_number: item for item in report.scenes}
     if len(by_number) != len(report.scenes):
         raise ValueError("media_resolution contains duplicate scene numbers")
     if len(plan.scenes) != report.scene_count:
         raise ValueError("scene_plan and media_resolution scene counts do not match")
+    if report.source_plan_context_hash != plan.context_hash:
+        raise ValueError("media_resolution and scene_plan FactLock hashes do not match")
+
+    known_fact_ids: set[str] | None = None
+    if fact_lock is not None:
+        fact_lock = FactLock.model_validate(fact_lock.model_dump(mode="json"))
+        if fact_lock.context_hash != plan.context_hash:
+            raise ValueError("scene_plan and canonical FactLock hashes do not match")
+        known_fact_ids = {fact.fact_id for fact in fact_lock.facts}
 
     contexts: list[SceneVisualContext] = []
     seen_ids: set[str] = set()
@@ -226,6 +245,19 @@ def correlate_scene_contexts(
         if not scene_id or scene_id in seen_ids:
             raise ValueError("scene_key must be present and unique")
         seen_ids.add(scene_id)
+        source_fact_ids = tuple(
+            sorted(
+                {
+                    fact_id
+                    for claim in scene.claims
+                    for fact_id in claim.fact_ids
+                }
+            )
+        )
+        if known_fact_ids is not None and not set(source_fact_ids).issubset(
+            known_fact_ids
+        ):
+            raise ValueError("scene references fact IDs absent from canonical FactLock")
         contexts.append(
             SceneVisualContext(
                 scene_number=scene.scene_number,
@@ -236,6 +268,8 @@ def correlate_scene_contexts(
                 selection_status=evidence.selection_status,
                 selected_media_id=evidence.selected_media_id,
                 candidates=tuple(evidence.candidates),
+                fact_lock_hash=plan.context_hash,
+                source_fact_ids=source_fact_ids,
             )
         )
     return tuple(contexts)
@@ -247,13 +281,17 @@ def load_scene_visual_contexts(
 ) -> tuple[SceneVisualContext, ...]:
     scene_ref = service.store.get_latest_artifact(project_id, "scene_plan")
     media_ref = service.store.get_latest_artifact(project_id, "media_resolution")
+    fact_ref = service.store.get_latest_artifact(project_id, "fact_lock")
     plan = AstronomyVideoPlan.model_validate(
         service.store.read_json(project_id, scene_ref.artifact_id)
     )
     report = MediaResolutionReport.model_validate(
         service.store.read_json(project_id, media_ref.artifact_id)
     )
-    return correlate_scene_contexts(plan, report)
+    fact_lock = FactLock.model_validate(
+        service.store.read_json(project_id, fact_ref.artifact_id)
+    )
+    return correlate_scene_contexts(plan, report, fact_lock=fact_lock)
 
 
 def image_source_options(
@@ -426,23 +464,9 @@ def _render_existing_source(scene: SceneVisualContext, source: str) -> None:
 
 
 def _show_safe_provenance(
-    request: VisualGenerationRequest,
+    record: Mapping[str, object],
     asset: GeneratedVisualAsset,
-    source_sha256: str | None,
 ) -> None:
-    try:
-        record = build_generated_visual_provenance(
-            request,
-            asset,
-            source_image_sha256=source_sha256,
-        )
-    except ValueError as exc:
-        ui.render_error_state(
-            "No se pudo presentar la trazabilidad segura de este asset.",
-            technical_detail=exc,
-        )
-        return
-
     with st.expander("Trazabilidad", expanded=False):
         st.write(f"**Proveedor:** {record.get('provider', asset.provider_id)}")
         st.write(f"**Modelo:** {record.get('model', asset.model_id)}")
@@ -554,7 +578,15 @@ def _render_asset_history(scene: SceneVisualContext, asset_index: SceneAssetInde
             request = requests.get(asset.asset_id)
             source_sha256 = source_hashes.get(asset.asset_id)
             if isinstance(request, VisualGenerationRequest):
-                _show_safe_provenance(request, asset, source_sha256)
+                try:
+                    provenance = asset_index.provenance_for_asset(asset.asset_id)
+                except (KeyError, ValueError) as exc:
+                    ui.render_error_state(
+                        "Falta la trazabilidad canónica de este asset.",
+                        technical_detail=exc,
+                    )
+                else:
+                    _show_safe_provenance(provenance, asset)
 
             if asset.media_type is GeneratedMediaType.IMAGE:
                 st.caption(
@@ -580,6 +612,17 @@ def _execute_request(
     asset_index: SceneAssetIndex,
 ) -> None:
     if not state.ready:
+        return
+
+    _, identity_complete = compute_visual_request_fingerprint(
+        request,
+        source_image_sha256=source_sha256,
+    )
+    if not identity_complete:
+        ui.render_error_state(
+            "La generación se bloqueó porque la identidad de origen está incompleta.",
+            action="Se requiere FactLock canónico y SHA-256 de toda imagen de origen.",
+        )
         return
 
     adapters = st.session_state.get(ADAPTERS_SESSION_KEY)
@@ -624,8 +667,31 @@ def _execute_request(
         )
         return
 
-    asset_index.register(asset)
-    _session_mapping(ASSET_REQUESTS_SESSION_KEY)[asset.asset_id] = request
+    effective_request = request
+    if observed.qualities and observed.qualities[-1] is not request.quality:
+        effective_request = replace(request, quality=observed.qualities[-1])
+
+    try:
+        provenance = build_generated_visual_provenance(
+            effective_request,
+            asset,
+            source_image_sha256=source_sha256,
+        )
+        asset_index.register(
+            asset,
+            request=effective_request,
+            provenance=provenance,
+            source_image_sha256=source_sha256,
+        )
+    except (TypeError, ValueError) as exc:
+        ui.render_error_state(
+            "El asset generado fue rechazado por trazabilidad incompleta.",
+            action="No se añadió al índice ni puede entrar en el compositor.",
+            technical_detail=exc,
+        )
+        return
+
+    _session_mapping(ASSET_REQUESTS_SESSION_KEY)[asset.asset_id] = effective_request
     _session_mapping(SOURCE_HASHES_SESSION_KEY)[asset.asset_id] = source_sha256
 
     if len(observed.qualities) > 1:
@@ -730,6 +796,8 @@ def _render_generation_panel(
             try:
                 request = build_visual_request(
                     scene_id=scene.scene_id,
+                    fact_lock_hash=scene.fact_lock_hash,
+                    source_fact_ids=scene.source_fact_ids,
                     mode=mode,
                     prompt=prompt,
                     quality=quality,
