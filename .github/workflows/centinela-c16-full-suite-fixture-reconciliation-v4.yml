@@ -1,0 +1,113 @@
+name: Centinela C16 Full Suite Fixture Reconciliation V4
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c16-factlock-semantic-integrity-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out C16
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.10"
+          enable-cache: false
+      - name: Reapply V3 reconciliation and remove obsolete imports
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          source = Path(".github/workflows/centinela-c16-full-suite-fixture-reconciliation-v3.yml").read_text(encoding="utf-8")
+          start = "      - name: Reapply V2 reconciliation and repair linked FinalScript hashes\n        shell: python\n        run: |\n"
+          end = "      - name: Install locked dev environment\n"
+          if start not in source or end not in source:
+              raise SystemExit("C16 V3 reconciliation block not found")
+          block = source.split(start, 1)[1].split(end, 1)[0]
+          exec(compile(textwrap.dedent(block), "<c16-reconcile-v3>", "exec"), {"__name__": "__main__"})
+
+          obsolete = "from app.services.centinela.writer_room.models import FactLock\n"
+          for filename in (
+              "test/services/test_c3_astronomy_research_adapters.py",
+              "test/services/test_scientific_conflict_resolver.py",
+          ):
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              if obsolete not in text:
+                  raise SystemExit(f"obsolete FactLock import not found: {filename}")
+              path.write_text(text.replace(obsolete, "", 1), encoding="utf-8")
+      - name: Install locked dev environment
+        run: uv sync --frozen --group dev --python 3.11
+      - name: Run all C16 reconciliation suites
+        run: |
+          uv run --python 3.11 pytest -q \
+            test/services/test_av_runtime.py \
+            test/services/test_c3_astronomy_research_adapters.py \
+            test/services/test_factlock_scientific_visuals.py \
+            test/services/test_factlock_writer_room_adversarial.py \
+            test/services/test_lunar_media_cloud_replay.py \
+            test/services/test_scene_grounding_cloud.py \
+            test/services/test_scientific_conflict_resolver.py \
+            test/services/test_writer_room_adversarial_regression.py \
+            test/services/test_factlock_semantic_integrity.py \
+            test/services/test_writer_room.py
+      - name: Ruff reconciled files
+        run: |
+          uv run --python 3.11 ruff check \
+            app/services/centinela/research_adapters/spine_adapter.py \
+            test/services/factlock_test_utils.py \
+            test/services/test_av_runtime.py \
+            test/services/test_c3_astronomy_research_adapters.py \
+            test/services/test_factlock_scientific_visuals.py \
+            test/services/test_factlock_writer_room_adversarial.py \
+            test/services/test_lunar_media_cloud_replay.py \
+            test/services/test_scene_grounding_cloud.py \
+            test/services/test_scientific_conflict_resolver.py \
+            test/services/test_writer_room_adversarial_regression.py
+      - name: Compile reconciled files
+        run: |
+          uv run --python 3.11 python -m py_compile \
+            app/services/centinela/research_adapters/spine_adapter.py \
+            test/services/factlock_test_utils.py \
+            test/services/test_av_runtime.py \
+            test/services/test_c3_astronomy_research_adapters.py \
+            test/services/test_factlock_scientific_visuals.py \
+            test/services/test_factlock_writer_room_adversarial.py \
+            test/services/test_lunar_media_cloud_replay.py \
+            test/services/test_scene_grounding_cloud.py \
+            test/services/test_scientific_conflict_resolver.py \
+            test/services/test_writer_room_adversarial_regression.py
+      - name: Commit C16 reconciliation only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/services/centinela/research_adapters/spine_adapter.py \
+            test/services/factlock_test_utils.py \
+            test/services/test_av_runtime.py \
+            test/services/test_c3_astronomy_research_adapters.py \
+            test/services/test_factlock_scientific_visuals.py \
+            test/services/test_factlock_writer_room_adversarial.py \
+            test/services/test_lunar_media_cloud_replay.py \
+            test/services/test_scene_grounding_cloud.py \
+            test/services/test_scientific_conflict_resolver.py \
+            test/services/test_writer_room_adversarial_regression.py
+          git diff --cached --quiet && exit 0
+          git commit -m "test: reconcile FactLock fixtures with semantic integrity"
+          git push
