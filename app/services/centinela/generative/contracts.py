@@ -1,5 +1,7 @@
 """Provider-neutral contracts for scene-based generative visual material."""
 
+import copy
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 import math
@@ -7,6 +9,7 @@ import re
 
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
+_CANONICAL_SHA256_PATTERN = re.compile(r"^[0-9A-F]{64}$")
 _ALLOWED_ASPECT_RATIOS = frozenset({"9:16", "16:9", "1:1"})
 
 
@@ -48,6 +51,8 @@ class VisualGenerationRequest:
     scene_id: str
     mode: VisualGenerationMode
     prompt: str
+    fact_lock_hash: str | None = None
+    source_fact_ids: tuple[str, ...] = ()
     quality: GenerationQuality = GenerationQuality.STANDARD
     aspect_ratio: str = "9:16"
     source_image: str | None = None
@@ -66,11 +71,36 @@ class VisualGenerationRequest:
             else None
         )
         negative_prompt = str(self.negative_prompt or "").strip()
+        fact_lock_hash = (
+            str(self.fact_lock_hash).strip()
+            if self.fact_lock_hash is not None
+            else None
+        )
 
         if not scene_id:
             raise ValueError("scene_id must not be empty")
         if not prompt:
             raise ValueError("prompt must not be empty")
+        if fact_lock_hash and not _CANONICAL_SHA256_PATTERN.fullmatch(
+            fact_lock_hash
+        ):
+            raise ValueError(
+                "fact_lock_hash must be a canonical uppercase SHA-256 digest"
+            )
+
+        if isinstance(self.source_fact_ids, (str, bytes)):
+            raise ValueError("source_fact_ids must be a sequence of fact IDs")
+        source_fact_ids = tuple(
+            sorted(
+                {
+                    str(value or "").strip()
+                    for value in self.source_fact_ids
+                    if str(value or "").strip()
+                }
+            )
+        )
+        if source_fact_ids and not fact_lock_hash:
+            raise ValueError("source_fact_ids require fact_lock_hash")
         if self.aspect_ratio not in _ALLOWED_ASPECT_RATIOS:
             raise ValueError(f"unsupported aspect_ratio: {self.aspect_ratio!r}")
 
@@ -110,6 +140,8 @@ class VisualGenerationRequest:
 
         object.__setattr__(self, "scene_id", scene_id)
         object.__setattr__(self, "prompt", prompt)
+        object.__setattr__(self, "fact_lock_hash", fact_lock_hash)
+        object.__setattr__(self, "source_fact_ids", source_fact_ids)
         object.__setattr__(self, "source_image", source_image)
         object.__setattr__(self, "negative_prompt", negative_prompt)
 
@@ -183,28 +215,62 @@ class GeneratedVisualAsset:
             ):
                 raise ValueError("generated video requires positive duration_seconds")
 
-        if self.scientific_status is ScientificVisualStatus.HECHO_VERIFICADO:
+        if self.scientific_status is not ScientificVisualStatus.RECREACION_VISUAL:
             raise ValueError(
-                "AI-generated visual assets cannot self-certify as HECHO_VERIFICADO"
+                "AI-generated visual assets cannot self-certify and must remain "
+                "RECREACION_VISUAL"
             )
 
 
 class SceneAssetIndex:
-    """In-memory scene-to-generated-asset mapping with deterministic ordering."""
+    """Scene-to-asset mapping that admits only provenance-bound generations."""
 
     def __init__(self) -> None:
         self._assets: dict[str, list[GeneratedVisualAsset]] = {}
+        self._provenance: dict[str, dict[str, object]] = {}
 
-    def register(self, asset: GeneratedVisualAsset) -> None:
+    def register(
+        self,
+        asset: GeneratedVisualAsset,
+        *,
+        request: VisualGenerationRequest,
+        provenance: Mapping[str, object],
+        source_image_sha256: str | None = None,
+    ) -> None:
         if not isinstance(asset, GeneratedVisualAsset):
             raise TypeError("asset must be GeneratedVisualAsset")
+        if asset.asset_id in self._provenance:
+            raise ValueError(f"asset_id is already registered: {asset.asset_id}")
+
+        # Local import avoids an import-time cycle: provenance depends on these
+        # provider-neutral contracts.
+        from app.services.centinela.generative.provenance import (
+            validate_generated_visual_provenance,
+        )
+
+        validated = validate_generated_visual_provenance(
+            request,
+            asset,
+            provenance,
+            source_image_sha256=source_image_sha256,
+        )
         self._assets.setdefault(asset.scene_id, []).append(asset)
+        self._provenance[asset.asset_id] = validated
 
     def for_scene(self, scene_id: str) -> tuple[GeneratedVisualAsset, ...]:
         normalized = str(scene_id or "").strip()
         if not normalized:
             raise ValueError("scene_id must not be empty")
         return tuple(self._assets.get(normalized, ()))
+
+    def provenance_for_asset(self, asset_id: str) -> dict[str, object]:
+        normalized = str(asset_id or "").strip()
+        if not normalized:
+            raise ValueError("asset_id must not be empty")
+        try:
+            return copy.deepcopy(self._provenance[normalized])
+        except KeyError as exc:
+            raise KeyError(f"asset provenance is not registered: {normalized}") from exc
 
     def latest(
         self,

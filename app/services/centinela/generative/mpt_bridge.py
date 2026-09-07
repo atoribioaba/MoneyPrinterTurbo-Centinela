@@ -1,5 +1,6 @@
 """Bridge approved generated video assets into MPT's existing material input."""
 
+import hashlib
 import math
 import os
 
@@ -16,6 +17,14 @@ from app.services.centinela.generative.provenance import (
 
 class GeneratedMaterialBridgeError(ValueError):
     """Raised when a generated asset cannot safely enter the MPT composer."""
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def generated_video_to_material(
@@ -42,9 +51,17 @@ def generated_video_to_material(
         )
 
     local_path = os.path.realpath(asset.local_path)
-    if require_existing_file and not os.path.isfile(local_path):
+    if not require_existing_file:
+        raise GeneratedMaterialBridgeError(
+            "generated video content verification cannot be disabled"
+        )
+    if not os.path.isfile(local_path):
         raise GeneratedMaterialBridgeError(
             "generated video file does not exist"
+        )
+    if _sha256_file(local_path) != asset.sha256:
+        raise GeneratedMaterialBridgeError(
+            "generated video content does not match asset sha256"
         )
 
     provenance = build_generated_visual_provenance(

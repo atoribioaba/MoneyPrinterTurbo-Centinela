@@ -15,6 +15,7 @@ def test_ai_provenance_hashes_prompt_and_hides_absolute_paths() -> None:
         scene_id="scene-007",
         mode=VisualGenerationMode.IMAGE_TO_VIDEO,
         prompt=prompt,
+        fact_lock_hash="F" * 64,
         source_image=r"D:\ASTRONOMIA\master.png",
         seed=42,
         duration_seconds=4,

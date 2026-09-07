@@ -164,3 +164,19 @@ def test_factlock_scientific_visual_refuses_unsupported_fact_type(tmp_path):
         )
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_factlock_scientific_visual_revalidates_tampered_model_copy(tmp_path):
+    valid = _fact_lock()
+    facts = list(valid.facts)
+    facts[0] = facts[0].model_copy(update={"value": 0.75})
+    tampered = valid.model_copy(update={"facts": facts})
+
+    with pytest.raises(ScientificVisualError, match="semantic integrity"):
+        render_factlock_scientific_visual(
+            tampered,
+            "moon:angular_diameter_deg",
+            tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []

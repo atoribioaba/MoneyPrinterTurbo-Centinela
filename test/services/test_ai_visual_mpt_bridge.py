@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ def _request(source_image: str) -> VisualGenerationRequest:
         scene_id="scene-2",
         mode=VisualGenerationMode.IMAGE_TO_VIDEO,
         prompt="Subtle lunar motion, fixed astronomical geometry",
+        fact_lock_hash="F" * 64,
         source_image=source_image,
         duration_seconds=4.2,
     )
@@ -33,7 +35,11 @@ def _asset(path: Path, media_type: GeneratedMediaType) -> GeneratedVisualAsset:
         model_id="ltx-test",
         media_type=media_type,
         local_path=str(path),
-        sha256="b" * 64,
+        sha256=(
+            hashlib.sha256(path.read_bytes()).hexdigest()
+            if path.is_file()
+            else "b" * 64
+        ),
         width=512,
         height=768,
         duration_seconds=4.2 if media_type is GeneratedMediaType.VIDEO else None,
@@ -92,4 +98,21 @@ def test_missing_generated_video_fails_closed(tmp_path: Path) -> None:
         generated_video_to_material(
             request,
             _asset(missing, GeneratedMediaType.VIDEO),
+        )
+
+
+def test_generated_video_hash_mismatch_fails_closed(tmp_path: Path) -> None:
+    source_image = tmp_path / "moon.png"
+    source_image.write_bytes(b"image")
+    video = tmp_path / "scene-2.mp4"
+    video.write_bytes(b"video")
+
+    asset = _asset(video, GeneratedMediaType.VIDEO)
+    video.write_bytes(b"tampered-after-generation")
+
+    with pytest.raises(GeneratedMaterialBridgeError, match="asset sha256"):
+        generated_video_to_material(
+            _request(str(source_image)),
+            asset,
+            source_image_sha256="c" * 64,
         )

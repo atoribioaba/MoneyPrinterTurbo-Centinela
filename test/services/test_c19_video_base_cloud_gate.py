@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +23,10 @@ from app.services.video_base_planner import (
     VideoBasePlanner,
 )
 from app.services import video_base_renderer
+from app.services.video_base_renderer import FFmpegSceneRenderer
+from app.utils import utils
 from test.services.test_delivery_render import fixture as delivery_fixture
+from test.services.test_video_base_renderer import FFMPEG, FFPROBE, placeholder_plan
 from test.services.test_video_base_planner import (
     GetOnlyCatalog,
     astronomy_plan,
@@ -75,6 +82,16 @@ def test_c19_f30_profiles_are_master_and_social_original_source_rerenders():
     assert master.source_strategy == "ORIGINAL_SOURCE_RERENDER"
     assert social.source_strategy == "ORIGINAL_SOURCE_RERENDER"
     assert result.upscales_social_to_master is False
+
+
+def test_c19_f30_plan_hash_is_canonical_deterministic_and_mutation_sensitive():
+    first = build_delivery_render(delivery_fixture(ready=False, nvenc=True))
+    second = build_delivery_render(delivery_fixture(ready=False, nvenc=True))
+    ready = build_delivery_render(delivery_fixture(ready=True, nvenc=True))
+
+    assert re.fullmatch(r"[0-9A-F]{64}", first.delivery_render_hash)
+    assert first.delivery_render_hash == second.delivery_render_hash
+    assert first.delivery_render_hash != ready.delivery_render_hash
 
 
 def test_c19_f30_remains_planning_only_even_with_positive_nvenc_hints():
@@ -135,3 +152,37 @@ def test_c19_video_base_nvenc_probe_failure_uses_libx264_without_real_ffmpeg(
     assert "-f" in probe and "null" in probe
 
     video_base_renderer._nvenc_real_probe.cache_clear()
+
+
+@pytest.mark.skipif(
+    not FFMPEG or not FFPROBE,
+    reason="FFmpeg/ffprobe required for the C19 manifest integrity gate",
+)
+def test_c19_video_base_manifest_hashes_the_exact_rendered_assets(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(utils, "task_dir", lambda sub_dir="": str(tmp_path / sub_dir))
+
+    result = FFmpegSceneRenderer(FFMPEG, FFPROBE).render(
+        placeholder_plan(requested_codec="libx264"),
+        task_id="c19-manifest-integrity",
+    )
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+
+    assert (manifest["output_width"], manifest["output_height"], manifest["fps"]) == (
+        1080,
+        1920,
+        30,
+    )
+    assert manifest["final_video_path"] == result.video_path
+    assert manifest["final_video_sha256"] == hashlib.sha256(
+        Path(result.video_path).read_bytes()
+    ).hexdigest()
+    assert re.fullmatch(r"[0-9a-f]{64}", manifest["final_video_sha256"])
+
+    assert len(manifest["scenes"]) == result.scene_count
+    for scene in manifest["scenes"]:
+        segment = Path(scene["segment_path"])
+        assert scene["segment_sha256"] == hashlib.sha256(segment.read_bytes()).hexdigest()
+        assert re.fullmatch(r"[0-9a-f]{64}", scene["segment_sha256"])
