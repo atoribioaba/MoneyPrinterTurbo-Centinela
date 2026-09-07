@@ -6,6 +6,8 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from pydantic import ValidationError
+
 from app.models.astronomy import ScientificStatus
 
 from .fact_guard import (
@@ -286,6 +288,13 @@ class WriterRoom:
         report_progress: Callable[[int, str], Any] | None = None,
         check_cancelled: Callable[[], None] | None = None,
     ) -> tuple[FinalScript, WriterRoomReport]:
+        try:
+            fact_lock = FactLock.model_validate(fact_lock.model_dump(mode="json"))
+        except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+            raise WriterRoomError(
+                "FactLock semantic integrity validation failed"
+            ) from exc
+
         if request.subject.strip().casefold() != fact_lock.subject.strip().casefold():
             raise WriterRoomError(
                 "WriterRoomRequest subject does not match FactLock subject"

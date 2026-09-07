@@ -28,8 +28,10 @@ from app.services.centinela.writer_room import (
     ScriptClaim,
     StoryBeat,
     WriterRoom,
+    WriterRoomError,
     WriterRoomRequest,
     build_writer_room_stage_binding,
+    compute_fact_lock_context_hash,
 )
 from app.services.centinela.writer_room.runtime import GeneratedModel
 
@@ -62,17 +64,18 @@ def fact(
 
 
 def fact_lock(subject="Saturno"):
+    facts = [
+        fact("context:moment_utc", "2026-08-23T20:00:00+00:00"),
+        fact("observer:latitude_deg", 0.0, unit="deg"),
+        fact("observer:longitude_deg", 0.0, unit="deg"),
+        fact("body:saturn:altitude_apparent_deg", 25.0, unit="deg"),
+        fact("body:saturn:azimuth_deg", 120.0, unit="deg"),
+    ]
     return FactLock(
         subject=subject,
         research_mode="OBSERVATION_CONTEXT",
-        context_hash="A" * 64,
-        facts=[
-            fact("context:moment_utc", "2026-08-23T20:00:00+00:00"),
-            fact("observer:latitude_deg", 0.0, unit="deg"),
-            fact("observer:longitude_deg", 0.0, unit="deg"),
-            fact("body:saturn:altitude_apparent_deg", 25.0, unit="deg"),
-            fact("body:saturn:azimuth_deg", 120.0, unit="deg"),
-        ],
+        context_hash=compute_fact_lock_context_hash(facts, []),
+        facts=facts,
         sources=[],
         source_ids=[],
         scope_note="test",
@@ -205,6 +208,17 @@ def test_writer_room_builds_grounded_final_script():
     assert final.approved_for_publication is False
     assert report.final_script_hash == final.content_hash
     assert [item.act for item in final.segments] == list(NarrativeAct)
+
+
+def test_writer_room_revalidates_model_copy_fact_lock_before_runtime():
+    original = fact_lock()
+    tampered = original.model_copy(update={"context_hash": "B" * 64})
+
+    with pytest.raises(WriterRoomError, match="semantic integrity"):
+        WriterRoom(runtime=FakeRuntime()).generate(
+            WriterRoomRequest(subject="Saturno"),
+            tampered,
+        )
 
 
 def test_writer_room_rejects_unknown_fact_id():

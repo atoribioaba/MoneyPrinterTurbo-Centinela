@@ -14,6 +14,7 @@ from .models import (
     StoryBeat,
     WriterRoomReport,
     WriterRoomRequest,
+    compute_fact_lock_context_hash,
 )
 from .room import WriterRoom, WriterRoomError
 from .runtime import WriterRoomOllamaRuntime, WriterRoomRuntimeError
@@ -46,6 +47,7 @@ __all__ = [
     "WriterRoomRequest",
     "WriterRoomRuntimeError",
     "WriterRoomStageAdapter",
+    "compute_fact_lock_context_hash",
     "build_fact_lock_stage_binding",
     "build_writer_room_stage_binding",
 ]
