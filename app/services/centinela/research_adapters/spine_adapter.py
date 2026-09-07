@@ -151,6 +151,11 @@ class C3ExternalResearchFactLockAdapter:
                 return StageResult.blocked(
                     f"external research duplicates Fact Lock fact_id: {datum.fact_id}"
                 )
+            if datum.source_id not in known_source_ids:
+                return StageResult.blocked(
+                    "external research datum references unknown source_id: "
+                    f"{datum.source_id}"
+                )
             facts.append(
                 GroundingFact(
                     fact_id=datum.fact_id,
