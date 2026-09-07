@@ -1,0 +1,132 @@
+name: Centinela C16 FactLock adversarial hardening
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c16-factlock-adversarial-v0.1
+    paths:
+      - .github/workflows/centinela-c16-factlock-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: python -m pip install --disable-pip-version-check uv==0.12.10
+
+      - name: Apply C16 hardening
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          model_path = Path('app/models/astronomy_director.py')
+          text = model_path.read_text(encoding='utf-8')
+          old = 'from datetime import datetime\nfrom enum import Enum\n'
+          new = 'import hashlib\nimport json\nfrom datetime import datetime\nfrom enum import Enum\n'
+          if old not in text:
+              raise SystemExit('astronomy model import anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''class GroundingPacket(StrictDirectorModel):\n    context_hash: str\n    facts: list[GroundingFact]\n    source_ids: list[str] = Field(default_factory=list)\n\n\nclass PlanScientificClaim'''
+          new = '''class GroundingPacket(StrictDirectorModel):\n    context_hash: str\n    facts: list[GroundingFact]\n    source_ids: list[str] = Field(default_factory=list)\n\n\ndef compute_grounding_context_hash(\n    facts: list[GroundingFact],\n    source_ids: list[str],\n) -> str:\n    payload = {\n        "facts": [fact.model_dump(mode="json") for fact in facts],\n        "source_ids": list(source_ids),\n    }\n    raw = json.dumps(\n        payload,\n        ensure_ascii=False,\n        sort_keys=True,\n        separators=(",", ":"),\n    )\n    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()\n\n\nclass PlanScientificClaim'''
+          if old not in text:
+              raise SystemExit('GroundingPacket anchor not found')
+          model_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          director_path = Path('app/services/astronomy_director.py')
+          text = director_path.read_text(encoding='utf-8')
+          text = text.replace('import hashlib\n', '', 1)
+          old = '''    GroundingPacket,\n    NarrativeAct,'''
+          new = '''    GroundingPacket,\n    NarrativeAct,\n    compute_grounding_context_hash,'''
+          if old not in text:
+              raise SystemExit('director import anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''def _canonical_json(value: Any) -> str:\n    return json.dumps(\n        value,\n        ensure_ascii=False,\n        sort_keys=True,\n        separators=(",", ":"),\n    )\n\n\ndef _hash_json(value: Any) -> str:\n    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest().upper()\n\n\n'''
+          if old not in text:
+              raise SystemExit('legacy hash helper anchor not found')
+          text = text.replace(old, '', 1)
+          old = '''    payload = {\n        "facts": [fact.model_dump(mode="json") for fact in facts],\n        "source_ids": source_ids,\n    }\n    return GroundingPacket(\n        context_hash=_hash_json(payload),'''
+          new = '''    return GroundingPacket(\n        context_hash=compute_grounding_context_hash(facts, source_ids),'''
+          if old not in text:
+              raise SystemExit('grounding producer anchor not found')
+          director_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          writer_models = Path('app/services/centinela/writer_room/models.py')
+          text = writer_models.read_text(encoding='utf-8')
+          old = 'from app.models.astronomy_director import GroundingFact, NarrativeAct\n'
+          new = '''from app.models.astronomy_director import (\n    GroundingFact,\n    NarrativeAct,\n    compute_grounding_context_hash,\n)\n'''
+          if old not in text:
+              raise SystemExit('writer model import anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''        return result\n\n\nclass ScriptClaim'''
+          new = '''        return result\n\n    @model_validator(mode="after")\n    def context_hash_matches_grounding(self):\n        expected = compute_grounding_context_hash(self.facts, self.source_ids)\n        if self.context_hash != expected:\n            raise ValueError(\n                "context_hash does not match canonical facts/source_ids payload"\n            )\n        return self\n\n\nclass ScriptClaim'''
+          if old not in text:
+              raise SystemExit('FactLock validator anchor not found')
+          writer_models.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          spine_path = Path('app/services/centinela/writer_room/spine_adapter.py')
+          text = spine_path.read_text(encoding='utf-8')
+          text = text.replace('import hashlib\nimport json\n', '', 1)
+          old = 'from app.models.astronomy import AstronomyBody, AstronomyContextRequest\n'
+          new = '''from app.models.astronomy import AstronomyBody, AstronomyContextRequest\nfrom app.models.astronomy_director import compute_grounding_context_hash\n'''
+          if old not in text:
+              raise SystemExit('spine import anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''def _hash_facts(facts, source_ids) -> str:\n    payload = {\n        "facts": [item.model_dump(mode="json") for item in facts],\n        "source_ids": list(source_ids),\n    }\n    raw = json.dumps(\n        payload,\n        ensure_ascii=False,\n        sort_keys=True,\n        separators=(",", ":"),\n    )\n    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()\n\n\n'''
+          if old not in text:
+              raise SystemExit('legacy writer hash helper anchor not found')
+          text = text.replace(old, '', 1)
+          old = '''class WriterRoomSpineError(RuntimeError):\n    pass\n\n\n_TIME_SENSITIVE_TOKENS'''
+          new = '''class WriterRoomSpineError(RuntimeError):\n    pass\n\n\ndef _validated_grounding_context_hash(grounding) -> str:\n    expected = compute_grounding_context_hash(\n        grounding.facts,\n        grounding.source_ids,\n    )\n    if grounding.context_hash != expected:\n        raise WriterRoomSpineError(\n            "GroundingPacket context_hash does not match canonical payload"\n        )\n    return expected\n\n\n_TIME_SENSITIVE_TOKENS'''
+          if old not in text:
+              raise SystemExit('WriterRoomSpineError anchor not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              'context_hash=_hash_facts(facts, source_ids),',
+              'context_hash=compute_grounding_context_hash(facts, source_ids),',
+              1,
+          )
+          old = 'context_hash=grounding.context_hash,\n                    facts=grounding.facts,'
+          new = '''context_hash=_validated_grounding_context_hash(grounding),\n                    facts=grounding.facts,'''
+          if old not in text:
+              raise SystemExit('observation grounding hash anchor not found')
+          spine_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('test/services/test_fact_lock_adversarial.py')
+          if test_path.exists():
+              raise SystemExit('C16 test path already exists')
+          test_path.write_text('''from __future__ import annotations\n\nfrom datetime import datetime, timezone\n\nimport pytest\nfrom pydantic import ValidationError\n\nfrom app.models.astronomy import ScientificStatus\nfrom app.models.astronomy_director import (\n    GroundingFact,\n    GroundingPacket,\n    compute_grounding_context_hash,\n)\nfrom app.services.centinela.writer_room.models import FactLock\nfrom app.services.centinela.writer_room.spine_adapter import (\n    WriterRoomSpineError,\n    _validated_grounding_context_hash,\n)\n\n\ndef _facts() -> list[GroundingFact]:\n    return [\n        GroundingFact(\n            fact_id="fact:a",\n            label_es="Hecho A",\n            value=42,\n            unit="km",\n            scientific_status=ScientificStatus.HECHO_VERIFICADO,\n            source_ids=["source:a"],\n        ),\n        GroundingFact(\n            fact_id="fact:b",\n            label_es="Hecho B",\n            value="dato",\n            unit=None,\n            scientific_status=ScientificStatus.APROXIMACION_DIVULGATIVA,\n            source_ids=["source:b"],\n        ),\n    ]\n\n\ndef _fact_lock(*, facts=None, source_ids=None, context_hash=None) -> FactLock:\n    facts = list(facts or _facts())\n    source_ids = list(source_ids or ["source:a", "source:b"])\n    context_hash = context_hash or compute_grounding_context_hash(\n        facts, source_ids\n    )\n    return FactLock(\n        subject="Luna y Júpiter",\n        research_mode="OBSERVATION_CONTEXT",\n        context_hash=context_hash,\n        facts=facts,\n        source_ids=source_ids,\n        scope_note="Contexto científico bloqueado para escritura.",\n        location_assumed=False,\n        moment_basis="explicit_project_moment",\n        generated_at_utc=datetime.now(timezone.utc),\n    )\n\n\ndef test_canonical_hash_vector_is_stable():\n    digest = compute_grounding_context_hash(\n        _facts(), ["source:a", "source:b"]\n    )\n    assert digest == (\n        "7E581B8FA645AB9A632905727795A4C1"\n        "B8FE0222FDC8412A4559104CF71BADDA"\n    )\n\n\ndef test_valid_fact_lock_accepts_canonical_hash():\n    lock = _fact_lock()\n    assert lock.context_hash == compute_grounding_context_hash(\n        lock.facts, lock.source_ids\n    )\n\n\ndef test_arbitrary_64_character_hash_is_rejected():\n    with pytest.raises(ValidationError, match="context_hash does not match"):\n        _fact_lock(context_hash="A" * 64)\n\n\ndef test_one_character_hash_tamper_is_rejected():\n    digest = compute_grounding_context_hash(_facts(), ["source:a", "source:b"])\n    tampered = ("0" if digest[0] != "0" else "1") + digest[1:]\n    with pytest.raises(ValidationError, match="context_hash does not match"):\n        _fact_lock(context_hash=tampered)\n\n\ndef test_reordering_source_ids_invalidates_previous_hash():\n    digest = compute_grounding_context_hash(_facts(), ["source:a", "source:b"])\n    with pytest.raises(ValidationError, match="context_hash does not match"):\n        _fact_lock(\n            source_ids=["source:b", "source:a"],\n            context_hash=digest,\n        )\n\n\ndef test_reordering_facts_invalidates_previous_hash():\n    facts = _facts()\n    digest = compute_grounding_context_hash(facts, ["source:a", "source:b"])\n    with pytest.raises(ValidationError, match="context_hash does not match"):\n        _fact_lock(\n            facts=list(reversed(facts)),\n            context_hash=digest,\n        )\n\n\ndef test_source_id_normalization_is_part_of_fact_lock_hash_contract():\n    normalized = ["source:a", "source:b"]\n    digest = compute_grounding_context_hash(_facts(), normalized)\n    lock = _fact_lock(\n        source_ids=[" source:a ", "source:a", "source:b"],\n        context_hash=digest,\n    )\n    assert lock.source_ids == normalized\n\n\ndef test_valid_grounding_packet_hash_is_accepted_by_spine():\n    facts = _facts()\n    source_ids = ["source:a", "source:b"]\n    packet = GroundingPacket(\n        context_hash=compute_grounding_context_hash(facts, source_ids),\n        facts=facts,\n        source_ids=source_ids,\n    )\n    assert _validated_grounding_context_hash(packet) == packet.context_hash\n\n\ndef test_tampered_grounding_packet_fails_closed_before_fact_lock():\n    packet = GroundingPacket(\n        context_hash="F" * 64,\n        facts=_facts(),\n        source_ids=["source:a", "source:b"],\n    )\n    with pytest.raises(\n        WriterRoomSpineError,\n        match="GroundingPacket context_hash does not match",\n    ):\n        _validated_grounding_context_hash(packet)\n''', encoding='utf-8')
+          PY
+
+      - name: Sync locked dev environment
+        run: uv sync --frozen --group dev --python 3.11
+
+      - name: Focused FactLock tests
+        run: uv run pytest -q test/services/test_fact_lock_adversarial.py
+
+      - name: Ruff
+        run: uv run ruff check app/models/astronomy_director.py app/services/astronomy_director.py app/services/centinela/writer_room/models.py app/services/centinela/writer_room/spine_adapter.py test/services/test_fact_lock_adversarial.py
+
+      - name: Compile
+        run: uv run python -m compileall -q app/models/astronomy_director.py app/services/astronomy_director.py app/services/centinela/writer_room
+
+      - name: Commit functional C16 files
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/models/astronomy_director.py app/services/astronomy_director.py app/services/centinela/writer_room/models.py app/services/centinela/writer_room/spine_adapter.py test/services/test_fact_lock_adversarial.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'security: bind FactLock to canonical grounding payload'
+          git push
