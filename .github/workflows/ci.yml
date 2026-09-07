@@ -119,10 +119,11 @@ jobs:
             exit 1
           }
 
-      - name: Run PC return preflight hardening tests
+      - name: Run PC return and Windows path hardening tests
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           test/services/test_pc_return_readonly_preflight.py
+          test/services/test_c20_windows_path_contract.py
 
       - name: Run core service smoke tests
         run: >-

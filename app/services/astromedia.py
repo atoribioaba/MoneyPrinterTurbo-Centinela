@@ -39,9 +39,10 @@ from app.models.astromedia import (
     SearchResult,
     Sidecar,
 )
+from app.models.windows_path_contract import CANONICAL_MEDIA_ROOT
 
 
-MEDIA_ROOT = Path(r"D:\ASTRONOMÍA\Medios")
+MEDIA_ROOT = Path(CANONICAL_MEDIA_ROOT)
 
 TASKS_ROOT = Path(__file__).resolve().parents[2] / "storage" / "tasks"
 

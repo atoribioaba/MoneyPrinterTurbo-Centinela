@@ -9,6 +9,8 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
+from app.models.windows_path_contract import validate_windows_component
+
 PROJECT_MANIFEST_SCHEMA_VERSION = 1
 ARTIFACT_REF_SCHEMA_VERSION = 1
 RUNTIME_SNAPSHOT_SCHEMA_VERSION = 1
@@ -40,6 +42,7 @@ def validate_id(value: Any, name: str) -> str:
     normalized = value.strip()
     if not _ID_RE.fullmatch(normalized):
         raise ValueError(f"{name} contains unsafe characters")
+    validate_windows_component(normalized, label=name)
     return normalized
 
 
@@ -94,6 +97,8 @@ def _relative_path(value: Any) -> str:
         raise ValueError("relative_path is unsafe")
     if ":" in path.parts[0]:
         raise ValueError("relative_path must not contain a drive prefix")
+    for part in path.parts:
+        validate_windows_component(part, label="relative_path component")
     return path.as_posix()
 
 

@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from app.services.astromedia import AstroMediaCatalog
+from app.models.windows_path_contract import CANONICAL_MEDIA_ROOT
 
 from .models import MediaRefreshDecision
 
-DEFAULT_MEDIA_ROOT = Path(r"D:\\ASTRONOMÍA\\Medios")
+DEFAULT_MEDIA_ROOT = Path(CANONICAL_MEDIA_ROOT)
 _SUPPORTED_EXTENSIONS = frozenset({
     ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".mts", ".m2ts",
     ".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp",
