@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
 
@@ -13,7 +11,10 @@ from app.services.centinela.production_spine import (
     StageBinding,
     StageResult,
 )
-from app.services.centinela.writer_room.models import FactLock
+from app.services.centinela.writer_room.models import (
+    FactLock,
+    compute_fact_lock_context_hash,
+)
 from app.services.centinela.writer_room.spine_adapter import FactLockStageAdapter
 
 from .conflicts import ScientificConflictError, ScientificConflictResolver
@@ -31,20 +32,6 @@ from .service import (
 
 
 ExternalResearchRunner = Callable[[ResearchContext, dict[str, Any]], ResearchBundle]
-
-
-def _hash_fact_lock(facts: list[GroundingFact], source_ids: list[str]) -> str:
-    payload = {
-        "facts": [item.model_dump(mode="json") for item in facts],
-        "source_ids": list(source_ids),
-    }
-    raw = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()
 
 
 class C3ExternalResearchFactLockAdapter:
@@ -182,7 +169,14 @@ class C3ExternalResearchFactLockAdapter:
             if datum.primary_source_required or not datum.verified:
                 primary_required = True
 
-        source_ids = list(dict.fromkeys(source_ids))
+        source_ids = sorted(
+            {
+                source_id.strip()
+                for fact in facts
+                for source_id in fact.source_ids
+                if source_id.strip()
+            }
+        )
         if len(facts) > 256 or len(sources) > 128 or len(source_ids) > 128:
             return StageResult.blocked(
                 "external research exceeds Fact Lock evidence limits"
@@ -194,7 +188,7 @@ class C3ExternalResearchFactLockAdapter:
                 "facts": [item.model_dump(mode="json") for item in facts],
                 "sources": [item.model_dump(mode="json") for item in sources],
                 "source_ids": source_ids,
-                "context_hash": _hash_fact_lock(facts, source_ids),
+                "context_hash": compute_fact_lock_context_hash(facts, source_ids),
                 "primary_source_verification_required_for_publication": (
                     primary_required
                 ),
