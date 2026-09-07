@@ -1,0 +1,156 @@
+name: Centinela C20 lineage reconciliation
+
+on:
+  push:
+    branches:
+      - centinela-engineering/c05-c20-c16-c19-lineage-reconciliation-v0.1
+    paths:
+      - .github/workflows/centinela-c20-lineage-reconciliation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Fetch current C16 source
+        shell: bash
+        run: |
+          git fetch origin \
+            centinela-engineering/c05-c16-factlock-adversarial-currentline-v0.1:c16-current
+
+      - name: Overlay C16 functional files only
+        shell: bash
+        run: |
+          git checkout c16-current -- \
+            app/services/ai_world_model.py \
+            app/services/astronomy_director.py \
+            app/services/centinela/editorial_lab.py \
+            app/services/centinela/narrative_qa.py \
+            app/services/centinela/writer_room/fact_guard.py \
+            app/services/centinela/writer_room/idea_hub.py \
+            app/services/centinela/writer_room/models.py \
+            app/services/centinela/writer_room/room.py \
+            app/services/centinela/writer_room/spine_adapter.py \
+            app/services/centinela/writer_room/verification.py \
+            test/services/test_ai_world_model.py \
+            test/services/test_astronomy_director.py \
+            test/services/test_c03_editorial_lab.py \
+            test/services/test_factlock_adversarial.py \
+            test/services/test_narrative_qa.py \
+            test/services/test_writer_room.py \
+            test/services/test_writer_room_fact_guard.py \
+            test/services/test_writer_room_idea_hub.py \
+            test/services/test_writer_room_spine_adapter.py
+
+          if git status --short | grep -F '.github/workflows/centinela-c16-direct-consumer-revalidation.yml'; then
+            echo 'ERROR: C16 temporary workflow leaked into C20 overlay.' >&2
+            exit 1
+          fi
+
+      - name: Install uv
+        run: python -m pip install --disable-pip-version-check uv==0.12.10
+
+      - name: Sync locked dev environment
+        run: uv sync --frozen --group dev --python 3.11
+
+      - name: C16 current-line focused regression
+        run: |
+          uv run pytest -q \
+            test/services/test_ai_world_model.py \
+            test/services/test_astronomy_director.py \
+            test/services/test_c03_editorial_lab.py \
+            test/services/test_factlock_adversarial.py \
+            test/services/test_narrative_qa.py \
+            test/services/test_writer_room.py \
+            test/services/test_writer_room_fact_guard.py \
+            test/services/test_writer_room_idea_hub.py \
+            test/services/test_writer_room_spine_adapter.py
+
+      - name: C17-C19 lineage regression
+        run: |
+          uv run pytest -q \
+            test/services/test_c17_materialselector_f57_regression.py \
+            test/services/test_c18_scientific_visuals_provenance.py \
+            test/services/test_c19_video_base_cloud_gate.py
+
+      - name: Ruff changed C16 surface and cumulative guardrails
+        run: |
+          uv run ruff check \
+            app/services/ai_world_model.py \
+            app/services/astronomy_director.py \
+            app/services/centinela/editorial_lab.py \
+            app/services/centinela/narrative_qa.py \
+            app/services/centinela/writer_room/fact_guard.py \
+            app/services/centinela/writer_room/idea_hub.py \
+            app/services/centinela/writer_room/models.py \
+            app/services/centinela/writer_room/room.py \
+            app/services/centinela/writer_room/spine_adapter.py \
+            app/services/centinela/writer_room/verification.py \
+            test/services/test_ai_world_model.py \
+            test/services/test_astronomy_director.py \
+            test/services/test_c03_editorial_lab.py \
+            test/services/test_factlock_adversarial.py \
+            test/services/test_narrative_qa.py \
+            test/services/test_writer_room.py \
+            test/services/test_writer_room_fact_guard.py \
+            test/services/test_writer_room_idea_hub.py \
+            test/services/test_writer_room_spine_adapter.py \
+            test/services/test_c17_materialselector_f57_regression.py \
+            test/services/test_c18_scientific_visuals_provenance.py \
+            test/services/test_c19_video_base_cloud_gate.py
+
+      - name: Compile changed production surface
+        run: |
+          uv run python -m compileall -q \
+            app/services/ai_world_model.py \
+            app/services/astronomy_director.py \
+            app/services/centinela/editorial_lab.py \
+            app/services/centinela/narrative_qa.py \
+            app/services/centinela/writer_room
+
+      - name: Assert C17-C19 certified files survived overlay
+        shell: bash
+        run: |
+          test -f test/services/test_c17_materialselector_f57_regression.py
+          test -f test/services/test_c18_scientific_visuals_provenance.py
+          test -f test/services/test_c19_video_base_cloud_gate.py
+          git diff --quiet origin/centinela-engineering/c05-c19-video-base-cloud-gate-v0.1 -- \
+            test/services/test_c17_materialselector_f57_regression.py \
+            test/services/test_c18_scientific_visuals_provenance.py \
+            test/services/test_c19_video_base_cloud_gate.py
+
+      - name: Commit cumulative lineage reconciliation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/services/ai_world_model.py \
+            app/services/astronomy_director.py \
+            app/services/centinela/editorial_lab.py \
+            app/services/centinela/narrative_qa.py \
+            app/services/centinela/writer_room/fact_guard.py \
+            app/services/centinela/writer_room/idea_hub.py \
+            app/services/centinela/writer_room/models.py \
+            app/services/centinela/writer_room/room.py \
+            app/services/centinela/writer_room/spine_adapter.py \
+            app/services/centinela/writer_room/verification.py \
+            test/services/test_ai_world_model.py \
+            test/services/test_astronomy_director.py \
+            test/services/test_c03_editorial_lab.py \
+            test/services/test_factlock_adversarial.py \
+            test/services/test_narrative_qa.py \
+            test/services/test_writer_room.py \
+            test/services/test_writer_room_fact_guard.py \
+            test/services/test_writer_room_idea_hub.py \
+            test/services/test_writer_room_spine_adapter.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'hardening: reconcile current C16 onto certified C17-C19 lineage'
+          git push
