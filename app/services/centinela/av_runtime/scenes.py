@@ -217,6 +217,12 @@ def build_scene_plan(
     final_script: FinalScript,
     fact_lock: FactLock,
 ) -> AstronomyVideoPlan:
+    try:
+        fact_lock = FactLock.model_validate(fact_lock.model_dump(mode="json"))
+    except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+        raise SceneAdapterError(
+            "FactLock semantic integrity validation failed"
+        ) from exc
     if final_script.fact_lock_hash != fact_lock.context_hash:
         raise SceneAdapterError("FinalScript and FactLock hashes do not match")
     if len(final_script.segments) != 5:

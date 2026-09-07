@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from app.models.astronomy import ScientificStatus, SourceReference
 from app.models.astronomy_director import GroundingFact, NarrativeAct
-from app.services.centinela.av_runtime.scenes import build_scene_plan
+from app.services.centinela.av_runtime.scenes import SceneAdapterError, build_scene_plan
 from app.services.centinela.writer_room import (
     WRITER_ROOM_LOGICAL_STAGES,
     FactLock,
@@ -144,3 +146,13 @@ def test_scene5_keeps_weak_lexical_lunar_hint_without_inventing_strong_object():
     assert any(value.casefold() == "luna" for value in scene5.material_keywords)
     assert "lunar" in scene5.visual_requirement.casefold()
     assert scene5.ai_recreation_allowed is False
+
+
+def test_build_scene_plan_revalidates_tampered_factlock_model_copy():
+    valid = _fact_lock()
+    facts = list(valid.facts)
+    facts[0] = facts[0].model_copy(update={"value": 999999.0})
+    tampered = valid.model_copy(update={"facts": facts})
+
+    with pytest.raises(SceneAdapterError, match="semantic integrity"):
+        build_scene_plan(_final_script(), tampered)

@@ -10,6 +10,9 @@ from app.services.centinela.generative import (
     VisualGenerationMode,
     VisualGenerationRequest,
 )
+from app.services.centinela.generative.provenance import (
+    build_generated_visual_provenance,
+)
 
 
 def _video_asset(asset_id: str, scene_id: str = "scene-001") -> GeneratedVisualAsset:
@@ -25,6 +28,18 @@ def _video_asset(asset_id: str, scene_id: str = "scene-001") -> GeneratedVisualA
         height=768,
         duration_seconds=4.0,
     )
+
+
+def _register(index: SceneAssetIndex, asset: GeneratedVisualAsset) -> None:
+    request = VisualGenerationRequest(
+        scene_id=asset.scene_id,
+        mode=VisualGenerationMode.TEXT_TO_VIDEO,
+        prompt="Bound test generation",
+        fact_lock_hash="F" * 64,
+        duration_seconds=asset.duration_seconds,
+    )
+    provenance = build_generated_visual_provenance(request, asset)
+    index.register(asset, request=request, provenance=provenance)
 
 
 def test_image_to_video_requires_source_image() -> None:
@@ -58,11 +73,12 @@ def test_scene_asset_index_preserves_versions_and_latest() -> None:
     first = _video_asset("asset-v1")
     second = _video_asset("asset-v2")
 
-    index.register(first)
-    index.register(second)
+    _register(index, first)
+    _register(index, second)
 
     assert index.for_scene("scene-001") == (first, second)
     assert index.latest("scene-001") == second
+    assert index.provenance_for_asset(second.asset_id)["sha256"] == second.sha256
 
 
 def test_low_vram_policy_allows_only_bounded_quality_downgrade() -> None:

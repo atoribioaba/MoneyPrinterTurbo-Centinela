@@ -1,11 +1,14 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from app.models.astronomy import ScientificStatus
 from app.models.astronomy_director import (
     AstronomyVideoPlan,
     GenerationOrigin,
     NarrativeAct,
+    PlanScientificClaim,
     ScenePlan,
     ShotType,
 )
@@ -19,6 +22,9 @@ from app.services.centinela.generative.contracts import (
     VisualGenerationMode,
 )
 from app.services.centinela.generative.router import ProviderRuntimeState
+from app.services.centinela.generative.provenance import (
+    build_generated_visual_provenance,
+)
 from app.services.centinela.media_resolver.models import (
     FocalEvidence,
     MediaResolutionReport,
@@ -26,6 +32,7 @@ from app.services.centinela.media_resolver.models import (
     SceneMediaEvidence,
     SemanticEvidence,
 )
+from test.services.test_factlock_scientific_visuals import _fact_lock
 from webui.product.visual_generation import (
     AI_SCIENTIFIC_STATUS,
     VISUAL_SOURCE_ONLINE,
@@ -73,7 +80,7 @@ def _plan() -> AstronomyVideoPlan:
         epilogue="Cierre",
         external_research_required=False,
         research_questions=[],
-        context_hash="a" * 64,
+        context_hash="A" * 64,
         generation_origin=GenerationOrigin.LLM_VALIDATED,
         model_used="fixture",
         repair_attempted=False,
@@ -89,7 +96,7 @@ def _report() -> MediaResolutionReport:
     scenes = [
         SceneMediaEvidence(
             scene_number=index,
-            scene_key=f"{'a' * 64}:scene:{index}",
+            scene_key=f"{'A' * 64}:scene:{index}",
             query="Luna",
             candidate_count=0,
             candidates=[],
@@ -112,7 +119,7 @@ def _report() -> MediaResolutionReport:
     ]
     return MediaResolutionReport(
         subject="Prueba visual lunar",
-        source_plan_context_hash="a" * 64,
+        source_plan_context_hash="A" * 64,
         selector_version="fixture",
         catalog_item_count=0,
         catalog_provider_counts={},
@@ -156,7 +163,7 @@ def _candidate(
 def _asset(media_type: GeneratedMediaType) -> GeneratedVisualAsset:
     return GeneratedVisualAsset(
         asset_id=f"asset-{media_type.value}",
-        scene_id=f"{'a' * 64}:scene:1",
+        scene_id=f"{'A' * 64}:scene:1",
         provider_id="ltx_local" if media_type is GeneratedMediaType.VIDEO else "zimage_local",
         model_id="fixture",
         media_type=media_type,
@@ -172,13 +179,50 @@ def test_scene_mapping_uses_existing_media_resolution_scene_key() -> None:
     contexts = correlate_scene_contexts(_plan(), _report())
 
     assert len(contexts) == 5
-    assert contexts[0].scene_id == f"{'a' * 64}:scene:1"
+    assert contexts[0].scene_id == f"{'A' * 64}:scene:1"
     assert contexts[-1].scene_number == 5
+
+
+def test_scene_mapping_revalidates_canonical_factlock_and_carries_lineage() -> None:
+    fact_lock = _fact_lock()
+    plan = _plan()
+    scenes = list(plan.scenes)
+    scenes[0] = scenes[0].model_copy(
+        update={
+            "claims": [
+                PlanScientificClaim(
+                    statement="La Luna presenta un diámetro angular medible.",
+                    fact_ids=["moon:angular_diameter_deg"],
+                    scientific_status=ScientificStatus.HECHO_VERIFICADO,
+                )
+            ]
+        }
+    )
+    plan = plan.model_copy(
+        update={"context_hash": fact_lock.context_hash, "scenes": scenes}
+    )
+    report = _report().model_copy(
+        update={"source_plan_context_hash": fact_lock.context_hash}
+    )
+
+    contexts = correlate_scene_contexts(plan, report, fact_lock=fact_lock)
+
+    assert contexts[0].fact_lock_hash == fact_lock.context_hash
+    assert contexts[0].source_fact_ids == ("moon:angular_diameter_deg",)
+
+    tampered_fact = fact_lock.facts[0].model_copy(update={"value": 9.99})
+    tampered = fact_lock.model_copy(
+        update={"facts": [tampered_fact, *fact_lock.facts[1:]]}
+    )
+    with pytest.raises(ValueError):
+        correlate_scene_contexts(plan, report, fact_lock=tampered)
 
 
 def test_t2i_form_maps_only_to_existing_visual_generation_request_fields() -> None:
     request = build_visual_request(
         scene_id="scene-1",
+        fact_lock_hash="A" * 64,
+        source_fact_ids=(),
         mode=VisualGenerationMode.TEXT_TO_IMAGE,
         prompt="Eclipse solar cinematográfico",
         quality=GenerationQuality.MASTER,
@@ -198,6 +242,8 @@ def test_t2i_form_maps_only_to_existing_visual_generation_request_fields() -> No
 def test_i2v_requires_real_source_image_and_maps_duration() -> None:
     request = build_visual_request(
         scene_id="scene-2",
+        fact_lock_hash="A" * 64,
+        source_fact_ids=(),
         mode=VisualGenerationMode.IMAGE_TO_VIDEO,
         prompt="Movimiento lento y contenido",
         source_image="/tmp/master.png",
@@ -211,6 +257,8 @@ def test_i2v_requires_real_source_image_and_maps_duration() -> None:
 def test_t2v_maps_duration_without_inventing_motion_profiles() -> None:
     request = build_visual_request(
         scene_id="scene-3",
+        fact_lock_hash="A" * 64,
+        source_fact_ids=(),
         mode=VisualGenerationMode.TEXT_TO_VIDEO,
         prompt="Cielo nocturno cinematográfico",
         duration_seconds=6.0,
@@ -306,7 +354,15 @@ def test_i2v_source_options_include_generated_image_with_hash_and_lineage() -> N
     context = correlate_scene_contexts(_plan(), _report())[0]
     index = SceneAssetIndex()
     image = _asset(GeneratedMediaType.IMAGE)
-    index.register(image)
+    request = build_visual_request(
+        scene_id=image.scene_id,
+        fact_lock_hash=context.fact_lock_hash,
+        source_fact_ids=context.source_fact_ids,
+        mode=VisualGenerationMode.TEXT_TO_IMAGE,
+        prompt="Master lunar image",
+    )
+    provenance = build_generated_visual_provenance(request, image)
+    index.register(image, request=request, provenance=provenance)
 
     options = image_source_options(context, index)
 
