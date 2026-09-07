@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
@@ -57,6 +59,23 @@ class GroundingPacket(StrictDirectorModel):
     context_hash: str
     facts: list[GroundingFact]
     source_ids: list[str] = Field(default_factory=list)
+
+
+def compute_grounding_context_hash(
+    facts: list[GroundingFact],
+    source_ids: list[str],
+) -> str:
+    payload = {
+        "facts": [fact.model_dump(mode="json") for fact in facts],
+        "source_ids": list(source_ids),
+    }
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()
 
 
 class PlanScientificClaim(StrictDirectorModel):

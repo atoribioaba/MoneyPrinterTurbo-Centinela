@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import urllib.error
@@ -21,6 +20,7 @@ from app.models.astronomy_director import (
     GroundingFact,
     GroundingPacket,
     NarrativeAct,
+    compute_grounding_context_hash,
     PlanScientificClaim,
     ScenePlan,
     ShotType,
@@ -218,19 +218,6 @@ class OllamaLocalAdapter:
         return content.strip()
 
 
-def _canonical_json(value: Any) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _hash_json(value: Any) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest().upper()
-
-
 def _event_value(value):
     return None if value is None else value.model_dump(mode="json")
 
@@ -400,12 +387,8 @@ def build_grounding_packet(context: AstronomyContext) -> GroundingPacket:
         )
 
     source_ids = sorted({source_id for fact in facts for source_id in fact.source_ids})
-    payload = {
-        "facts": [fact.model_dump(mode="json") for fact in facts],
-        "source_ids": source_ids,
-    }
     return GroundingPacket(
-        context_hash=_hash_json(payload),
+        context_hash=compute_grounding_context_hash(facts, source_ids),
         facts=facts,
         source_ids=source_ids,
     )

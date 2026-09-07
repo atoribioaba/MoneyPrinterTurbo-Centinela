@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
@@ -9,6 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.models.astronomy import AstronomyBody, AstronomyContextRequest
+from app.models.astronomy_director import compute_grounding_context_hash
 from app.services.astronomy_core import build_astronomy_context
 from app.services.astronomy_director import build_grounding_packet
 from app.services.centinela.orchestration import JobCancelled, ResourceClass
@@ -29,6 +28,18 @@ from .room import WriterRoom
 
 class WriterRoomSpineError(RuntimeError):
     pass
+
+
+def _validated_grounding_context_hash(grounding) -> str:
+    expected = compute_grounding_context_hash(
+        grounding.facts,
+        grounding.source_ids,
+    )
+    if grounding.context_hash != expected:
+        raise WriterRoomSpineError(
+            "GroundingPacket context_hash does not match canonical payload"
+        )
+    return expected
 
 
 _TIME_SENSITIVE_TOKENS = (
@@ -83,20 +94,6 @@ def _fold(value: str) -> str:
     return "".join(
         ch for ch in normalized if not unicodedata.combining(ch)
     ).casefold()
-
-
-def _hash_facts(facts, source_ids) -> str:
-    payload = {
-        "facts": [item.model_dump(mode="json") for item in facts],
-        "source_ids": list(source_ids),
-    }
-    raw = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()
 
 
 def _subject_is_time_sensitive(subject: str) -> bool:
@@ -228,7 +225,7 @@ class FactLockStageAdapter:
         return FactLock(
             subject=subject,
             research_mode="GENERIC_GEOCENTRIC",
-            context_hash=_hash_facts(facts, source_ids),
+            context_hash=compute_grounding_context_hash(facts, source_ids),
             facts=facts,
             sources=astronomy.sources,
             source_ids=source_ids,
@@ -320,7 +317,7 @@ class FactLockStageAdapter:
                 fact_lock = FactLock(
                     subject=manifest.title,
                     research_mode="OBSERVATION_CONTEXT",
-                    context_hash=grounding.context_hash,
+                    context_hash=_validated_grounding_context_hash(grounding),
                     facts=grounding.facts,
                     sources=astronomy.sources,
                     source_ids=grounding.source_ids,

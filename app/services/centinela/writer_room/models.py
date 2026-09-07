@@ -6,7 +6,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.astronomy import ScientificStatus, SourceReference
-from app.models.astronomy_director import GroundingFact, NarrativeAct
+from app.models.astronomy_director import (
+    GroundingFact,
+    NarrativeAct,
+    compute_grounding_context_hash,
+)
 
 WRITER_ROOM_VERSION = "writer-room-v0.1"
 FACT_LOCK_VERSION = "fact-lock-v0.1"
@@ -69,6 +73,15 @@ class FactLock(StrictWriterModel):
                 seen.add(item)
                 result.append(item)
         return result
+
+    @model_validator(mode="after")
+    def context_hash_matches_grounding(self):
+        expected = compute_grounding_context_hash(self.facts, self.source_ids)
+        if self.context_hash != expected:
+            raise ValueError(
+                "context_hash does not match canonical facts/source_ids payload"
+            )
+        return self
 
 
 class ScriptClaim(StrictWriterModel):
