@@ -97,11 +97,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
 
 
 def airmass_from_altitude_deg(altitude_deg: float) -> float | None:
-    """Return relative optical airmass using the Kasten-Young approximation.
-
-    Below or at the geometric horizon the target is treated as not observable
-    and no airmass value is returned.
-    """
+    """Return relative optical airmass using the Kasten-Young approximation."""
     if altitude_deg <= 0.0:
         return None
     altitude_deg = min(float(altitude_deg), 90.0)
@@ -211,26 +207,29 @@ def _grade(score: float | None, completeness: float) -> str:
 
 
 def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult:
-    """Build an interpretable observing score without hiding missing data.
-
-    The score is a deterministic weighted summary of only the inputs that are
-    actually present. `completeness_percent` is computed against the complete
-    object-specific weight set, so absent forecast/sky data can never masquerade
-    as excellent conditions.
-    """
+    """Build an interpretable observing score with component-level provenance."""
     weights = _WEIGHTS[request.object_class]
     components: list[ScoreComponent] = []
     missing: list[str] = []
+    input_source_ids: set[str] = set()
 
-    def add(name: str, score: float, rationale: str) -> None:
+    def add(
+        name: str,
+        score: float,
+        rationale: str,
+        source_ids: list[str] | None = None,
+    ) -> None:
         weight = weights.get(name)
         if weight:
+            sources = sorted(set(source_ids or []))
+            input_source_ids.update(sources)
             components.append(
                 ScoreComponent(
                     name=name,
                     score=score,
                     weight=weight,
                     rationale=rationale,
+                    source_ids=sources,
                 )
             )
 
@@ -266,22 +265,17 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
 
     weather = request.weather
     if weather is None:
-        for key in (
-            "clouds",
-            "precipitation",
-            "transparency",
-            "seeing",
-            "wind",
-            "dew",
-        ):
+        for key in ("clouds", "precipitation", "wind", "dew"):
             if key in weights:
                 missing.append(key)
     else:
+        weather_source = [weather.source_id]
         if weather.cloud_cover_percent is not None:
             add(
                 "clouds",
                 100.0 - weather.cloud_cover_percent,
                 f"total cloud cover={weather.cloud_cover_percent:.0f}%",
+                weather_source,
             )
         elif "clouds" in weights:
             missing.append("clouds")
@@ -292,27 +286,10 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
                 _precipitation_score(weather.precipitation_probability_percent),
                 "precipitation probability="
                 f"{weather.precipitation_probability_percent:.0f}%",
+                weather_source,
             )
         elif "precipitation" in weights:
             missing.append("precipitation")
-
-        if weather.transparency_percent is not None:
-            add(
-                "transparency",
-                weather.transparency_percent,
-                f"transparency={weather.transparency_percent:.0f}%",
-            )
-        elif "transparency" in weights:
-            missing.append("transparency")
-
-        if weather.seeing_arcsec is not None:
-            add(
-                "seeing",
-                _seeing_score(weather.seeing_arcsec),
-                f"seeing={weather.seeing_arcsec:.2f} arcsec",
-            )
-        elif "seeing" in weights:
-            missing.append("seeing")
 
         wind_values = [
             value
@@ -325,6 +302,7 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
                 "wind",
                 _wind_score(effective_wind),
                 f"worst reported wind/gust={effective_wind:.1f} km/h",
+                weather_source,
             )
         elif "wind" in weights:
             missing.append("wind")
@@ -334,9 +312,55 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
                 "dew",
                 _dew_score(weather.temperature_c, weather.dew_point_c),
                 "dew risk from temperature-dew-point spread",
+                weather_source,
             )
         elif "dew" in weights:
             missing.append("dew")
+
+    astronomy_conditions = request.astronomy_conditions
+    if astronomy_conditions is not None:
+        astronomy_source = [astronomy_conditions.source_id]
+        if astronomy_conditions.transparency_percent is not None:
+            add(
+                "transparency",
+                astronomy_conditions.transparency_percent,
+                f"transparency={astronomy_conditions.transparency_percent:.0f}%",
+                astronomy_source,
+            )
+        elif "transparency" in weights:
+            missing.append("transparency")
+
+        if astronomy_conditions.seeing_arcsec is not None:
+            add(
+                "seeing",
+                _seeing_score(astronomy_conditions.seeing_arcsec),
+                f"seeing={astronomy_conditions.seeing_arcsec:.2f} arcsec",
+                astronomy_source,
+            )
+        elif "seeing" in weights:
+            missing.append("seeing")
+    else:
+        # Backward compatibility: a provider that genuinely supplies ordinary
+        # weather + astronomy metrics under one source may still use WeatherSnapshot.
+        if weather is not None and weather.transparency_percent is not None:
+            add(
+                "transparency",
+                weather.transparency_percent,
+                f"transparency={weather.transparency_percent:.0f}%",
+                [weather.source_id],
+            )
+        elif "transparency" in weights:
+            missing.append("transparency")
+
+        if weather is not None and weather.seeing_arcsec is not None:
+            add(
+                "seeing",
+                _seeing_score(weather.seeing_arcsec),
+                f"seeing={weather.seeing_arcsec:.2f} arcsec",
+                [weather.source_id],
+            )
+        elif "seeing" in weights:
+            missing.append("seeing")
 
     if "sky_quality" in weights:
         if request.sky_quality is None:
@@ -349,6 +373,7 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
                     request.sky_quality.sqm_mag_arcsec2,
                 ),
                 f"sky quality evidence={request.sky_quality.evidence_kind.value}",
+                [request.sky_quality.source_id],
             )
 
     expected_weight = sum(weights.values())
@@ -371,4 +396,5 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
         airmass=airmass_from_altitude_deg(request.target_altitude_deg),
         components=components,
         missing_inputs=sorted(set(missing)),
+        input_source_ids=sorted(input_source_ids),
     )
