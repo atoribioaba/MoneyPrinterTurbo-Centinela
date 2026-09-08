@@ -1,6 +1,7 @@
 import math
 
 from app.models.observation import (
+    AstronomyConditionsSnapshot,
     EvidenceKind,
     ObservationObjectClass,
     ObservabilityRequest,
@@ -193,3 +194,57 @@ def test_wind_component_uses_worst_reported_gust():
     component = next(c for c in result.components if c.name == "wind")
     assert component.score < 20.0
     assert "45.0 km/h" in component.rationale
+
+
+def test_astronomy_conditions_preserve_separate_source_provenance():
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    weather = WeatherSnapshot(
+        source_id="open-meteo-fixture",
+        valid_at=now,
+        retrieved_at=now,
+        cloud_cover_percent=5.0,
+        precipitation_probability_percent=0.0,
+        wind_speed_kph=4.0,
+        wind_gust_kph=6.0,
+        temperature_c=9.0,
+        dew_point_c=1.0,
+    )
+    astronomy = AstronomyConditionsSnapshot(
+        source_id="astro-weather-fixture",
+        valid_at=now,
+        retrieved_at=now,
+        evidence_kind=EvidenceKind.FORECAST,
+        seeing_arcsec=1.2,
+        transparency_percent=92.0,
+    )
+    sky = SkyQualityContext(
+        source_id="sqm-meter-fixture",
+        evidence_kind=EvidenceKind.MEASURED,
+        sqm_mag_arcsec2=21.4,
+    )
+    result = evaluate_observability(
+        ObservabilityRequest(
+            object_class=ObservationObjectClass.DEEP_SKY,
+            target_altitude_deg=65.0,
+            sun_altitude_deg=-22.0,
+            moon_altitude_deg=-2.0,
+            moon_target_separation_deg=100.0,
+            moon_illumination_fraction=0.5,
+            weather=weather,
+            astronomy_conditions=astronomy,
+            sky_quality=sky,
+        )
+    )
+    seeing = next(c for c in result.components if c.name == "seeing")
+    clouds = next(c for c in result.components if c.name == "clouds")
+    sky_component = next(c for c in result.components if c.name == "sky_quality")
+    assert seeing.source_ids == ["astro-weather-fixture"]
+    assert clouds.source_ids == ["open-meteo-fixture"]
+    assert sky_component.source_ids == ["sqm-meter-fixture"]
+    assert result.input_source_ids == [
+        "astro-weather-fixture",
+        "open-meteo-fixture",
+        "sqm-meter-fixture",
+    ]
