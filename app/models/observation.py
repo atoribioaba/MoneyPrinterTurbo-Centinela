@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.astronomy import ScientificStatus
 
@@ -55,12 +55,36 @@ class WeatherSnapshot(StrictObservationModel):
         default=None, ge=0.0, le=100.0
     )
 
+    @field_validator("source_id")
+    @classmethod
+    def validate_source_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("source_id cannot be empty")
+        return value
+
+    @model_validator(mode="after")
+    def require_timezone_aware_timestamps(self):
+        for field_name in ("valid_at", "retrieved_at", "model_run_at"):
+            value = getattr(self, field_name)
+            if value is not None and value.utcoffset() is None:
+                raise ValueError(f"{field_name} must be timezone-aware")
+        return self
+
 
 class SkyQualityContext(StrictObservationModel):
     source_id: str
     evidence_kind: EvidenceKind
     bortle_class: int | None = Field(default=None, ge=1, le=9)
     sqm_mag_arcsec2: float | None = Field(default=None, ge=10.0, le=30.0)
+
+    @field_validator("source_id")
+    @classmethod
+    def validate_source_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("source_id cannot be empty")
+        return value
 
     @model_validator(mode="after")
     def require_sky_quality_value(self):
