@@ -59,6 +59,6 @@ def test_runtime_certification_hashes_report_and_artifacts():
     assert "RUNTIME_MEDIA_SHA256" in text
 
 
-def test_runtime_certification_uses_powershell_syntax_not_shell_backslash_continuation():
+def test_runtime_certification_does_not_use_unix_backslash_line_continuations():
     text = _text()
-    assert "Invoke-EncodeProbe \\\" not in text
+    assert not any(line.rstrip().endswith("\\") for line in text.splitlines())
