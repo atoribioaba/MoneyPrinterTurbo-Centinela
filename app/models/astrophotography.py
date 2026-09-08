@@ -19,12 +19,34 @@ class MountTrackingMode(str, Enum):
     UNKNOWN = "unknown"
 
 
+class CaptureMode(str, Enum):
+    VISUAL = "visual"
+    SMARTPHONE = "smartphone"
+    WIDEFIELD = "widefield"
+    DEEP_SKY = "deep_sky"
+    PLANETARY = "planetary"
+    LUNAR = "lunar"
+    SOLAR = "solar"
+
+
 class OpticalTrain(StrictAstrophotographyModel):
     name: str | None = None
     aperture_mm: float = Field(gt=0.0)
     focal_length_mm: float = Field(gt=0.0)
     focal_multiplier: float = Field(default=1.0, gt=0.0)
     tracking_mode: MountTrackingMode = MountTrackingMode.UNKNOWN
+    mount_payload_capacity_kg: float | None = Field(default=None, gt=0.0)
+    imaging_payload_kg: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if (
+            self.mount_payload_capacity_kg is not None
+            and self.imaging_payload_kg is not None
+            and self.imaging_payload_kg > self.mount_payload_capacity_kg
+        ):
+            raise ValueError("imaging payload exceeds declared mount capacity")
+        return self
 
 
 class SensorSpec(StrictAstrophotographyModel):
@@ -46,6 +68,22 @@ class TargetAngularSize(StrictAstrophotographyModel):
     name: str
     major_axis_arcmin: float = Field(gt=0.0)
     minor_axis_arcmin: float = Field(gt=0.0)
+    position_angle_deg: float | None = Field(default=None, ge=0.0, lt=180.0)
+
+
+class MosaicPlan(StrictAstrophotographyModel):
+    columns: int = Field(ge=1)
+    rows: int = Field(ge=1)
+    total_panels: int = Field(ge=1)
+    overlap_fraction: float = Field(ge=0.0, lt=1.0)
+    effective_coverage_width_deg: float = Field(gt=0.0)
+    effective_coverage_height_deg: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_panel_count(self):
+        if self.total_panels != self.columns * self.rows:
+            raise ValueError("total_panels must equal columns * rows")
+        return self
 
 
 class FramingResult(StrictAstrophotographyModel):
@@ -58,7 +96,32 @@ class FramingResult(StrictAstrophotographyModel):
     target_fits: bool | None = None
     target_width_fraction: float | None = Field(default=None, gt=0.0)
     target_height_fraction: float | None = Field(default=None, gt=0.0)
+    sensor_rotation_deg: float = Field(default=0.0, ge=0.0, lt=180.0)
+    relative_target_angle_deg: float | None = Field(default=None, ge=0.0, lt=180.0)
+    mosaic: MosaicPlan | None = None
     sampling_label: str | None = None
     sampling_pixels_per_seeing_fwhm: float | None = Field(default=None, gt=0.0)
     scientific_status: ScientificStatus = ScientificStatus.APROXIMACION_DIVULGATIVA
     notes: list[str] = Field(default_factory=list)
+
+
+class CapturePlanningRequest(StrictAstrophotographyModel):
+    capture_mode: CaptureMode
+    optical_train: OpticalTrain
+    sensor: SensorSpec | None = None
+    target: TargetAngularSize | None = None
+    seeing_arcsec: float | None = Field(default=None, gt=0.0)
+    target_altitude_deg: float | None = Field(default=None, ge=-90.0, le=90.0)
+    requested_subexposure_seconds: float | None = Field(default=None, gt=0.0)
+    requested_total_integration_minutes: float | None = Field(default=None, gt=0.0)
+    guiding_enabled: bool | None = None
+    solar_front_aperture_filter_confirmed: bool | None = None
+
+
+class CapturePlanningResult(StrictAstrophotographyModel):
+    status: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    framing: FramingResult | None = None
+    scientific_status: ScientificStatus = ScientificStatus.APROXIMACION_DIVULGATIVA
