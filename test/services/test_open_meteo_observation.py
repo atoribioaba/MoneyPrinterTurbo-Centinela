@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from app.services.centinela.open_meteo_observation import (
     OPEN_METEO_ATTRIBUTION,
     OPEN_METEO_LICENSE,
@@ -62,6 +64,33 @@ def test_staleness_threshold_is_explicit_and_caller_controlled():
     assert not weather_snapshot_is_stale(
         snapshot, now=now, max_retrieval_age_hours=4.0
     )
+
+
+def test_parse_rejects_naive_requested_at_and_retrieved_at():
+    payload = {"hourly": {"time": ["2026-09-08T20:00"]}}
+    with pytest.raises(ValueError, match="requested_at must be timezone-aware"):
+        parse_open_meteo_snapshot(
+            payload,
+            requested_at=datetime(2026, 9, 8, 20, 0),
+            retrieved_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+        )
+    with pytest.raises(ValueError, match="retrieved_at must be timezone-aware"):
+        parse_open_meteo_snapshot(
+            payload,
+            requested_at=datetime(2026, 9, 8, 20, 0, tzinfo=UTC),
+            retrieved_at=datetime(2026, 9, 8, 12, 0),
+        )
+
+
+def test_age_rejects_naive_now():
+    payload = {"hourly": {"time": ["2026-09-08T20:00"]}}
+    snapshot = parse_open_meteo_snapshot(
+        payload,
+        requested_at=datetime(2026, 9, 8, 20, 0, tzinfo=UTC),
+        retrieved_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+    )
+    with pytest.raises(ValueError, match="now must be timezone-aware"):
+        weather_snapshot_age_hours(snapshot, datetime(2026, 9, 8, 15, 0))
 
 
 def test_open_meteo_attribution_contract_is_explicit():
