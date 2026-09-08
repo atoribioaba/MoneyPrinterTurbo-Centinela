@@ -45,8 +45,17 @@ def build_open_meteo_params(
     }
 
 
+def _require_aware_utc(value: datetime, field_name: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must be timezone-aware")
+    return value.astimezone(UTC)
+
+
 def _parse_utc_hour(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    # Open-Meteo returns UTC wall-clock strings because the request fixes timezone=UTC.
+    # A missing offset in that source payload is therefore explicitly interpreted as UTC,
+    # not as the machine's local timezone.
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
@@ -55,9 +64,7 @@ def _parse_utc_hour(value: str) -> datetime:
 def _nearest_hour_index(times: list[str], requested_at: datetime) -> int:
     if not times:
         raise ValueError("Open-Meteo response has no hourly times")
-    if requested_at.tzinfo is None:
-        raise ValueError("requested_at must be timezone-aware")
-    requested_utc = requested_at.astimezone(UTC)
+    requested_utc = _require_aware_utc(requested_at, "requested_at")
     parsed = [_parse_utc_hour(value) for value in times]
     return min(range(len(parsed)), key=lambda index: abs(parsed[index] - requested_utc))
 
@@ -71,9 +78,8 @@ def _hourly_value(hourly: dict, key: str, index: int):
 
 def weather_snapshot_age_hours(snapshot: WeatherSnapshot, now: datetime) -> float:
     """Return age since retrieval; callers choose their own stale threshold."""
-    if now.tzinfo is None:
-        raise ValueError("now must be timezone-aware")
-    delta = now.astimezone(UTC) - snapshot.retrieved_at.astimezone(UTC)
+    now_utc = _require_aware_utc(now, "now")
+    delta = now_utc - snapshot.retrieved_at.astimezone(UTC)
     return delta.total_seconds() / 3600.0
 
 
@@ -112,12 +118,15 @@ def parse_open_meteo_snapshot(
 
     index = _nearest_hour_index(times, requested_at)
     valid_at = _parse_utc_hour(times[index])
-    retrieved_at = (retrieved_at or datetime.now(UTC)).astimezone(UTC)
+    if retrieved_at is None:
+        retrieved_at_utc = datetime.now(UTC)
+    else:
+        retrieved_at_utc = _require_aware_utc(retrieved_at, "retrieved_at")
 
     return WeatherSnapshot(
         source_id=OPEN_METEO_SOURCE_ID,
         valid_at=valid_at,
-        retrieved_at=retrieved_at,
+        retrieved_at=retrieved_at_utc,
         evidence_kind=EvidenceKind.FORECAST,
         temperature_c=_hourly_value(hourly, "temperature_2m", index),
         relative_humidity_percent=_hourly_value(
