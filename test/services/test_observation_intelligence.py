@@ -21,7 +21,11 @@ def test_airmass_is_none_below_horizon_and_near_one_at_zenith():
 
 
 def test_angular_separation_handles_wraparound():
-    assert math.isclose(angular_separation_deg(23.9, 0.0, 0.1, 0.0), 3.0, rel_tol=1e-6)
+    assert math.isclose(
+        angular_separation_deg(23.9, 0.0, 0.1, 0.0),
+        3.0,
+        rel_tol=1e-6,
+    )
 
 
 def test_missing_weather_does_not_masquerade_as_excellent_conditions():
@@ -38,6 +42,7 @@ def test_missing_weather_does_not_masquerade_as_excellent_conditions():
     assert result.completeness_percent < 50.0
     assert result.grade == "INSUFFICIENT_DATA"
     assert "clouds" in result.missing_inputs
+    assert "precipitation" in result.missing_inputs
     assert "sky_quality" in result.missing_inputs
 
 
@@ -53,9 +58,11 @@ def test_complete_good_deep_sky_conditions_score_high():
         temperature_c=8.0,
         dew_point_c=1.0,
         cloud_cover_percent=2.0,
+        precipitation_probability_percent=0.0,
         transparency_percent=95.0,
         seeing_arcsec=1.5,
         wind_speed_kph=5.0,
+        wind_gust_kph=7.0,
     )
     sky = SkyQualityContext(
         source_id="fixture-sqm",
@@ -89,9 +96,11 @@ def test_planetary_weights_seeing_more_than_dark_sky_quality():
         valid_at=now,
         retrieved_at=now,
         cloud_cover_percent=0.0,
+        precipitation_probability_percent=0.0,
         transparency_percent=100.0,
         seeing_arcsec=4.0,
         wind_speed_kph=0.0,
+        wind_gust_kph=0.0,
         temperature_c=10.0,
         dew_point_c=0.0,
     )
@@ -116,3 +125,71 @@ def test_planetary_weights_seeing_more_than_dark_sky_quality():
     sky_component = next(c for c in result.components if c.name == "sky_quality")
     assert seeing_component.weight > sky_component.weight
     assert seeing_component.score == 0.0
+
+
+def test_precipitation_is_explicitly_penalized():
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    weather = WeatherSnapshot(
+        source_id="rain-fixture",
+        valid_at=now,
+        retrieved_at=now,
+        cloud_cover_percent=0.0,
+        precipitation_probability_percent=100.0,
+        transparency_percent=100.0,
+        seeing_arcsec=1.0,
+        wind_speed_kph=0.0,
+        wind_gust_kph=0.0,
+        temperature_c=10.0,
+        dew_point_c=0.0,
+    )
+    sky = SkyQualityContext(
+        source_id="dark-sky-fixture",
+        evidence_kind=EvidenceKind.MEASURED,
+        sqm_mag_arcsec2=21.7,
+    )
+    result = evaluate_observability(
+        ObservabilityRequest(
+            object_class=ObservationObjectClass.DEEP_SKY,
+            target_altitude_deg=70.0,
+            sun_altitude_deg=-20.0,
+            moon_altitude_deg=-5.0,
+            moon_target_separation_deg=120.0,
+            moon_illumination_fraction=0.0,
+            weather=weather,
+            sky_quality=sky,
+        )
+    )
+    component = next(c for c in result.components if c.name == "precipitation")
+    assert component.score == 0.0
+
+
+def test_wind_component_uses_worst_reported_gust():
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    weather = WeatherSnapshot(
+        source_id="gust-fixture",
+        valid_at=now,
+        retrieved_at=now,
+        cloud_cover_percent=0.0,
+        precipitation_probability_percent=0.0,
+        transparency_percent=100.0,
+        seeing_arcsec=1.0,
+        wind_speed_kph=5.0,
+        wind_gust_kph=45.0,
+        temperature_c=10.0,
+        dew_point_c=0.0,
+    )
+    result = evaluate_observability(
+        ObservabilityRequest(
+            object_class=ObservationObjectClass.LUNAR,
+            target_altitude_deg=70.0,
+            sun_altitude_deg=-8.0,
+            weather=weather,
+        )
+    )
+    component = next(c for c in result.components if c.name == "wind")
+    assert component.score < 20.0
+    assert "45.0 km/h" in component.rationale
