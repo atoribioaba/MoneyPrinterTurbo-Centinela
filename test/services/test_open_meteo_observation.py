@@ -5,6 +5,8 @@ from app.services.centinela.open_meteo_observation import (
     OPEN_METEO_LICENSE,
     build_open_meteo_params,
     parse_open_meteo_snapshot,
+    weather_snapshot_age_hours,
+    weather_snapshot_is_stale,
 )
 
 
@@ -43,6 +45,23 @@ def test_parse_snapshot_preserves_forecast_semantics_and_missing_astronomy_weath
     assert result.cloud_cover_percent == 20.0
     assert result.seeing_arcsec is None
     assert result.transparency_percent is None
+
+
+def test_staleness_threshold_is_explicit_and_caller_controlled():
+    payload = {"hourly": {"time": ["2026-09-08T20:00"]}}
+    snapshot = parse_open_meteo_snapshot(
+        payload,
+        requested_at=datetime(2026, 9, 8, 20, 0, tzinfo=UTC),
+        retrieved_at=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 9, 8, 15, 0, tzinfo=UTC)
+    assert weather_snapshot_age_hours(snapshot, now) == 3.0
+    assert weather_snapshot_is_stale(
+        snapshot, now=now, max_retrieval_age_hours=2.0
+    )
+    assert not weather_snapshot_is_stale(
+        snapshot, now=now, max_retrieval_age_hours=4.0
+    )
 
 
 def test_open_meteo_attribution_contract_is_explicit():
