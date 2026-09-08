@@ -16,6 +16,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "darkness": 1.0,
         "moon": 0.8,
         "clouds": 1.6,
+        "precipitation": 0.8,
         "transparency": 1.0,
         "seeing": 0.8,
         "wind": 0.5,
@@ -27,6 +28,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "darkness": 0.3,
         "moon": 0.1,
         "clouds": 1.6,
+        "precipitation": 0.8,
         "transparency": 0.6,
         "seeing": 2.0,
         "wind": 0.5,
@@ -37,6 +39,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "geometry": 1.6,
         "darkness": 0.2,
         "clouds": 1.6,
+        "precipitation": 0.8,
         "transparency": 0.6,
         "seeing": 1.8,
         "wind": 0.5,
@@ -47,6 +50,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "darkness": 1.7,
         "moon": 1.5,
         "clouds": 1.8,
+        "precipitation": 1.0,
         "transparency": 1.5,
         "seeing": 0.5,
         "wind": 0.4,
@@ -58,6 +62,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "darkness": 1.9,
         "moon": 1.7,
         "clouds": 1.8,
+        "precipitation": 1.0,
         "transparency": 1.6,
         "seeing": 0.1,
         "wind": 0.3,
@@ -69,6 +74,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "darkness": 1.7,
         "moon": 1.4,
         "clouds": 1.9,
+        "precipitation": 1.0,
         "transparency": 1.3,
         "seeing": 0.1,
         "wind": 0.3,
@@ -80,6 +86,7 @@ _WEIGHTS: dict[ObservationObjectClass, dict[str, float]] = {
         "darkness": 1.4,
         "moon": 1.2,
         "clouds": 1.8,
+        "precipitation": 1.0,
         "transparency": 1.5,
         "seeing": 0.3,
         "wind": 0.4,
@@ -171,6 +178,10 @@ def _wind_score(wind_kph: float) -> float:
     return (50.0 - wind_kph) / 40.0 * 100.0
 
 
+def _precipitation_score(probability_percent: float) -> float:
+    return max(0.0, min(100.0, 100.0 - probability_percent))
+
+
 def _dew_score(temperature_c: float, dew_point_c: float) -> float:
     spread = temperature_c - dew_point_c
     if spread >= 5.0:
@@ -215,7 +226,12 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
         weight = weights.get(name)
         if weight:
             components.append(
-                ScoreComponent(name=name, score=score, weight=weight, rationale=rationale)
+                ScoreComponent(
+                    name=name,
+                    score=score,
+                    weight=weight,
+                    rationale=rationale,
+                )
             )
 
     add(
@@ -250,7 +266,14 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
 
     weather = request.weather
     if weather is None:
-        for key in ("clouds", "transparency", "seeing", "wind", "dew"):
+        for key in (
+            "clouds",
+            "precipitation",
+            "transparency",
+            "seeing",
+            "wind",
+            "dew",
+        ):
             if key in weights:
                 missing.append(key)
     else:
@@ -262,6 +285,16 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
             )
         elif "clouds" in weights:
             missing.append("clouds")
+
+        if weather.precipitation_probability_percent is not None:
+            add(
+                "precipitation",
+                _precipitation_score(weather.precipitation_probability_percent),
+                "precipitation probability="
+                f"{weather.precipitation_probability_percent:.0f}%",
+            )
+        elif "precipitation" in weights:
+            missing.append("precipitation")
 
         if weather.transparency_percent is not None:
             add(
@@ -281,11 +314,17 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
         elif "seeing" in weights:
             missing.append("seeing")
 
-        if weather.wind_speed_kph is not None:
+        wind_values = [
+            value
+            for value in (weather.wind_speed_kph, weather.wind_gust_kph)
+            if value is not None
+        ]
+        if wind_values:
+            effective_wind = max(wind_values)
             add(
                 "wind",
-                _wind_score(weather.wind_speed_kph),
-                f"wind={weather.wind_speed_kph:.1f} km/h",
+                _wind_score(effective_wind),
+                f"worst reported wind/gust={effective_wind:.1f} km/h",
             )
         elif "wind" in weights:
             missing.append("wind")
@@ -314,11 +353,15 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
 
     expected_weight = sum(weights.values())
     available_weight = sum(component.weight for component in components)
-    completeness = 100.0 * available_weight / expected_weight if expected_weight else 0.0
+    completeness = (
+        100.0 * available_weight / expected_weight if expected_weight else 0.0
+    )
 
     score = None
     if available_weight:
-        score = sum(component.score * component.weight for component in components) / available_weight
+        score = sum(
+            component.score * component.weight for component in components
+        ) / available_weight
         score = round(score, 2)
 
     return ObservabilityResult(
