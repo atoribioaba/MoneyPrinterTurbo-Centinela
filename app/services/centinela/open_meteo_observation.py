@@ -69,6 +69,27 @@ def _hourly_value(hourly: dict, key: str, index: int):
     return values[index]
 
 
+def weather_snapshot_age_hours(snapshot: WeatherSnapshot, now: datetime) -> float:
+    """Return age since retrieval; callers choose their own stale threshold."""
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    delta = now.astimezone(UTC) - snapshot.retrieved_at.astimezone(UTC)
+    return delta.total_seconds() / 3600.0
+
+
+def weather_snapshot_is_stale(
+    snapshot: WeatherSnapshot,
+    *,
+    now: datetime,
+    max_retrieval_age_hours: float,
+) -> bool:
+    """Check staleness without hard-coding a universal astronomy threshold."""
+    if max_retrieval_age_hours <= 0:
+        raise ValueError("max_retrieval_age_hours must be positive")
+    age = weather_snapshot_age_hours(snapshot, now)
+    return age < 0 or age > max_retrieval_age_hours
+
+
 def parse_open_meteo_snapshot(
     payload: dict,
     *,
