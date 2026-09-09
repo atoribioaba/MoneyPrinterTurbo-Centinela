@@ -394,8 +394,9 @@ def render_observation_planner(observer: ObserverContext) -> None:
 
 
 def sky_page() -> None:
-    """Canonical Product Cielo surface: agenda first, planning second."""
+    """Canonical Product Cielo surface: agenda, planning and small-body lookup."""
     from . import mobile_pages
+    from .small_body_planner import render_small_body_planner
 
     mobile_pages.ephemerides_page()
     observer = _observer_from_agenda_controls()
@@ -406,3 +407,4 @@ def sky_page() -> None:
         )
         return
     render_observation_planner(observer)
+    render_small_body_planner(observer)
