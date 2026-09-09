@@ -88,7 +88,13 @@ class WeatherSnapshot(StrictObservationModel):
 
 
 class AstronomyConditionsSnapshot(StrictObservationModel):
-    """Astronomy-specific atmospheric metrics from one explicit source."""
+    """Astronomy-specific atmospheric metrics from one explicit source.
+
+    Forecast providers often publish categories or bounded ranges rather than
+    exact physical values. Bounds are preserved instead of silently replacing
+    them with fabricated midpoints. Seeing uses arcseconds; transparency
+    extinction uses magnitudes per airmass, where a lower value is better.
+    """
 
     source_id: str
     valid_at: datetime
@@ -96,8 +102,21 @@ class AstronomyConditionsSnapshot(StrictObservationModel):
     evidence_kind: EvidenceKind
     model_name: str | None = None
     model_run_at: datetime | None = None
+
     seeing_arcsec: float | None = Field(default=None, gt=0.0)
+    seeing_arcsec_min: float | None = Field(default=None, ge=0.0)
+    seeing_arcsec_max: float | None = Field(default=None, gt=0.0)
+
     transparency_percent: float | None = Field(default=None, ge=0.0, le=100.0)
+    transparency_extinction_mag_per_airmass_min: float | None = Field(
+        default=None, ge=0.0
+    )
+    transparency_extinction_mag_per_airmass_max: float | None = Field(
+        default=None, gt=0.0
+    )
+
+    provider_seeing_category: int | None = Field(default=None, ge=1, le=8)
+    provider_transparency_category: int | None = Field(default=None, ge=1, le=8)
 
     @field_validator("source_id")
     @classmethod
@@ -106,10 +125,31 @@ class AstronomyConditionsSnapshot(StrictObservationModel):
 
     @model_validator(mode="after")
     def validate_snapshot(self):
-        if self.seeing_arcsec is None and self.transparency_percent is None:
-            raise ValueError("astronomy conditions require seeing or transparency")
         for field_name in ("valid_at", "retrieved_at", "model_run_at"):
             _require_aware(getattr(self, field_name), field_name)
+
+        if (
+            self.seeing_arcsec is None
+            and self.seeing_arcsec_min is None
+            and self.seeing_arcsec_max is None
+            and self.transparency_percent is None
+            and self.transparency_extinction_mag_per_airmass_min is None
+            and self.transparency_extinction_mag_per_airmass_max is None
+        ):
+            raise ValueError("astronomy conditions require seeing or transparency")
+
+        if (
+            self.seeing_arcsec_min is not None
+            and self.seeing_arcsec_max is not None
+            and self.seeing_arcsec_min >= self.seeing_arcsec_max
+        ):
+            raise ValueError("seeing interval min must be smaller than max")
+
+        ext_min = self.transparency_extinction_mag_per_airmass_min
+        ext_max = self.transparency_extinction_mag_per_airmass_max
+        if ext_min is not None and ext_max is not None and ext_min >= ext_max:
+            raise ValueError("transparency extinction min must be smaller than max")
+
         return self
 
 
