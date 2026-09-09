@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
@@ -70,12 +72,21 @@ def _require_aware_utc(value: datetime, field_name: str) -> datetime:
 
 def _parse_utc_hour(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    # Open-Meteo returns UTC wall-clock strings because the request fixes timezone=UTC.
-    # A missing offset in that source payload is therefore explicitly interpreted as UTC,
-    # not as the machine's local timezone.
+    # The request fixes timezone=UTC, so a provider wall-clock value without an
+    # explicit offset is interpreted as UTC rather than as machine-local time.
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _payload_sha256(payload: dict) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _nearest_hour_index(times: list[str], requested_at: datetime) -> int:
@@ -121,10 +132,8 @@ def parse_open_meteo_snapshot(
 ) -> WeatherSnapshot:
     """Parse a forecast response without inventing seeing or transparency.
 
-    Open-Meteo's ordinary forecast variables are meteorological model output.
-    `seeing_arcsec` and `transparency_percent` therefore intentionally remain
-    unset until an independently sourced astronomy-weather provider supplies
-    them.
+    The canonical provider JSON is SHA-256 bound into `source_id`, so two distinct
+    forecast payloads cannot silently collapse to the same evidence identity.
     """
     hourly = payload.get("hourly")
     if not isinstance(hourly, dict):
@@ -140,8 +149,11 @@ def parse_open_meteo_snapshot(
     else:
         retrieved_at_utc = _require_aware_utc(retrieved_at, "retrieved_at")
 
+    payload_hash = _payload_sha256(payload)
+    source_id = f"{OPEN_METEO_SOURCE_ID}:{payload_hash}:valid={valid_at.isoformat()}"
+
     return WeatherSnapshot(
-        source_id=OPEN_METEO_SOURCE_ID,
+        source_id=source_id,
         valid_at=valid_at,
         retrieved_at=retrieved_at_utc,
         evidence_kind=EvidenceKind.FORECAST,
