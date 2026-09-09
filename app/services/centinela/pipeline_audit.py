@@ -25,6 +25,20 @@ REQUIRED_V1_FUNCTIONS = {
     "deep_sky_catalog",
 }
 
+# These functions are only RC-certifiable with evidence from the target Windows
+# runtime. A client-provided component manifest cannot opt out of this policy.
+REQUIRED_PHYSICAL_VALIDATION_FUNCTIONS = {
+    "python_environment",
+    "video_encode",
+    "gpu_encode",
+    "llm_runtime",
+    "tts",
+    "stt_subtitles",
+    "t2i",
+    "i2v_t2v",
+    "upscale",
+}
+
 
 def evaluate_pipeline_audit(
     manifest: PipelineAuditManifest,
@@ -57,7 +71,14 @@ def evaluate_pipeline_audit(
         if item.weights_or_binary_artifact and not item.artifact_sha256:
             blockers.append(f"ARTIFACT_HASH_MISSING:{prefix}")
 
-        if item.physical_validation_required and not item.physical_evidence_ids:
+        policy_requires_physical = (
+            item.function_id in REQUIRED_PHYSICAL_VALIDATION_FUNCTIONS
+        )
+        if policy_requires_physical and not item.physical_validation_required:
+            blockers.append(f"PHYSICAL_POLICY_MISMATCH:{prefix}:{item.function_id}")
+        if (
+            item.physical_validation_required or policy_requires_physical
+        ) and not item.physical_evidence_ids:
             blockers.append(f"PHYSICAL_EVIDENCE_MISSING:{prefix}")
 
         if not item.source_url.startswith(("https://", "http://")):
