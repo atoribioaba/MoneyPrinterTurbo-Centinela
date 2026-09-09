@@ -6,6 +6,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.astronomy import ObserverContext, ScientificStatus
+from app.models.horizon import HorizonProfile
 
 
 class StrictSkyPlanningModel(BaseModel):
@@ -106,7 +107,6 @@ class MeteorShowerDefinition(StrictSkyPlanningModel):
             and self.activity_start_utc >= self.activity_end_utc
         ):
             raise ValueError("meteor shower activity start must precede activity end")
-
         has_drift = (
             self.radiant_drift_ra_deg_per_day is not None
             or self.radiant_drift_dec_deg_per_day is not None
@@ -196,6 +196,7 @@ class LandscapeWindowRequest(StrictSkyPlanningModel):
     minimum_target_altitude_deg: float = Field(default=10.0, ge=-10.0, le=90.0)
     maximum_sun_altitude_deg: float = Field(default=-12.0, ge=-30.0, le=0.0)
     minimum_moon_separation_deg: float | None = Field(default=None, ge=0.0, le=180.0)
+    horizon_profile: HorizonProfile | None = None
 
     @field_validator("start_utc", "end_utc")
     @classmethod
@@ -220,6 +221,7 @@ class LandscapeWindowSample(StrictSkyPlanningModel):
     moon_altitude_deg: float = Field(ge=-90.0, le=90.0)
     moon_illumination_fraction: float = Field(ge=0.0, le=1.0)
     moon_target_separation_deg: float = Field(ge=0.0, le=180.0)
+    local_horizon_altitude_deg: float | None = Field(default=None, ge=-10.0, le=90.0)
     eligible: bool
     blockers: list[str]
     geometry_score: float = Field(ge=0.0, le=100.0)
@@ -241,6 +243,7 @@ class LandscapeWindowPlan(StrictSkyPlanningModel):
     source_ids: list[str]
     scientific_status: ScientificStatus = ScientificStatus.INFERENCIA
     interpretation: str = (
-        "This is a geometric landscape-sky window. Weather, real horizon obstructions, "
-        "light pollution and foreground composition remain independent evidence."
+        "This is a geometric landscape-sky window. A supplied local-horizon profile "
+        "is interpolated as evidence; without one, real horizon obstructions remain "
+        "unknown. Weather, light pollution and foreground composition remain independent."
     )
