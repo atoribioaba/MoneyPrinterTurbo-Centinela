@@ -12,6 +12,7 @@ from app.models.pipeline_audit import (
     PipelineDecision,
 )
 from app.services.centinela.pipeline_audit import (
+    REQUIRED_PHYSICAL_VALIDATION_FUNCTIONS,
     REQUIRED_V1_FUNCTIONS,
     evaluate_pipeline_audit,
 )
@@ -72,6 +73,21 @@ def test_pre_pc_seed_is_machine_readable_and_audits_every_required_function():
     )
 
 
+def test_physical_policy_covers_every_target_runtime_function():
+    assert REQUIRED_PHYSICAL_VALIDATION_FUNCTIONS == {
+        "python_environment",
+        "video_encode",
+        "gpu_encode",
+        "llm_runtime",
+        "tts",
+        "stt_subtitles",
+        "t2i",
+        "i2v_t2v",
+        "upscale",
+    }
+    assert REQUIRED_PHYSICAL_VALIDATION_FUNCTIONS <= REQUIRED_V1_FUNCTIONS
+
+
 def test_a_function_cannot_select_multiple_rc_candidates():
     manifest = _manifest(
         [
@@ -110,6 +126,49 @@ def test_selected_physical_component_requires_physical_evidence():
         _manifest([component]), required_functions={"ephemeris"}
     )
     assert "PHYSICAL_EVIDENCE_MISSING:engine" in result.blockers
+
+
+def test_target_runtime_cannot_opt_out_of_physical_validation_policy():
+    component = _component(
+        component_id="runtime",
+        function_id="llm_runtime",
+        physical=False,
+        physical_evidence=None,
+    )
+    result = evaluate_pipeline_audit(
+        _manifest([component]), required_functions={"llm_runtime"}
+    )
+    assert result.pass_gate is False
+    assert "PHYSICAL_POLICY_MISMATCH:runtime:llm_runtime" in result.blockers
+    assert "PHYSICAL_EVIDENCE_MISSING:runtime" in result.blockers
+
+
+def test_target_runtime_false_flag_still_fails_even_if_evidence_id_is_supplied():
+    component = _component(
+        component_id="runtime",
+        function_id="llm_runtime",
+        physical=False,
+        physical_evidence=["pc-report:sha256:abc"],
+    )
+    result = evaluate_pipeline_audit(
+        _manifest([component]), required_functions={"llm_runtime"}
+    )
+    assert result.pass_gate is False
+    assert "PHYSICAL_POLICY_MISMATCH:runtime:llm_runtime" in result.blockers
+    assert "PHYSICAL_EVIDENCE_MISSING:runtime" not in result.blockers
+
+
+def test_non_runtime_ephemeris_can_remain_cloud_validated():
+    component = _component(
+        component_id="ephemeris",
+        function_id="ephemeris",
+        physical=False,
+    )
+    result = evaluate_pipeline_audit(
+        _manifest([component]), required_functions={"ephemeris"}
+    )
+    assert result.pass_gate is True
+    assert result.blockers == []
 
 
 def test_a_fully_pinned_scoped_component_can_pass_its_gate():
