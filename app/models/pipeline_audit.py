@@ -34,6 +34,7 @@ class PipelineDecision(str, Enum):
 
 
 class PipelineComponentAudit(StrictAuditModel):
+    component_id: str
     function_id: str
     component: str
     classification: OpenSourceClassification
@@ -50,7 +51,13 @@ class PipelineComponentAudit(StrictAuditModel):
     expected_ram_gb: float | None = Field(default=None, ge=0.0)
     notes: str = ""
 
-    @field_validator("function_id", "component", "license_id_or_status", "source_url")
+    @field_validator(
+        "component_id",
+        "function_id",
+        "component",
+        "license_id_or_status",
+        "source_url",
+    )
     @classmethod
     def non_empty_text(cls, value: str) -> str:
         value = value.strip()
@@ -86,9 +93,9 @@ class PipelineAuditManifest(StrictAuditModel):
             raise ValueError("created_at must be timezone-aware")
         if self.auto_publication:
             raise ValueError("AUTO_PUBLICATION must remain false")
-        function_ids = [item.function_id for item in self.components]
-        if len(function_ids) != len(set(function_ids)):
-            raise ValueError("pipeline audit cannot contain duplicate function_id values")
+        component_ids = [item.component_id for item in self.components]
+        if len(component_ids) != len(set(component_ids)):
+            raise ValueError("pipeline audit cannot contain duplicate component_id values")
         return self
 
 
