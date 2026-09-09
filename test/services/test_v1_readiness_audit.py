@@ -265,7 +265,7 @@ def passing_pipeline_audit(*, release_candidate_sha=RC_SHA):
             artifact_sha256=HASH,
             weights_or_binary_artifact=True,
             physical_validation_required=True,
-            physical_evidence_ids=[f"physical:{function_id}"],
+            physical_evidence_ids=[f"physical-{function_id}:sha256:{HASH}"],
         )
         for function_id in sorted(REQUIRED_V1_FUNCTIONS)
     ]
