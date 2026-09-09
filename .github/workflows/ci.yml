@@ -23,7 +23,8 @@ jobs:
 
     services:
       redis:
-        image: redis:7-alpine
+        # redis:7-alpine index digest verified before this quality-to-10 checkpoint.
+        image: redis@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
         ports:
           - 6379:6379
         options: >-
@@ -46,9 +47,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install uv
+      - name: Install pinned uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
+          version: "0.12.11"
           enable-cache: true
 
       - name: Install dependencies
@@ -62,8 +64,6 @@ jobs:
         run: uv run --no-sync ruff check app cli.py main.py webui test
 
       - name: Run unit tests with coverage
-        # pytest 兼容现有 unittest.TestCase，同时会收集仓库中的 pytest 风格
-        # 测试，避免测试文件已存在但 CI 没有真正执行。
         run: uv run --no-sync python -X utf8 -m coverage run -m pytest -q test
 
       - name: Report test coverage
@@ -93,9 +93,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install uv
+      - name: Install pinned uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
+          version: "0.12.11"
           enable-cache: true
 
       - name: Install dependencies
@@ -104,25 +105,33 @@ jobs:
       - name: Compile Python sources
         run: uv run --no-sync python -m compileall app cli.py main.py webui test
 
-      - name: Parse PC return preflight PowerShell
+      - name: Parse Centinela PowerShell evidence collectors
         shell: powershell
         run: |
-          $tokens = $null
-          $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
+          $files = @(
             "scripts/centinela_pc_return_readonly_preflight.ps1",
-            [ref]$tokens,
-            [ref]$errors
+            "scripts/centinela_pc_runtime_media_certification.ps1"
           )
-          if ($errors.Count -ne 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file,
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -ne 0) {
+              Write-Error "PowerShell parse failed: $file"
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
           }
 
       - name: Run PC return and Windows path hardening tests
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           test/services/test_pc_return_readonly_preflight.py
+          test/services/test_pc_runtime_media_certification_script.py
           test/services/test_c20_windows_path_contract.py
 
       - name: Run core service smoke tests

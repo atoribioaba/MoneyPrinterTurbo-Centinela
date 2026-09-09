@@ -1,5 +1,8 @@
 from app.controllers.v1.base import new_router
-from app.models.v1_readiness_audit import V1ReadinessRequest
+from app.models.v1_readiness_audit import (
+    V1_READINESS_AUDIT_VERSION,
+    V1ReadinessRequest,
+)
 from app.services.v1_readiness_audit import build_v1_readiness_audit
 from app.utils import utils
 
@@ -12,7 +15,7 @@ def health():
         200,
         {
             "status": "ok",
-            "version": "v1-readiness-audit-v0.1",
+            "version": V1_READINESS_AUDIT_VERSION,
             "audit_only": True,
             "can_authorize_freeze": True,
             "executes_freeze": False,

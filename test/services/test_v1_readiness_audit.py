@@ -11,6 +11,12 @@ from app.models.operational_hardening import (
     OperationalHardeningPlan,
     OperationalHardeningStatus,
 )
+from app.models.pipeline_audit import (
+    OpenSourceClassification,
+    PipelineAuditManifest,
+    PipelineComponentAudit,
+    PipelineDecision,
+)
 from app.models.production_orchestrator import (
     HumanReviewState,
     ProductionOrchestratorPlan,
@@ -21,15 +27,36 @@ from app.models.publication_package import (
     PublicationPackagePlan,
     PublicationPackageStatus,
 )
+from app.models.quality_certification import (
+    CertificationEvidence,
+    CertificationStatus,
+    DimensionCertification,
+    DimensionRequirement,
+    EvidenceKind,
+    QualityToTenReport,
+)
+from app.models.recovery import (
+    RecoveryArtifact,
+    RecoveryArtifactKind,
+    RecoveryManifest,
+    RecoveryVerificationItem,
+    RecoveryVerificationResult,
+)
 from app.models.v1_readiness_audit import (
     OSSAuditEntry,
     V1ReadinessRequest,
     V1ReadinessStatus,
 )
+from app.services.centinela.pipeline_audit import REQUIRED_V1_FUNCTIONS
+from app.services.centinela.quality_to_10_gate import (
+    build_quality_report,
+    canonical_quality_requirements,
+)
 from app.services.v1_readiness_audit import build_v1_readiness_audit
 
 NOW = datetime(2026, 8, 22, tzinfo=timezone.utc)
 HASH = "A" * 64
+RC_SHA = "1" * 40
 
 
 def ready_publication():
@@ -194,17 +221,111 @@ def verified_oss_audit():
     ]
 
 
+def certified_quality_report(*, release_candidate_sha=RC_SHA):
+    dimensions = []
+    for requirement in canonical_quality_requirements():
+        evidence = []
+        for kind in sorted(requirement.required_evidence_kinds, key=lambda item: item.value):
+            evidence.append(
+                CertificationEvidence(
+                    evidence_id=f"{requirement.dimension}:{kind.value}",
+                    kind=kind,
+                    ref=f"fixture:{requirement.dimension}:{kind.value}",
+                    sha256=HASH,
+                    description="synthetic F58 v0.2 certification fixture",
+                    physical_pc=(
+                        requirement.requires_physical_pc
+                        and kind != EvidenceKind.HUMAN_REVIEW
+                    ),
+                    human_review=(
+                        requirement.requires_human_review
+                        and kind == EvidenceKind.HUMAN_REVIEW
+                    ),
+                )
+            )
+        dimensions.append((requirement, evidence))
+    return build_quality_report(
+        release_candidate_sha=release_candidate_sha,
+        dimensions=dimensions,
+    )
+
+
+def passing_pipeline_audit(*, release_candidate_sha=RC_SHA):
+    components = [
+        PipelineComponentAudit(
+            component_id=f"fixture-{function_id}",
+            function_id=function_id,
+            component=f"fixture {function_id}",
+            classification=OpenSourceClassification.OPEN_SOURCE_FREE,
+            decision=PipelineDecision.KEEP,
+            license_id_or_status="TEST-ONLY",
+            source_url=f"https://example.invalid/{function_id}",
+            selected_for_rc=True,
+            version_or_commit="fixture-v1",
+            artifact_sha256=HASH,
+            weights_or_binary_artifact=True,
+            physical_validation_required=True,
+            physical_evidence_ids=[f"physical-{function_id}:sha256:{HASH}"],
+        )
+        for function_id in sorted(REQUIRED_V1_FUNCTIONS)
+    ]
+    return PipelineAuditManifest(
+        project_sha=release_candidate_sha,
+        created_at=NOW,
+        components=components,
+        auto_publication=False,
+    )
+
+
+def passing_recovery(*, release_candidate_sha=RC_SHA):
+    manifest = RecoveryManifest(
+        release_candidate_sha=release_candidate_sha,
+        artifacts=[
+            RecoveryArtifact(
+                artifact_id="uv-lock",
+                kind=RecoveryArtifactKind.LOCKFILE,
+                relative_path="uv.lock",
+                sha256=HASH,
+            )
+        ],
+        auto_publication=False,
+    )
+    verification = RecoveryVerificationResult(
+        release_candidate_sha=release_candidate_sha,
+        verified=True,
+        required_total=1,
+        required_passed=1,
+        items=[
+            RecoveryVerificationItem(
+                artifact_id="uv-lock",
+                relative_path="uv.lock",
+                exists=True,
+                hash_matches=True,
+                actual_sha256=HASH,
+            )
+        ],
+        blockers=[],
+    )
+    return manifest, verification
+
+
 def technically_ready_request(*, human_freeze_approval=False):
     orchestrator, _, analytics, hardening, golden = fixtures()
     golden = golden.model_copy(
         update={"status": GoldenCertificationStatus.CERTIFICATION_PASS}
     )
+    recovery_manifest, recovery_verification = passing_recovery()
     return V1ReadinessRequest(
         orchestrator=orchestrator,
         publication=ready_publication(),
         analytics_import=analytics,
         hardening=hardening,
         golden=golden,
+        release_candidate_sha=RC_SHA,
+        quality_to_ten=certified_quality_report(),
+        pipeline_audit_manifest=passing_pipeline_audit(),
+        recovery_manifest=recovery_manifest,
+        recovery_verification=recovery_verification,
         oss_audit=verified_oss_audit(),
         human_freeze_approval=human_freeze_approval,
     )
@@ -231,6 +352,10 @@ def test_all_technical_gates_require_human_freeze_approval():
     result = build_v1_readiness_audit(technically_ready_request())
     assert result.status == V1ReadinessStatus.READY_FOR_HUMAN_FREEZE_APPROVAL
     assert result.failed_count == 0
+    assert result.quality_to_ten_complete is True
+    assert result.machine_readable_oss_audit_complete is True
+    assert result.recovery_verified is True
+    assert result.release_candidate_identity_consistent is True
     assert result.freeze_authorized is False
     assert result.architecture_v1_frozen is False
     assert result.freeze_executed is False
@@ -252,13 +377,14 @@ def test_human_approval_authorizes_but_never_executes_freeze():
     assert result.writes_runtime_config is False
 
 
-def test_incomplete_oss_audit_fails_closed():
+def test_legacy_oss_audit_is_informational_only():
     request = technically_ready_request()
     request = request.model_copy(update={"oss_audit": []})
     result = build_v1_readiness_audit(request)
-    assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
     check = next(item for item in result.checks if item.check_id == "oss_audit_complete")
     assert check.passed is False
+    assert check.blocking is False
+    assert result.status == V1ReadinessStatus.READY_FOR_HUMAN_FREEZE_APPROVAL
     assert result.freeze_authorized is False
 
 
@@ -325,6 +451,78 @@ def test_broken_analytics_mechanism_evidence_fails_closed():
     assert "mechanism_guardrails=fail" in check.detail
     assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
     assert result.freeze_authorized is False
+
+
+def test_quality_gate_rejects_partial_report_even_when_summary_is_true():
+    request = technically_ready_request()
+    full = certified_quality_report()
+    partial = QualityToTenReport(
+        release_candidate_sha=RC_SHA,
+        dimensions=[full.dimensions[0]],
+        all_dimensions_certified_10=True,
+    )
+    request = request.model_copy(update={"quality_to_ten": partial})
+    result = build_v1_readiness_audit(request)
+    check = next(item for item in result.checks if item.check_id == "quality_to_ten_complete")
+    assert check.passed is False
+    assert "dimensions=1/12" in check.detail
+    assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
+
+
+def test_quality_gate_rejects_duplicate_dimension_ids():
+    request = technically_ready_request()
+    full = certified_quality_report()
+    dimensions = list(full.dimensions)
+    dimensions[-1] = dimensions[0]
+    duplicate = QualityToTenReport(
+        release_candidate_sha=RC_SHA,
+        dimensions=dimensions,
+        all_dimensions_certified_10=True,
+    )
+    request = request.model_copy(update={"quality_to_ten": duplicate})
+    result = build_v1_readiness_audit(request)
+    check = next(item for item in result.checks if item.check_id == "quality_to_ten_complete")
+    assert check.passed is False
+    assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
+
+
+def test_quality_gate_rejects_weakened_canonical_requirement():
+    request = technically_ready_request()
+    full = certified_quality_report()
+    weakened = DimensionCertification(
+        requirement=DimensionRequirement(dimension="windows_physical"),
+        evidence=[],
+        status=CertificationStatus.CERTIFIED_10,
+    )
+    dimensions = [
+        weakened if item.requirement.dimension == "windows_physical" else item
+        for item in full.dimensions
+    ]
+    forged = QualityToTenReport(
+        release_candidate_sha=RC_SHA,
+        dimensions=dimensions,
+        all_dimensions_certified_10=True,
+    )
+    request = request.model_copy(update={"quality_to_ten": forged})
+    result = build_v1_readiness_audit(request)
+    check = next(item for item in result.checks if item.check_id == "quality_to_ten_complete")
+    assert check.passed is False
+    assert "canonical_contract=fail" in check.detail
+    assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
+
+
+def test_release_candidate_identity_mismatch_fails_closed():
+    request = technically_ready_request()
+    mismatched_audit = passing_pipeline_audit(release_candidate_sha="2" * 40)
+    request = request.model_copy(update={"pipeline_audit_manifest": mismatched_audit})
+    result = build_v1_readiness_audit(request)
+    check = next(
+        item
+        for item in result.checks
+        if item.check_id == "release_candidate_identity_consistent"
+    )
+    assert check.passed is False
+    assert result.status == V1ReadinessStatus.NOT_READY_FOR_ARCHITECTURE_FREEZE
 
 
 def test_readiness_hash_is_deterministic_for_same_evidence():

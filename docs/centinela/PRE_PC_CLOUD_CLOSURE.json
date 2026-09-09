@@ -1,0 +1,102 @@
+{
+  "schema_version": "centinela-pre-pc-cloud-closure-v1",
+  "generated_date": "2026-09-09",
+  "repository": "atoribioaba/MoneyPrinterTurbo-Centinela",
+  "auto_publication": false,
+  "merge_authorized": false,
+  "architecture_freeze_authorized": false,
+  "default_branch_change_authorized": false,
+  "physical_return_target": {
+    "branch": "centinela-engineering/c05-c20-windows-path-contract-adversarial-v0.1",
+    "sha": "2c6267c8d9ad3d144ebe6db73189a34c63656ce0",
+    "reason": "C20 remains the certified cloud-safe return target before any physical-PC reconciliation."
+  },
+  "cloud_improvement_line": {
+    "branch": "centinela-improvement/quality-to-10-cloud-v0.1",
+    "pull_request": 69,
+    "draft_required": true,
+    "merge_required_before_pc": false,
+    "exact_head_resolution": "READ_PR_69_HEAD_AND_REQUIRE_ALL_EXPECTED_CHECKS_SUCCESS",
+    "head_sha_embedded_in_manifest": false,
+    "reason": "Embedding the manifest's own final Git SHA would be self-referential; exact checkpoint identity is external GitHub evidence."
+  },
+  "expected_cloud_checks": [
+    "F58 v0.2 / Linux / Python 3.11",
+    "F58 v0.2 / Linux / Python 3.13",
+    "F58 v0.2 / Windows / Python 3.11",
+    "Python 3.11 tests",
+    "Python 3.13 tests",
+    "Windows smoke tests",
+    "Secret Regression"
+  ],
+  "physical_pc_first_action": {
+    "script": "scripts/centinela_pc_return_readonly_preflight.ps1",
+    "repo_path": "E:\\Github\\MoneyPrinterTurbo",
+    "read_only_required": true,
+    "must_run_before_git_sync": true
+  },
+  "post_reconciliation_runtime_evidence": {
+    "script": "scripts/centinela_pc_runtime_media_certification.ps1",
+    "run_before_reconciliation": false
+  },
+  "expected_pre_trip_local_state": {
+    "branch": "centinela-cert/golden-real-e2e-v0.1",
+    "head": "186104539a7116ad48b96beac90eccd3c4c37801",
+    "stash_sha": "22ee99b0703be803e63beaed2370485c84604c9a",
+    "stash_label": "C2.11O-M V34 pre-V33 preserve 20260826-172847",
+    "known_untracked": [
+      "app/services/centinela/quality/f57_real_runner.py",
+      "test/services/test_f57_real_runner.py",
+      "test/services/test_public_source_rights.py"
+    ],
+    "interpretation": "EXPECTED_ONLY_NOT_ASSERTED; physical preflight evidence is authoritative."
+  },
+  "forbidden_before_preflight_review": [
+    "git fetch",
+    "git pull",
+    "git switch",
+    "git checkout",
+    "git merge",
+    "git rebase",
+    "git reset",
+    "git clean",
+    "git stash pop",
+    "git stash apply",
+    "driver update",
+    "model download",
+    "dependency installation"
+  ],
+  "physical_only_gates": [
+    "physical_disk_mapping_D_E",
+    "real_windows_repo_state",
+    "real_astromedia_catalog",
+    "f57_local_8_of_8",
+    "rtx2060_detection",
+    "cuda_dependency_runtime",
+    "nvenc_real_encode",
+    "libx264_fallback_comparison",
+    "ram_vram_oom_measurement",
+    "llm_local_benchmark",
+    "tts_es_es_ab_listening",
+    "tts_timestamp_validation",
+    "stt_whisper_only_if_needed",
+    "ai_visual_t2i_i2v_t2v_upscale_runtime",
+    "video_base_real_render",
+    "master_2160x3840_real_render",
+    "social_1080x1920_real_render",
+    "golden_real_e2e",
+    "human_review_7_of_7",
+    "publication_package_real",
+    "backup_recovery_physical_drill",
+    "final_oss_sbom_with_selected_local_artifacts",
+    "f58_final_release_candidate",
+    "explicit_human_v1_freeze_approval"
+  ],
+  "physical_gates_certified_in_cloud": false,
+  "reconciliation_state": "PENDING_PHYSICAL_PC",
+  "notes": [
+    "PR 69 is not C21 and does not replace C20 as the first physical return target.",
+    "Cloud success never proves CUDA, NVENC, local model quality, real media, real render, restore drill or human audiovisual acceptance.",
+    "The first physical action is evidence collection, not synchronization."
+  ]
+}
