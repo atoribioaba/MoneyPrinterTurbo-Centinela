@@ -19,6 +19,7 @@ from app.services.centinela.pipeline_audit import (
 
 
 SEED = Path("docs/centinela/PIPELINE_OSS_AUDIT_PRE_PC.json")
+PHYSICAL_EVIDENCE = f"pc-report:sha256:{'c' * 64}"
 
 
 def _component(
@@ -148,7 +149,7 @@ def test_target_runtime_false_flag_still_fails_even_if_evidence_id_is_supplied()
         component_id="runtime",
         function_id="llm_runtime",
         physical=False,
-        physical_evidence=["pc-report:sha256:abc"],
+        physical_evidence=[PHYSICAL_EVIDENCE],
     )
     result = evaluate_pipeline_audit(
         _manifest([component]), required_functions={"llm_runtime"}
@@ -156,6 +157,22 @@ def test_target_runtime_false_flag_still_fails_even_if_evidence_id_is_supplied()
     assert result.pass_gate is False
     assert "PHYSICAL_POLICY_MISMATCH:runtime:llm_runtime" in result.blockers
     assert "PHYSICAL_EVIDENCE_MISSING:runtime" not in result.blockers
+
+
+def test_physical_evidence_reference_must_be_sha256_addressed():
+    with pytest.raises(ValidationError, match="physical_evidence_ids"):
+        _component(
+            physical=True,
+            physical_evidence=["pc-report:sha256:abc"],
+        )
+
+
+def test_duplicate_physical_evidence_references_are_rejected():
+    with pytest.raises(ValidationError, match="must be unique"):
+        _component(
+            physical=True,
+            physical_evidence=[PHYSICAL_EVIDENCE, PHYSICAL_EVIDENCE.upper()],
+        )
 
 
 def test_non_runtime_ephemeris_can_remain_cloud_validated():
@@ -176,7 +193,7 @@ def test_a_fully_pinned_scoped_component_can_pass_its_gate():
         weights=True,
         artifact_sha256="b" * 64,
         physical=True,
-        physical_evidence=["pc-report:sha256:abc"],
+        physical_evidence=[PHYSICAL_EVIDENCE],
     )
     result = evaluate_pipeline_audit(
         _manifest([component]), required_functions={"ephemeris"}
