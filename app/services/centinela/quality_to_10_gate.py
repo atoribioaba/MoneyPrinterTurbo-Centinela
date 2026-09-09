@@ -71,7 +71,7 @@ def build_quality_report(
 
 
 def canonical_quality_requirements() -> list[DimensionRequirement]:
-    """Return the minimum evidence classes for the dimensions under review."""
+    """Return the complete canonical evidence contract for the 12 V1 dimensions."""
     return [
         DimensionRequirement(
             dimension="astronomy_general",
@@ -85,6 +85,15 @@ def canonical_quality_requirements() -> list[DimensionRequirement]:
         DimensionRequirement(
             dimension="astrophotography",
             required_evidence_kinds={EvidenceKind.TEST, EvidenceKind.HUMAN_REVIEW},
+            requires_human_review=True,
+        ),
+        DimensionRequirement(
+            dimension="voice_audio_design",
+            required_evidence_kinds={
+                EvidenceKind.TEST,
+                EvidenceKind.ARTIFACT,
+                EvidenceKind.HUMAN_REVIEW,
+            },
             requires_human_review=True,
         ),
         DimensionRequirement(
