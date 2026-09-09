@@ -111,11 +111,11 @@ class VideoParams(BaseModel):
     video_language: Optional[str] = ""  # auto detect
 
     voice_name: Optional[str] = ""
-    voice_volume: Optional[float] = 1.0
-    voice_rate: Optional[float] = 1.0
+    voice_volume: Optional[float] = Field(default=1.0, allow_inf_nan=False)
+    voice_rate: Optional[float] = Field(default=1.0, allow_inf_nan=False)
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
-    bgm_volume: Optional[float] = 0.2
+    bgm_volume: Optional[float] = Field(default=0.2, allow_inf_nan=False)
     # 视频配乐供应商共用提示词，WebUI 新任务统一写入该字段。保留下面的
     # Sonilo 专用字段以兼容旧任务记录和现有 CLI 参数。
     video_music_prompt: str = Field(default="", max_length=2000)
@@ -142,11 +142,11 @@ class SubtitleRequest(BaseModel):
     video_script: str
     video_language: Optional[str] = ""
     voice_name: Optional[str] = "zh-CN-XiaoxiaoNeural-Female"
-    voice_volume: Optional[float] = 1.0
-    voice_rate: Optional[float] = 1.2
+    voice_volume: Optional[float] = Field(default=1.0, allow_inf_nan=False)
+    voice_rate: Optional[float] = Field(default=1.2, allow_inf_nan=False)
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
-    bgm_volume: Optional[float] = 0.2
+    bgm_volume: Optional[float] = Field(default=0.2, allow_inf_nan=False)
     subtitle_position: Optional[str] = config.ui.get("subtitle_position", "bottom")
     font_name: Optional[str] = "STHeitiMedium.ttc"
     text_fore_color: Optional[str] = "#FFFFFF"
@@ -163,11 +163,11 @@ class AudioRequest(BaseModel):
     video_script: str
     video_language: Optional[str] = ""
     voice_name: Optional[str] = "zh-CN-XiaoxiaoNeural-Female"
-    voice_volume: Optional[float] = 1.0
-    voice_rate: Optional[float] = 1.2
+    voice_volume: Optional[float] = Field(default=1.0, allow_inf_nan=False)
+    voice_rate: Optional[float] = Field(default=1.2, allow_inf_nan=False)
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
-    bgm_volume: Optional[float] = 0.2
+    bgm_volume: Optional[float] = Field(default=0.2, allow_inf_nan=False)
     video_source: Optional[str] = "local"
 
 
