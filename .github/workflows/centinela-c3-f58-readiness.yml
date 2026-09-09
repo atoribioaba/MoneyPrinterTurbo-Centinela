@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/centinela-c3-f58-readiness.yml
+      - .github/workflows/ci.yml
       - pyproject.toml
       - uv.lock
       - app/models/v1_readiness_audit.py
@@ -40,6 +41,7 @@ on:
       - centinela-cert/c3-f58-readiness-v0.1
     paths:
       - .github/workflows/centinela-c3-f58-readiness.yml
+      - .github/workflows/ci.yml
       - pyproject.toml
       - uv.lock
       - app/models/v1_readiness_audit.py
