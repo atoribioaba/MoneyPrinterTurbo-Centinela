@@ -9,6 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_PHYSICAL_EVIDENCE_ID_RE = re.compile(
+    r"^[A-Za-z0-9._/-]+:sha256:[0-9a-fA-F]{64}$"
+)
 
 
 class StrictAuditModel(BaseModel):
@@ -71,6 +74,21 @@ class PipelineComponentAudit(StrictAuditModel):
         if value is not None and not _SHA256_RE.fullmatch(value):
             raise ValueError("artifact_sha256 must be 64 hexadecimal characters")
         return value.lower() if value is not None else None
+
+    @field_validator("physical_evidence_ids")
+    @classmethod
+    def validate_physical_evidence_ids(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            value = value.strip()
+            if not _PHYSICAL_EVIDENCE_ID_RE.fullmatch(value):
+                raise ValueError(
+                    "physical_evidence_ids must use <id>:sha256:<64-hex> references"
+                )
+            normalized.append(value)
+        if len(normalized) != len(set(item.casefold() for item in normalized)):
+            raise ValueError("physical_evidence_ids must be unique")
+        return normalized
 
 
 class PipelineAuditManifest(StrictAuditModel):
