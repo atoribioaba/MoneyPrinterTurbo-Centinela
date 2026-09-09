@@ -3,11 +3,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+import app.services.centinela.jpl_horizons as horizons
 from app.models.astronomy import ObserverContext
 from app.models.small_body import SmallBodyObserverRequest
 from app.services.centinela.jpl_horizons import (
     HORIZONS_DOCUMENTED_API_VERSION,
     build_horizons_observer_query,
+    fetch_horizons_observer_result,
     parse_horizons_observer_response,
 )
 
@@ -43,6 +45,16 @@ def _result_text(*, rows: list[str] | None = None) -> str:
     )
 
 
+def _payload() -> dict:
+    return {
+        "signature": {
+            "source": "NASA/JPL Horizons API",
+            "version": HORIZONS_DOCUMENTED_API_VERSION,
+        },
+        "result": _result_text(),
+    }
+
+
 def test_horizons_query_is_topocentric_reproducible_and_airless():
     plan = build_horizons_observer_query(_request())
 
@@ -60,15 +72,8 @@ def test_horizons_query_is_topocentric_reproducible_and_airless():
 
 def test_horizons_response_is_version_checked_parsed_and_sha_bound():
     result_text = _result_text()
-    payload = {
-        "signature": {
-            "source": "NASA/JPL Horizons API",
-            "version": HORIZONS_DOCUMENTED_API_VERSION,
-        },
-        "result": result_text,
-    }
     result = parse_horizons_observer_response(
-        payload,
+        _payload(),
         _request(),
         retrieved_at_utc=datetime(2026, 9, 8, 22, 16, tzinfo=UTC),
     )
@@ -81,6 +86,27 @@ def test_horizons_response_is_version_checked_parsed_and_sha_bound():
         result_text.encode("utf-8")
     ).hexdigest()
     assert result.provenance.query_time_utc.tzinfo is not None
+
+
+def test_horizons_fetch_uses_one_allowlisted_bounded_request(monkeypatch):
+    calls = []
+
+    def fake_fetch(url, **kwargs):
+        calls.append((url, kwargs))
+        return _payload()
+
+    monkeypatch.setattr(horizons, "fetch_json_https", fake_fetch)
+    result = fetch_horizons_observer_result(
+        _request(),
+        retrieved_at_utc=datetime(2026, 9, 8, 22, 16, tzinfo=UTC),
+    )
+
+    assert result.target_name.startswith("C/2023 A3")
+    assert len(calls) == 1
+    url, kwargs = calls[0]
+    assert url.startswith("https://ssd.jpl.nasa.gov/api/horizons.api?")
+    assert kwargs["allowed_hosts"] == {"ssd.jpl.nasa.gov"}
+    assert kwargs["max_bytes"] == 4_000_000
 
 
 def test_horizons_response_rejects_unreviewed_api_version_by_default():
