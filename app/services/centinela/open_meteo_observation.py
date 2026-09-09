@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 from app.models.observation import EvidenceKind, WeatherSnapshot
+from app.services.centinela.http_json import fetch_json_https
 
 
 OPEN_METEO_SOURCE_ID = "open_meteo_forecast"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_HOST = "api.open-meteo.com"
 OPEN_METEO_LICENSE = "CC BY 4.0"
 OPEN_METEO_ATTRIBUTION = "Weather data by Open-Meteo.com"
 
@@ -43,6 +46,20 @@ def build_open_meteo_params(
         "timezone": "UTC",
         "forecast_days": forecast_days,
     }
+
+
+def build_open_meteo_url(
+    latitude_deg: float,
+    longitude_deg: float,
+    *,
+    forecast_days: int = 7,
+) -> str:
+    params = build_open_meteo_params(
+        latitude_deg,
+        longitude_deg,
+        forecast_days=forecast_days,
+    )
+    return f"{OPEN_METEO_URL}?{urlencode(params)}"
 
 
 def _require_aware_utc(value: datetime, field_name: str) -> datetime:
@@ -144,4 +161,34 @@ def parse_open_meteo_snapshot(
         ),
         seeing_arcsec=None,
         transparency_percent=None,
+    )
+
+
+def fetch_open_meteo_snapshot(
+    *,
+    latitude_deg: float,
+    longitude_deg: float,
+    requested_at: datetime,
+    retrieved_at: datetime | None = None,
+    forecast_days: int = 7,
+    timeout_seconds: float = 15.0,
+    opener=None,
+) -> WeatherSnapshot:
+    """Fetch one explicit Open-Meteo forecast snapshot through the hardened transport."""
+    url = build_open_meteo_url(
+        latitude_deg,
+        longitude_deg,
+        forecast_days=forecast_days,
+    )
+    fetch_kwargs = {
+        "allowed_hosts": {OPEN_METEO_HOST},
+        "timeout_seconds": timeout_seconds,
+    }
+    if opener is not None:
+        fetch_kwargs["opener"] = opener
+    payload = fetch_json_https(url, **fetch_kwargs)
+    return parse_open_meteo_snapshot(
+        payload,
+        requested_at=requested_at,
+        retrieved_at=retrieved_at,
     )
