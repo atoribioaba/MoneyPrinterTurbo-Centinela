@@ -8,10 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.analytics_import_adapter import AnalyticsImportPlan
 from app.models.golden_e2e_certification import GoldenE2ECertificationPlan
 from app.models.operational_hardening import OperationalHardeningPlan
+from app.models.pipeline_audit import PipelineAuditManifest
 from app.models.production_orchestrator import ProductionOrchestratorPlan
 from app.models.publication_package import PublicationPackagePlan
+from app.models.quality_certification import QualityToTenReport
+from app.models.recovery import RecoveryManifest, RecoveryVerificationResult
 
-V1_READINESS_AUDIT_VERSION = "v1-readiness-audit-v0.1"
+V1_READINESS_AUDIT_VERSION = "v1-readiness-audit-v0.2"
 
 
 class StrictV1AuditModel(BaseModel):
@@ -25,6 +28,12 @@ class V1ReadinessStatus(str, Enum):
 
 
 class OSSAuditEntry(StrictV1AuditModel):
+    """Legacy informational OSS entry retained for API compatibility.
+
+    F58 v0.2 uses `pipeline_audit_manifest` as the canonical OSS gate and
+    recomputes it server-side. This list no longer has authority to open F58.
+    """
+
     function: str
     current_component: str
     classification: str
@@ -40,6 +49,15 @@ class V1ReadinessRequest(StrictV1AuditModel):
     analytics_import: AnalyticsImportPlan
     hardening: OperationalHardeningPlan
     golden: GoldenE2ECertificationPlan
+
+    release_candidate_sha: str | None = Field(
+        default=None, pattern=r"^[0-9a-fA-F]{40}$"
+    )
+    quality_to_ten: QualityToTenReport | None = None
+    pipeline_audit_manifest: PipelineAuditManifest | None = None
+    recovery_manifest: RecoveryManifest | None = None
+    recovery_verification: RecoveryVerificationResult | None = None
+
     oss_audit: list[OSSAuditEntry] = Field(default_factory=list)
     human_freeze_approval: bool = False
 
@@ -64,6 +82,15 @@ class V1ReadinessAuditPlan(StrictV1AuditModel):
     auto_activation: bool = False
     writes_runtime_config: bool = False
     status: V1ReadinessStatus
+
+    release_candidate_sha: str | None = Field(
+        default=None, pattern=r"^[0-9a-fA-F]{40}$"
+    )
+    quality_to_ten_complete: bool = False
+    machine_readable_oss_audit_complete: bool = False
+    recovery_verified: bool = False
+    release_candidate_identity_consistent: bool = False
+
     check_count: int = Field(ge=0)
     passed_count: int = Field(ge=0)
     failed_count: int = Field(ge=0)
@@ -97,4 +124,11 @@ class V1ReadinessAuditPlan(StrictV1AuditModel):
             or self.writes_runtime_config
         ):
             raise ValueError("F58 guardrail violation")
+        if self.freeze_authorized and not (
+            self.quality_to_ten_complete
+            and self.machine_readable_oss_audit_complete
+            and self.recovery_verified
+            and self.release_candidate_identity_consistent
+        ):
+            raise ValueError("F58 freeze authorization requires every v0.2 evidence gate")
         return self
