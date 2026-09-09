@@ -21,6 +21,7 @@ from app.models.v1_readiness_audit import (
     V1ReadinessStatus,
 )
 from app.services.centinela.pipeline_audit import evaluate_pipeline_audit
+from app.services.centinela.quality_to_10_gate import canonical_quality_requirements
 
 
 def _hash(value: Any) -> str:
@@ -105,15 +106,32 @@ def _publication_package_ready(request: V1ReadinessRequest) -> bool:
 
 def _quality_to_ten_complete(request: V1ReadinessRequest) -> bool:
     report = request.quality_to_ten
-    return bool(
-        report
-        and report.dimensions
-        and report.all_dimensions_certified_10
-        and all(
-            item.status == CertificationStatus.CERTIFIED_10
-            for item in report.dimensions
-        )
-    )
+    if report is None or not report.all_dimensions_certified_10:
+        return False
+
+    expected = canonical_quality_requirements()
+    expected_by_id = {item.dimension: item for item in expected}
+    actual_ids = [item.requirement.dimension for item in report.dimensions]
+
+    if len(expected_by_id) != 12:
+        return False
+    if len(actual_ids) != len(expected_by_id):
+        return False
+    if len(actual_ids) != len(set(actual_ids)):
+        return False
+    if set(actual_ids) != set(expected_by_id):
+        return False
+
+    for item in report.dimensions:
+        if item.status != CertificationStatus.CERTIFIED_10:
+            return False
+        expected_requirement = expected_by_id[item.requirement.dimension]
+        if item.requirement.model_dump(mode="json") != expected_requirement.model_dump(
+            mode="json"
+        ):
+            return False
+
+    return True
 
 
 def _machine_oss_gate(request: V1ReadinessRequest):
@@ -187,6 +205,12 @@ def build_v1_readiness_audit(request: V1ReadinessRequest) -> V1ReadinessAuditPla
     recovery_verified = _recovery_verified(request)
     identity_consistent = _identity_consistent(request)
 
+    quality_dimension_count = (
+        len(request.quality_to_ten.dimensions)
+        if request.quality_to_ten is not None
+        else 0
+    )
+
     checks = [
         V1ReadinessCheck(
             check_id="operational_hardening_not_blocked",
@@ -237,6 +261,8 @@ def build_v1_readiness_audit(request: V1ReadinessRequest) -> V1ReadinessAuditPla
             passed=quality_complete,
             detail=(
                 f"present={str(request.quality_to_ten is not None).lower()};"
+                f"dimensions={quality_dimension_count}/12;"
+                f"canonical_contract={'pass' if quality_complete else 'fail'};"
                 f"all_dimensions_certified_10={str(quality_complete).lower()}"
             ),
         ),
