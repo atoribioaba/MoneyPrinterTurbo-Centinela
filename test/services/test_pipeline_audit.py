@@ -20,6 +20,7 @@ from app.services.centinela.pipeline_audit import (
 
 SEED = Path("docs/centinela/PIPELINE_OSS_AUDIT_PRE_PC.json")
 PHYSICAL_EVIDENCE = f"pc-report:sha256:{'c' * 64}"
+PHYSICAL_EVIDENCE_CASE_VARIANT = f"PC-REPORT:sha256:{'C' * 64}"
 
 
 def _component(
@@ -171,7 +172,7 @@ def test_duplicate_physical_evidence_references_are_rejected():
     with pytest.raises(ValidationError, match="must be unique"):
         _component(
             physical=True,
-            physical_evidence=[PHYSICAL_EVIDENCE, PHYSICAL_EVIDENCE.upper()],
+            physical_evidence=[PHYSICAL_EVIDENCE, PHYSICAL_EVIDENCE_CASE_VARIANT],
         )
 
 
