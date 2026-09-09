@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
 
@@ -59,6 +59,23 @@ def _nearest_conditions(snapshots, target_time: datetime):
         (nearest.valid_at - target_time.astimezone(UTC)).total_seconds()
     ) / 3600.0
     return nearest if distance_hours <= 3.1 else None
+
+
+def _observer_from_agenda_controls() -> ObserverContext | None:
+    try:
+        return ObserverContext(
+            latitude_deg=float(st.session_state.get("mobile-agenda-latitude", 41.6523)),
+            longitude_deg=float(st.session_state.get("mobile-agenda-longitude", -4.7245)),
+            elevation_m=float(st.session_state.get("mobile-agenda-elevation", 698.0)),
+            timezone=str(
+                st.session_state.get("mobile-agenda-timezone", "Europe/Madrid")
+            ).strip(),
+            name=str(st.session_state.get("mobile-agenda-observer-name", "Valladolid"))
+            .strip()
+            or None,
+        )
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
 
 
 def _sky_quality_controls() -> SkyQualityContext | None:
@@ -120,7 +137,7 @@ def _sky_quality_controls() -> SkyQualityContext | None:
 
 def _render_result(state: dict, observer: ObserverContext) -> None:
     plan = state["plan"]
-    dashboard = state["dashboard"]
+    dashboard = state.get("dashboard")
     best = plan.best_sample
 
     if best is None:
@@ -132,14 +149,6 @@ def _render_result(state: dict, observer: ObserverContext) -> None:
 
     local_time = best.observed_at.astimezone(ZoneInfo(observer.timezone))
     st.success(f"Mejor ventana geométrica: {local_time:%d/%m/%Y · %H:%M}")
-    kpi = st.columns(3)
-    with kpi[0]:
-        st.metric("Observabilidad", dashboard.score_text)
-    with kpi[1]:
-        st.metric("Grado", dashboard.grade)
-    with kpi[2]:
-        st.metric("Completitud", dashboard.completeness_text)
-
     st.caption(
         f"Altitud {best.target_position.altitude_apparent_deg:.1f}° · "
         f"azimut {best.target_position.azimuth_deg:.1f}° · "
@@ -147,6 +156,21 @@ def _render_result(state: dict, observer: ObserverContext) -> None:
         f"Luna {best.moon_altitude_deg:.1f}° · "
         f"separación lunar {best.moon_target_separation_deg:.1f}°."
     )
+
+    if dashboard is None:
+        st.info(
+            "La geometría se ha calculado, pero no existe todavía una evaluación "
+            "de condiciones para esta muestra."
+        )
+        return
+
+    kpi = st.columns(3)
+    with kpi[0]:
+        st.metric("Observabilidad", dashboard.score_text)
+    with kpi[1]:
+        st.metric("Grado", dashboard.grade)
+    with kpi[2]:
+        st.metric("Completitud", dashboard.completeness_text)
 
     if dashboard.attention_required:
         st.warning("Atención: " + ", ".join(dashboard.attention_reasons))
@@ -249,7 +273,7 @@ def render_observation_planner(observer: ObserverContext) -> None:
             "Consultar Open-Meteo + 7Timer al calcular",
             value=True,
             key="observation-planner-use-forecasts",
-            help="Sólo realiza las dos peticiones al pulsar Calcular.",
+            help="Sólo realiza las peticiones al pulsar Calcular y dentro del horizonte útil.",
         )
         sky_quality = _sky_quality_controls()
         submitted = st.form_submit_button(
@@ -290,34 +314,47 @@ def render_observation_planner(observer: ObserverContext) -> None:
                 weather = None
                 astronomy_conditions = None
                 forecast_errors: list[str] = []
+                now_utc = datetime.now(UTC)
                 if use_forecasts:
-                    try:
-                        weather = fetch_open_meteo_snapshot(
-                            latitude_deg=observer.latitude_deg,
-                            longitude_deg=observer.longitude_deg,
-                            requested_at=best.observed_at,
-                            retrieved_at=datetime.now(UTC),
-                            timeout_seconds=10.0,
-                        )
-                    except Exception as exc:
-                        forecast_errors.append(f"Open-Meteo: {exc}")
-                    try:
-                        conditions = fetch_7timer_astro_snapshots(
-                            latitude=observer.latitude_deg,
-                            longitude=observer.longitude_deg,
-                            retrieved_at=datetime.now(UTC),
-                            timeout_seconds=10.0,
-                        )
-                        astronomy_conditions = _nearest_conditions(
-                            conditions,
-                            best.observed_at,
-                        )
-                        if astronomy_conditions is None:
-                            forecast_errors.append(
-                                "7Timer: no hay una muestra a ±3,1 h de la mejor ventana"
+                    delta_hours = (best.observed_at - now_utc).total_seconds() / 3600.0
+                    if -1.0 <= delta_hours <= 16 * 24:
+                        try:
+                            weather = fetch_open_meteo_snapshot(
+                                latitude_deg=observer.latitude_deg,
+                                longitude_deg=observer.longitude_deg,
+                                requested_at=best.observed_at,
+                                retrieved_at=now_utc,
+                                timeout_seconds=10.0,
                             )
-                    except Exception as exc:
-                        forecast_errors.append(f"7Timer: {exc}")
+                        except Exception as exc:
+                            forecast_errors.append(f"Open-Meteo: {exc}")
+                    else:
+                        forecast_errors.append(
+                            "Open-Meteo: ventana fuera del horizonte de consulta usado por Centinela"
+                        )
+
+                    if -1.0 <= delta_hours <= 72.0:
+                        try:
+                            conditions = fetch_7timer_astro_snapshots(
+                                latitude=observer.latitude_deg,
+                                longitude=observer.longitude_deg,
+                                retrieved_at=now_utc,
+                                timeout_seconds=10.0,
+                            )
+                            astronomy_conditions = _nearest_conditions(
+                                conditions,
+                                best.observed_at,
+                            )
+                            if astronomy_conditions is None:
+                                forecast_errors.append(
+                                    "7Timer: no hay una muestra a ±3,1 h de la mejor ventana"
+                                )
+                        except Exception as exc:
+                            forecast_errors.append(f"7Timer: {exc}")
+                    else:
+                        forecast_errors.append(
+                            "7Timer: ventana fuera del horizonte de 72 h usado por Centinela"
+                        )
 
                 request = ObservabilityRequest(
                     object_class=_OBJECT_CLASS_BY_KIND[kind],
@@ -335,7 +372,7 @@ def render_observation_planner(observer: ObserverContext) -> None:
                     title=target.name,
                     request=request,
                     result=result,
-                    now=datetime.now(UTC),
+                    now=now_utc,
                 )
                 st.session_state[PLANNER_STATE_KEY] = {
                     "plan": plan,
@@ -351,9 +388,21 @@ def render_observation_planner(observer: ObserverContext) -> None:
     if not state:
         st.info("Configura el objetivo y pulsa **Calcular ventana**.")
         return
-    if state.get("dashboard") is None:
-        _render_result({"plan": state["plan"], "dashboard": None}, observer)
-        return
     for error in state.get("forecast_errors", []):
         st.warning(error)
     _render_result(state, observer)
+
+
+def sky_page() -> None:
+    """Canonical Product Cielo surface: agenda first, planning second."""
+    from . import mobile_pages
+
+    mobile_pages.ephemerides_page()
+    observer = _observer_from_agenda_controls()
+    if observer is None:
+        st.warning(
+            "El planificador no puede usar la ubicación actual. Revisa los controles "
+            "de ubicación de la Agenda."
+        )
+        return
+    render_observation_planner(observer)
