@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import re
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 from app.models.small_body import (
     HorizonsObserverResult,
@@ -11,9 +11,11 @@ from app.models.small_body import (
     SmallBodyEphemerisProvenance,
     SmallBodyObserverRequest,
 )
+from app.services.centinela.http_json import fetch_json_https
 
 
 HORIZONS_ENDPOINT = "https://ssd.jpl.nasa.gov/api/horizons.api"
+HORIZONS_HOST = "ssd.jpl.nasa.gov"
 HORIZONS_DOCUMENTATION = "https://ssd-api.jpl.nasa.gov/doc/horizons.html"
 HORIZONS_SOURCE_ID = "jpl_horizons"
 HORIZONS_DOCUMENTED_API_VERSION = "1.3"
@@ -27,10 +29,9 @@ def _quote(value: str) -> str:
 def build_horizons_observer_query(request: SmallBodyObserverRequest) -> HorizonsQueryPlan:
     """Build a topocentric JPL Horizons observer-table request.
 
-    The query is intentionally planned but not executed here. Network retrieval
-    belongs to a source adapter that records the returned bytes and their hash.
     `target_command` is passed to Horizons as the authoritative object selector;
-    this module never propagates a comet/asteroid orbit locally.
+    this module never propagates a comet/asteroid orbit locally. Network execution
+    is explicit and bounded; callers should cache results where practical.
     """
     moment = request.observed_at.astimezone(UTC)
     site_height_km = request.observer.elevation_m / 1000.0
@@ -76,6 +77,11 @@ def build_horizons_observer_query(request: SmallBodyObserverRequest) -> Horizons
             "non-concurrent requests and appropriate handling of service limits."
         ),
     )
+
+
+def build_horizons_observer_url(request: SmallBodyObserverRequest) -> str:
+    plan = build_horizons_observer_query(request)
+    return f"{plan.endpoint}?{urlencode(plan.params)}"
 
 
 def _target_name(result_text: str) -> str:
@@ -195,4 +201,31 @@ def parse_horizons_observer_response(
         columns=columns,
         provenance=provenance,
         api_source=api_source,
+    )
+
+
+def fetch_horizons_observer_result(
+    request: SmallBodyObserverRequest,
+    *,
+    retrieved_at_utc: datetime | None = None,
+    timeout_seconds: float = 20.0,
+    accepted_api_versions: set[str] | None = None,
+    opener=None,
+) -> HorizonsObserverResult:
+    """Perform one explicit Horizons request through the bounded HTTPS transport."""
+    retrieved = retrieved_at_utc or datetime.now(UTC)
+    url = build_horizons_observer_url(request)
+    fetch_kwargs = {
+        "allowed_hosts": {HORIZONS_HOST},
+        "timeout_seconds": timeout_seconds,
+        "max_bytes": 4_000_000,
+    }
+    if opener is not None:
+        fetch_kwargs["opener"] = opener
+    payload = fetch_json_https(url, **fetch_kwargs)
+    return parse_horizons_observer_response(
+        payload,
+        request,
+        retrieved_at_utc=retrieved,
+        accepted_api_versions=accepted_api_versions,
     )
