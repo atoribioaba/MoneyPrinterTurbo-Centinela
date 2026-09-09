@@ -29,6 +29,31 @@ class CaptureMode(str, Enum):
     SOLAR = "solar"
 
 
+class FilterCategory(str, Enum):
+    UNKNOWN = "unknown"
+    NONE = "none"
+    BROADBAND = "broadband"
+    NARROWBAND = "narrowband"
+    DUAL_BAND = "dual_band"
+    SOLAR_FRONT_APERTURE = "solar_front_aperture"
+    OTHER = "other"
+
+
+class CalibrationFrameType(str, Enum):
+    DARK = "dark"
+    FLAT = "flat"
+    BIAS = "bias"
+    DARK_FLAT = "dark_flat"
+
+
+class CalibrationFramePlan(StrictAstrophotographyModel):
+    frame_type: CalibrationFrameType
+    planned_count: int = Field(ge=0)
+    same_exposure_as_lights: bool | None = None
+    same_temperature_as_lights: bool | None = None
+    notes: str = ""
+
+
 class OpticalTrain(StrictAstrophotographyModel):
     name: str | None = None
     aperture_mm: float = Field(gt=0.0)
@@ -115,7 +140,25 @@ class CapturePlanningRequest(StrictAstrophotographyModel):
     requested_subexposure_seconds: float | None = Field(default=None, gt=0.0)
     requested_total_integration_minutes: float | None = Field(default=None, gt=0.0)
     guiding_enabled: bool | None = None
+    guiding_rms_arcsec: float | None = Field(default=None, gt=0.0)
+    dithering_enabled: bool | None = None
+    filter_category: FilterCategory = FilterCategory.UNKNOWN
+    filter_name: str | None = None
+    calibration_frames: list[CalibrationFramePlan] = Field(default_factory=list)
+    cooling_setpoint_c: float | None = None
+    preserve_raw_or_lossless_source: bool | None = None
     solar_front_aperture_filter_confirmed: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_session_inputs(self):
+        if self.guiding_enabled is False and self.guiding_rms_arcsec is not None:
+            raise ValueError("guiding_rms_arcsec cannot be supplied when guiding is disabled")
+        frame_types = [item.frame_type for item in self.calibration_frames]
+        if len(frame_types) != len(set(frame_types)):
+            raise ValueError("calibration frame types must be unique")
+        if self.filter_name is not None and not self.filter_name.strip():
+            raise ValueError("filter_name cannot be blank")
+        return self
 
 
 class CapturePlanningResult(StrictAstrophotographyModel):
@@ -123,5 +166,6 @@ class CapturePlanningResult(StrictAstrophotographyModel):
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+    session_checklist: list[str] = Field(default_factory=list)
     framing: FramingResult | None = None
     scientific_status: ScientificStatus = ScientificStatus.APROXIMACION_DIVULGATIVA
