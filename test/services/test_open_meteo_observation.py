@@ -60,6 +60,27 @@ def test_parse_snapshot_preserves_forecast_semantics_and_missing_astronomy_weath
     assert result.cloud_cover_percent == 20.0
     assert result.seeing_arcsec is None
     assert result.transparency_percent is None
+    assert result.source_id.startswith("open_meteo_forecast:")
+    assert result.source_id.endswith("valid=2026-09-08T21:00:00+00:00")
+    payload_hash = result.source_id.split(":", 2)[1]
+    assert len(payload_hash) == 64
+    int(payload_hash, 16)
+
+
+def test_distinct_open_meteo_payloads_have_distinct_evidence_identity():
+    first_payload = _payload()
+    second_payload = _payload()
+    second_payload["hourly"]["cloud_cover"][1] = 99.0
+
+    kwargs = {
+        "requested_at": datetime(2026, 9, 8, 20, 40, tzinfo=UTC),
+        "retrieved_at": datetime(2026, 9, 8, 14, 0, tzinfo=UTC),
+    }
+    first = parse_open_meteo_snapshot(first_payload, **kwargs)
+    second = parse_open_meteo_snapshot(second_payload, **kwargs)
+
+    assert first.valid_at == second.valid_at
+    assert first.source_id != second.source_id
 
 
 def test_fetch_snapshot_uses_hardened_transport_once(monkeypatch):
