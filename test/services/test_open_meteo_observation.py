@@ -2,27 +2,21 @@ from datetime import UTC, datetime
 
 import pytest
 
+import app.services.centinela.open_meteo_observation as open_meteo
 from app.services.centinela.open_meteo_observation import (
     OPEN_METEO_ATTRIBUTION,
     OPEN_METEO_LICENSE,
     build_open_meteo_params,
+    build_open_meteo_url,
+    fetch_open_meteo_snapshot,
     parse_open_meteo_snapshot,
     weather_snapshot_age_hours,
     weather_snapshot_is_stale,
 )
 
 
-def test_params_request_only_supported_meteorological_inputs():
-    params = build_open_meteo_params(41.65, -4.72, forecast_days=7)
-    assert params["timezone"] == "UTC"
-    assert "cloud_cover_low" in params["hourly"]
-    assert "dew_point_2m" in params["hourly"]
-    assert "seeing" not in params["hourly"]
-    assert "transparency" not in params["hourly"]
-
-
-def test_parse_snapshot_preserves_forecast_semantics_and_missing_astronomy_weather():
-    payload = {
+def _payload():
+    return {
         "hourly": {
             "time": ["2026-09-08T20:00", "2026-09-08T21:00"],
             "temperature_2m": [14.0, 13.0],
@@ -37,8 +31,27 @@ def test_parse_snapshot_preserves_forecast_semantics_and_missing_astronomy_weath
             "precipitation_probability": [0.0, 5.0],
         }
     }
+
+
+def test_params_request_only_supported_meteorological_inputs():
+    params = build_open_meteo_params(41.65, -4.72, forecast_days=7)
+    assert params["timezone"] == "UTC"
+    assert "cloud_cover_low" in params["hourly"]
+    assert "dew_point_2m" in params["hourly"]
+    assert "seeing" not in params["hourly"]
+    assert "transparency" not in params["hourly"]
+
+
+def test_open_meteo_url_is_explicit_https_and_utc_scoped():
+    url = build_open_meteo_url(41.65, -4.72, forecast_days=3)
+    assert url.startswith("https://api.open-meteo.com/v1/forecast?")
+    assert "timezone=UTC" in url
+    assert "forecast_days=3" in url
+
+
+def test_parse_snapshot_preserves_forecast_semantics_and_missing_astronomy_weather():
     result = parse_open_meteo_snapshot(
-        payload,
+        _payload(),
         requested_at=datetime(2026, 9, 8, 20, 40, tzinfo=UTC),
         retrieved_at=datetime(2026, 9, 8, 14, 0, tzinfo=UTC),
     )
@@ -47,6 +60,26 @@ def test_parse_snapshot_preserves_forecast_semantics_and_missing_astronomy_weath
     assert result.cloud_cover_percent == 20.0
     assert result.seeing_arcsec is None
     assert result.transparency_percent is None
+
+
+def test_fetch_snapshot_uses_hardened_transport_once(monkeypatch):
+    calls = []
+
+    def fake_fetch(url, **kwargs):
+        calls.append((url, kwargs))
+        return _payload()
+
+    monkeypatch.setattr(open_meteo, "fetch_json_https", fake_fetch)
+    result = fetch_open_meteo_snapshot(
+        latitude_deg=41.65,
+        longitude_deg=-4.72,
+        requested_at=datetime(2026, 9, 8, 20, 40, tzinfo=UTC),
+        retrieved_at=datetime(2026, 9, 8, 14, 0, tzinfo=UTC),
+    )
+
+    assert result.cloud_cover_percent == 20.0
+    assert len(calls) == 1
+    assert calls[0][1]["allowed_hosts"] == {"api.open-meteo.com"}
 
 
 def test_staleness_threshold_is_explicit_and_caller_controlled():
