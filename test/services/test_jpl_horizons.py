@@ -27,16 +27,24 @@ def _request() -> SmallBodyObserverRequest:
     )
 
 
-def _result_text(*, rows: list[str] | None = None) -> str:
+def _result_text(
+    *,
+    rows: list[str] | None = None,
+    header: str | None = None,
+) -> str:
     data_rows = rows or [
         "2026-Sep-08 22:15:30, 123.456, -12.345, 210.123, 25.500, 5.8, 82.0,"
     ]
+    header = header or (
+        "Date__(UT)__HR:MN:SC.fff, R.A.__(ICRF)__deg, DEC_(ICRF)_deg, "
+        "Azi_(a-app), Elev_(a-app), APmag, Illu%,"
+    )
     return "\n".join(
         [
             "*******************************************************************************",
             "Target body name: C/2023 A3 (Tsuchinshan-ATLAS) {source: JPL}",
             "*******************************************************************************",
-            "Date__(UT)__HR:MN:SC.fff, R.A.__(ICRF)__deg, DEC_(ICRF)_deg, Azi_(a-app), Elev_(a-app), APmag, Illu%,",
+            header,
             "$$SOE",
             *data_rows,
             "$$EOE",
@@ -45,13 +53,13 @@ def _result_text(*, rows: list[str] | None = None) -> str:
     )
 
 
-def _payload() -> dict:
+def _payload(*, result_text: str | None = None) -> dict:
     return {
         "signature": {
             "source": "NASA/JPL Horizons API",
             "version": HORIZONS_DOCUMENTED_API_VERSION,
         },
-        "result": _result_text(),
+        "result": result_text or _result_text(),
     }
 
 
@@ -70,10 +78,10 @@ def test_horizons_query_is_topocentric_reproducible_and_airless():
     assert "fair-use" in plan.source_note
 
 
-def test_horizons_response_is_version_checked_parsed_and_sha_bound():
+def test_horizons_response_is_version_time_checked_parsed_and_sha_bound():
     result_text = _result_text()
     result = parse_horizons_observer_response(
-        _payload(),
+        _payload(result_text=result_text),
         _request(),
         retrieved_at_utc=datetime(2026, 9, 8, 22, 16, tzinfo=UTC),
     )
@@ -86,6 +94,37 @@ def test_horizons_response_is_version_checked_parsed_and_sha_bound():
         result_text.encode("utf-8")
     ).hexdigest()
     assert result.provenance.query_time_utc.tzinfo is not None
+
+
+def test_horizons_response_rejects_row_for_different_instant():
+    payload = _payload(
+        result_text=_result_text(
+            rows=[
+                "2026-Sep-08 22:16:30, 123.456, -12.345, 210.123, 25.500, 5.8, 82.0,"
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="does not match requested TLIST instant"):
+        parse_horizons_observer_response(
+            payload,
+            _request(),
+            retrieved_at_utc=datetime(2026, 9, 8, 22, 16, tzinfo=UTC),
+        )
+
+
+def test_horizons_response_requires_explicit_ut_date_column():
+    result_text = _result_text(
+        header=(
+            "Timestamp, R.A.__(ICRF)__deg, DEC_(ICRF)_deg, Azi_(a-app), "
+            "Elev_(a-app), APmag, Illu%,"
+        )
+    )
+    with pytest.raises(ValueError, match="exactly one UT date column"):
+        parse_horizons_observer_response(
+            _payload(result_text=result_text),
+            _request(),
+            retrieved_at_utc=datetime(2026, 9, 8, 22, 16, tzinfo=UTC),
+        )
 
 
 def test_horizons_fetch_uses_one_allowlisted_bounded_request(monkeypatch):
