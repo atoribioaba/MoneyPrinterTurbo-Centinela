@@ -17,6 +17,26 @@ on:
       - app/services/centinela/pipeline_audit.py
       - app/models/recovery.py
       - app/services/centinela/recovery_verifier.py
+      - app/models/observation.py
+      - app/models/observation_dashboard.py
+      - app/models/astrophotography.py
+      - app/models/sky_planning.py
+      - app/models/sky_quality.py
+      - app/models/small_body.py
+      - app/services/centinela/observation_intelligence.py
+      - app/services/centinela/observation_dashboard.py
+      - app/services/centinela/astrophotography_planner.py
+      - app/services/centinela/capture_planner.py
+      - app/services/centinela/sky_geometry.py
+      - app/services/centinela/sky_window_planner.py
+      - app/services/centinela/sky_quality.py
+      - app/services/centinela/http_json.py
+      - app/services/centinela/open_meteo_observation.py
+      - app/services/centinela/seven_timer_astro.py
+      - app/services/centinela/jpl_horizons.py
+      - webui/Centinela.py
+      - webui/product/sky_planner.py
+      - docs/centinela/ASTRONOMY_SOURCE_REGISTRY.md
       - app/models/finalization_e2e.py
       - app/services/finalization_e2e.py
       - app/models/publication_package.py
@@ -32,6 +52,19 @@ on:
       - test/services/test_quality_to_10_gate.py
       - test/services/test_pipeline_audit.py
       - test/services/test_recovery_verifier.py
+      - test/services/test_observation_intelligence.py
+      - test/services/test_observation_dashboard.py
+      - test/services/test_observation_dashboard_sky_quality.py
+      - test/services/test_astrophotography_planner.py
+      - test/services/test_capture_planner.py
+      - test/services/test_sky_geometry.py
+      - test/services/test_sky_window_planner.py
+      - test/services/test_sky_quality.py
+      - test/services/test_http_json.py
+      - test/services/test_open_meteo_observation.py
+      - test/services/test_seven_timer_astro.py
+      - test/services/test_jpl_horizons.py
+      - test/services/test_product_sky_planner.py
       - test/services/test_finalization_e2e.py
       - test/services/test_v1_readiness_audit.py
       - test/services/test_v1_readiness_audit_api.py
@@ -53,6 +86,26 @@ on:
       - app/services/centinela/pipeline_audit.py
       - app/models/recovery.py
       - app/services/centinela/recovery_verifier.py
+      - app/models/observation.py
+      - app/models/observation_dashboard.py
+      - app/models/astrophotography.py
+      - app/models/sky_planning.py
+      - app/models/sky_quality.py
+      - app/models/small_body.py
+      - app/services/centinela/observation_intelligence.py
+      - app/services/centinela/observation_dashboard.py
+      - app/services/centinela/astrophotography_planner.py
+      - app/services/centinela/capture_planner.py
+      - app/services/centinela/sky_geometry.py
+      - app/services/centinela/sky_window_planner.py
+      - app/services/centinela/sky_quality.py
+      - app/services/centinela/http_json.py
+      - app/services/centinela/open_meteo_observation.py
+      - app/services/centinela/seven_timer_astro.py
+      - app/services/centinela/jpl_horizons.py
+      - webui/Centinela.py
+      - webui/product/sky_planner.py
+      - docs/centinela/ASTRONOMY_SOURCE_REGISTRY.md
       - app/models/finalization_e2e.py
       - app/services/finalization_e2e.py
       - app/models/publication_package.py
@@ -68,6 +121,19 @@ on:
       - test/services/test_quality_to_10_gate.py
       - test/services/test_pipeline_audit.py
       - test/services/test_recovery_verifier.py
+      - test/services/test_observation_intelligence.py
+      - test/services/test_observation_dashboard.py
+      - test/services/test_observation_dashboard_sky_quality.py
+      - test/services/test_astrophotography_planner.py
+      - test/services/test_capture_planner.py
+      - test/services/test_sky_geometry.py
+      - test/services/test_sky_window_planner.py
+      - test/services/test_sky_quality.py
+      - test/services/test_http_json.py
+      - test/services/test_open_meteo_observation.py
+      - test/services/test_seven_timer_astro.py
+      - test/services/test_jpl_horizons.py
+      - test/services/test_product_sky_planner.py
       - test/services/test_finalization_e2e.py
       - test/services/test_v1_readiness_audit.py
       - test/services/test_v1_readiness_audit_api.py
@@ -84,7 +150,7 @@ jobs:
   f58-linux:
     name: F58 v0.2 / Linux / Python ${{ matrix.python-version }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -107,7 +173,7 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --python ${{ matrix.python-version }}
 
-      - name: Compile F58 v0.2 surface
+      - name: Compile F58 v0.2 Quality-to-10 surface
         run: >-
           uv run --no-sync python -m compileall
           app/models/v1_readiness_audit.py
@@ -119,13 +185,45 @@ jobs:
           app/services/centinela/pipeline_audit.py
           app/models/recovery.py
           app/services/centinela/recovery_verifier.py
+          app/models/observation.py
+          app/models/observation_dashboard.py
+          app/models/astrophotography.py
+          app/models/sky_planning.py
+          app/models/sky_quality.py
+          app/models/small_body.py
+          app/services/centinela/observation_intelligence.py
+          app/services/centinela/observation_dashboard.py
+          app/services/centinela/astrophotography_planner.py
+          app/services/centinela/capture_planner.py
+          app/services/centinela/sky_geometry.py
+          app/services/centinela/sky_window_planner.py
+          app/services/centinela/sky_quality.py
+          app/services/centinela/http_json.py
+          app/services/centinela/open_meteo_observation.py
+          app/services/centinela/seven_timer_astro.py
+          app/services/centinela/jpl_horizons.py
+          webui/Centinela.py
+          webui/product/sky_planner.py
           test/services/test_quality_to_10_gate.py
           test/services/test_pipeline_audit.py
           test/services/test_recovery_verifier.py
+          test/services/test_observation_intelligence.py
+          test/services/test_observation_dashboard.py
+          test/services/test_observation_dashboard_sky_quality.py
+          test/services/test_astrophotography_planner.py
+          test/services/test_capture_planner.py
+          test/services/test_sky_geometry.py
+          test/services/test_sky_window_planner.py
+          test/services/test_sky_quality.py
+          test/services/test_http_json.py
+          test/services/test_open_meteo_observation.py
+          test/services/test_seven_timer_astro.py
+          test/services/test_jpl_horizons.py
+          test/services/test_product_sky_planner.py
           test/services/test_v1_readiness_audit.py
           test/services/test_v1_readiness_audit_api.py
 
-      - name: Ruff F58 v0.2 surface
+      - name: Ruff F58 v0.2 Quality-to-10 surface
         if: matrix.python-version == '3.11'
         run: >-
           uv run --no-sync ruff check
@@ -138,19 +236,64 @@ jobs:
           app/services/centinela/pipeline_audit.py
           app/models/recovery.py
           app/services/centinela/recovery_verifier.py
+          app/models/observation.py
+          app/models/observation_dashboard.py
+          app/models/astrophotography.py
+          app/models/sky_planning.py
+          app/models/sky_quality.py
+          app/models/small_body.py
+          app/services/centinela/observation_intelligence.py
+          app/services/centinela/observation_dashboard.py
+          app/services/centinela/astrophotography_planner.py
+          app/services/centinela/capture_planner.py
+          app/services/centinela/sky_geometry.py
+          app/services/centinela/sky_window_planner.py
+          app/services/centinela/sky_quality.py
+          app/services/centinela/http_json.py
+          app/services/centinela/open_meteo_observation.py
+          app/services/centinela/seven_timer_astro.py
+          app/services/centinela/jpl_horizons.py
+          webui/Centinela.py
+          webui/product/sky_planner.py
           test/services/test_quality_to_10_gate.py
           test/services/test_pipeline_audit.py
           test/services/test_recovery_verifier.py
+          test/services/test_observation_intelligence.py
+          test/services/test_observation_dashboard.py
+          test/services/test_observation_dashboard_sky_quality.py
+          test/services/test_astrophotography_planner.py
+          test/services/test_capture_planner.py
+          test/services/test_sky_geometry.py
+          test/services/test_sky_window_planner.py
+          test/services/test_sky_quality.py
+          test/services/test_http_json.py
+          test/services/test_open_meteo_observation.py
+          test/services/test_seven_timer_astro.py
+          test/services/test_jpl_horizons.py
+          test/services/test_product_sky_planner.py
           test/services/test_v1_readiness_audit.py
           test/services/test_v1_readiness_audit_api.py
 
-      - name: Run F58 v0.2 contract
+      - name: Run F58 v0.2 Quality-to-10 contract
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=f58-linux-${{ matrix.python-version }}.xml
           test/services/test_quality_to_10_gate.py
           test/services/test_pipeline_audit.py
           test/services/test_recovery_verifier.py
+          test/services/test_observation_intelligence.py
+          test/services/test_observation_dashboard.py
+          test/services/test_observation_dashboard_sky_quality.py
+          test/services/test_astrophotography_planner.py
+          test/services/test_capture_planner.py
+          test/services/test_sky_geometry.py
+          test/services/test_sky_window_planner.py
+          test/services/test_sky_quality.py
+          test/services/test_http_json.py
+          test/services/test_open_meteo_observation.py
+          test/services/test_seven_timer_astro.py
+          test/services/test_jpl_horizons.py
+          test/services/test_product_sky_planner.py
           test/services/test_v1_readiness_audit.py
           test/services/test_v1_readiness_audit_api.py
 
@@ -209,7 +352,7 @@ jobs:
   f58-windows:
     name: F58 v0.2 / Windows / Python 3.11
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -228,7 +371,7 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --python 3.11
 
-      - name: Compile F58 v0.2 surface
+      - name: Compile F58 v0.2 Quality-to-10 surface
         run: >-
           uv run --no-sync python -m compileall
           app/models/v1_readiness_audit.py
@@ -240,19 +383,64 @@ jobs:
           app/services/centinela/pipeline_audit.py
           app/models/recovery.py
           app/services/centinela/recovery_verifier.py
+          app/models/observation.py
+          app/models/observation_dashboard.py
+          app/models/astrophotography.py
+          app/models/sky_planning.py
+          app/models/sky_quality.py
+          app/models/small_body.py
+          app/services/centinela/observation_intelligence.py
+          app/services/centinela/observation_dashboard.py
+          app/services/centinela/astrophotography_planner.py
+          app/services/centinela/capture_planner.py
+          app/services/centinela/sky_geometry.py
+          app/services/centinela/sky_window_planner.py
+          app/services/centinela/sky_quality.py
+          app/services/centinela/http_json.py
+          app/services/centinela/open_meteo_observation.py
+          app/services/centinela/seven_timer_astro.py
+          app/services/centinela/jpl_horizons.py
+          webui/Centinela.py
+          webui/product/sky_planner.py
           test/services/test_quality_to_10_gate.py
           test/services/test_pipeline_audit.py
           test/services/test_recovery_verifier.py
+          test/services/test_observation_intelligence.py
+          test/services/test_observation_dashboard.py
+          test/services/test_observation_dashboard_sky_quality.py
+          test/services/test_astrophotography_planner.py
+          test/services/test_capture_planner.py
+          test/services/test_sky_geometry.py
+          test/services/test_sky_window_planner.py
+          test/services/test_sky_quality.py
+          test/services/test_http_json.py
+          test/services/test_open_meteo_observation.py
+          test/services/test_seven_timer_astro.py
+          test/services/test_jpl_horizons.py
+          test/services/test_product_sky_planner.py
           test/services/test_v1_readiness_audit.py
           test/services/test_v1_readiness_audit_api.py
 
-      - name: Run F58 v0.2 contract
+      - name: Run F58 v0.2 Quality-to-10 contract
         run: >-
           uv run --no-sync python -X utf8 -m pytest -q
           --junitxml=f58-windows-3.11.xml
           test/services/test_quality_to_10_gate.py
           test/services/test_pipeline_audit.py
           test/services/test_recovery_verifier.py
+          test/services/test_observation_intelligence.py
+          test/services/test_observation_dashboard.py
+          test/services/test_observation_dashboard_sky_quality.py
+          test/services/test_astrophotography_planner.py
+          test/services/test_capture_planner.py
+          test/services/test_sky_geometry.py
+          test/services/test_sky_window_planner.py
+          test/services/test_sky_quality.py
+          test/services/test_http_json.py
+          test/services/test_open_meteo_observation.py
+          test/services/test_seven_timer_astro.py
+          test/services/test_jpl_horizons.py
+          test/services/test_product_sky_planner.py
           test/services/test_v1_readiness_audit.py
           test/services/test_v1_readiness_audit_api.py
 
