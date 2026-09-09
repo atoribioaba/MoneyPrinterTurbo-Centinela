@@ -60,8 +60,6 @@ def build_horizons_observer_query(request: SmallBodyObserverRequest) -> Horizons
         "RANGE_UNITS": _quote("AU"),
         "CSV_FORMAT": _quote("YES"),
         "EXTRA_PREC": _quote("YES"),
-        # Apparent RA/DEC, Az/El, airmass/extinction, magnitude/surface
-        # brightness, illuminated fraction, angular diameter and sky motion.
         "QUANTITIES": _quote("2,4,8,9,10,13,47"),
     }
 
@@ -145,6 +143,34 @@ def _single_csv_observer_row(result_text: str) -> dict[str, str]:
     return dict(zip(header, values, strict=True))
 
 
+def _observer_row_time_utc(columns: dict[str, str]) -> datetime:
+    date_columns = [key for key in columns if key.startswith("Date__(UT)")]
+    if len(date_columns) != 1:
+        raise ValueError("Horizons observer row requires exactly one UT date column")
+
+    text = columns[date_columns[0]].strip()
+    if text.startswith("A.D."):
+        text = text.removeprefix("A.D.").strip()
+    for format_string in ("%Y-%b-%d %H:%M:%S.%f", "%Y-%b-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, format_string).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    raise ValueError("Horizons observer row contains an unparseable UT timestamp")
+
+
+def _verify_observer_row_time(
+    columns: dict[str, str],
+    request: SmallBodyObserverRequest,
+) -> None:
+    actual = _observer_row_time_utc(columns)
+    expected = request.observed_at.astimezone(UTC).replace(microsecond=0)
+    if actual != expected:
+        raise ValueError(
+            "Horizons observer row timestamp does not match requested TLIST instant"
+        )
+
+
 def parse_horizons_observer_response(
     payload: dict,
     request: SmallBodyObserverRequest,
@@ -152,13 +178,7 @@ def parse_horizons_observer_response(
     retrieved_at_utc: datetime,
     accepted_api_versions: set[str] | None = None,
 ) -> HorizonsObserverResult:
-    """Validate one JSON Horizons observer response and bind it to exact bytes.
-
-    JPL documents that callers must inspect the JSON `signature.version` because
-    formats can change. The default therefore accepts only the currently reviewed
-    API documentation version; a future version must be deliberately reviewed and
-    passed explicitly rather than being accepted silently.
-    """
+    """Validate one JSON Horizons observer response and bind it to exact bytes."""
     if retrieved_at_utc.tzinfo is None or retrieved_at_utc.utcoffset() is None:
         raise ValueError("retrieved_at_utc must be timezone-aware")
     if not isinstance(payload, dict):
@@ -188,6 +208,8 @@ def parse_horizons_observer_response(
 
     result_sha256 = hashlib.sha256(result_text.encode("utf-8")).hexdigest()
     columns = _single_csv_observer_row(result_text)
+    _verify_observer_row_time(columns, request)
+
     provenance = SmallBodyEphemerisProvenance(
         target_command=request.target_command,
         query_time_utc=request.observed_at.astimezone(UTC),
