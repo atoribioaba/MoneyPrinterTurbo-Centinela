@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from app.models.observation import (
+    AstronomyConditionsSnapshot,
     ObservationObjectClass,
     ObservabilityRequest,
     ObservabilityResult,
@@ -166,6 +167,69 @@ def _seeing_score(seeing_arcsec: float) -> float:
     return (4.0 - seeing_arcsec) / 3.0 * 100.0
 
 
+def _seeing_from_snapshot(
+    snapshot: AstronomyConditionsSnapshot,
+) -> tuple[float, str] | None:
+    if snapshot.seeing_arcsec is not None:
+        value = snapshot.seeing_arcsec
+        return _seeing_score(value), f"seeing={value:.2f} arcsec"
+
+    lower = snapshot.seeing_arcsec_min
+    upper = snapshot.seeing_arcsec_max
+    if upper is not None:
+        score = _seeing_score(upper)
+        if lower is None:
+            rationale = f"seeing < {upper:.2f} arcsec; conservative upper-bound score"
+        else:
+            rationale = (
+                f"seeing in [{lower:.2f}, {upper:.2f}) arcsec; "
+                "conservative upper-bound score"
+            )
+        return score, rationale
+
+    if lower is not None:
+        # No finite upper bound exists. A good score cannot be asserted safely.
+        return 0.0, (
+            f"seeing >= {lower:.2f} arcsec with no finite upper bound; "
+            "fail-closed conservative score"
+        )
+    return None
+
+
+def _transparency_from_snapshot(
+    snapshot: AstronomyConditionsSnapshot,
+) -> tuple[float, str] | None:
+    if snapshot.transparency_percent is not None:
+        value = snapshot.transparency_percent
+        return value, f"transparency={value:.0f}%"
+
+    lower = snapshot.transparency_extinction_mag_per_airmass_min
+    upper = snapshot.transparency_extinction_mag_per_airmass_max
+    if upper is not None:
+        # Extinction k [mag/airmass] maps to one-airmass flux transmission
+        # T = 10^(-0.4 k). Use the worst finite bound so a forecast bin cannot
+        # receive more credit than the provider supports.
+        transmission_percent = 100.0 * 10 ** (-0.4 * upper)
+        if lower is None:
+            rationale = (
+                f"extinction < {upper:.2f} mag/airmass; one-airmass "
+                f"transmission >= {transmission_percent:.1f}% (conservative)"
+            )
+        else:
+            rationale = (
+                f"extinction in [{lower:.2f}, {upper:.2f}) mag/airmass; "
+                f"one-airmass transmission >= {transmission_percent:.1f}%"
+            )
+        return transmission_percent, rationale
+
+    if lower is not None:
+        return 0.0, (
+            f"extinction >= {lower:.2f} mag/airmass with no finite upper bound; "
+            "fail-closed conservative score"
+        )
+    return None
+
+
 def _wind_score(wind_kph: float) -> float:
     if wind_kph <= 10.0:
         return 100.0
@@ -320,23 +384,15 @@ def evaluate_observability(request: ObservabilityRequest) -> ObservabilityResult
     astronomy_conditions = request.astronomy_conditions
     if astronomy_conditions is not None:
         astronomy_source = [astronomy_conditions.source_id]
-        if astronomy_conditions.transparency_percent is not None:
-            add(
-                "transparency",
-                astronomy_conditions.transparency_percent,
-                f"transparency={astronomy_conditions.transparency_percent:.0f}%",
-                astronomy_source,
-            )
+        transparency = _transparency_from_snapshot(astronomy_conditions)
+        if transparency is not None:
+            add("transparency", transparency[0], transparency[1], astronomy_source)
         elif "transparency" in weights:
             missing.append("transparency")
 
-        if astronomy_conditions.seeing_arcsec is not None:
-            add(
-                "seeing",
-                _seeing_score(astronomy_conditions.seeing_arcsec),
-                f"seeing={astronomy_conditions.seeing_arcsec:.2f} arcsec",
-                astronomy_source,
-            )
+        seeing = _seeing_from_snapshot(astronomy_conditions)
+        if seeing is not None:
+            add("seeing", seeing[0], seeing[1], astronomy_source)
         elif "seeing" in weights:
             missing.append("seeing")
     else:
