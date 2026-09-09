@@ -23,7 +23,8 @@ jobs:
 
     services:
       redis:
-        image: redis:7-alpine
+        # redis:7-alpine index digest verified before this quality-to-10 checkpoint.
+        image: redis@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
         ports:
           - 6379:6379
         options: >-
@@ -46,9 +47,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install uv
+      - name: Install pinned uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
+          version: "0.12.11"
           enable-cache: true
 
       - name: Install dependencies
@@ -91,9 +93,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install uv
+      - name: Install pinned uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
+          version: "0.12.11"
           enable-cache: true
 
       - name: Install dependencies
