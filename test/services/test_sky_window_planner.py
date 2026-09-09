@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.astronomy import ObserverContext, ScientificStatus
+from app.models.horizon import HorizonPoint, HorizonProfile
 from app.models.sky_planning import (
     FixedSkyTarget,
     FixedSkyTargetKind,
@@ -54,6 +55,18 @@ def _shower() -> MeteorShowerDefinition:
         population_index=2.2,
         catalog_status="ESTABLISHED_FIXTURE",
         source_ids=["iau_mdc_fixture"],
+    )
+
+
+def _landscape_target() -> FixedSkyTarget:
+    return FixedSkyTarget(
+        target_id="galactic-field-fixture",
+        name="Galactic field fixture",
+        kind=FixedSkyTargetKind.MILKY_WAY_FIELD,
+        right_ascension_hours_j2000=17.75,
+        declination_deg_j2000=-29.0,
+        source_ids=["catalog_fixture"],
+        scientific_status=ScientificStatus.HECHO_VERIFICADO,
     )
 
 
@@ -119,19 +132,10 @@ def test_meteor_activity_interval_must_be_ordered():
 
 
 def test_landscape_window_is_geometry_only_and_exposes_blockers():
-    target = FixedSkyTarget(
-        target_id="galactic-field-fixture",
-        name="Galactic field fixture",
-        kind=FixedSkyTargetKind.MILKY_WAY_FIELD,
-        right_ascension_hours_j2000=17.75,
-        declination_deg_j2000=-29.0,
-        source_ids=["catalog_fixture"],
-        scientific_status=ScientificStatus.HECHO_VERIFICADO,
-    )
     start = datetime(2026, 7, 15, 19, 0, tzinfo=UTC)
     plan = plan_landscape_window(
         LandscapeWindowRequest(
-            target=target,
+            target=_landscape_target(),
             observer=OBSERVER,
             start_utc=start,
             end_utc=start + timedelta(hours=8),
@@ -145,8 +149,42 @@ def test_landscape_window_is_geometry_only_and_exposes_blockers():
     assert plan.scientific_status == ScientificStatus.INFERENCIA
     assert all(0.0 <= sample.geometry_score <= 100.0 for sample in plan.samples)
     assert any("SUN_TOO_HIGH" in sample.blockers for sample in plan.samples)
+    assert all(sample.local_horizon_altitude_deg is None for sample in plan.samples)
     assert "Weather" in plan.interpretation
     assert "real horizon" in plan.interpretation
+
+
+def test_supplied_local_horizon_blocks_target_and_preserves_provenance():
+    horizon = HorizonProfile(
+        profile_id="blocked-horizon",
+        points=[
+            HorizonPoint(azimuth_deg=0.0, altitude_deg=90.0),
+            HorizonPoint(azimuth_deg=90.0, altitude_deg=90.0),
+            HorizonPoint(azimuth_deg=180.0, altitude_deg=90.0),
+            HorizonPoint(azimuth_deg=270.0, altitude_deg=90.0),
+        ],
+        source_ids=["field-horizon-fixture"],
+        scientific_status=ScientificStatus.NO_VERIFICADO,
+    )
+    start = datetime(2026, 7, 15, 22, 0, tzinfo=UTC)
+    plan = plan_landscape_window(
+        LandscapeWindowRequest(
+            target=_landscape_target(),
+            observer=OBSERVER,
+            start_utc=start,
+            end_utc=start + timedelta(hours=2),
+            step_minutes=30,
+            minimum_target_altitude_deg=0.0,
+            maximum_sun_altitude_deg=0.0,
+            horizon_profile=horizon,
+        )
+    )
+
+    assert plan.best_sample is None
+    assert "field-horizon-fixture" in plan.source_ids
+    assert all(sample.local_horizon_altitude_deg == 90.0 for sample in plan.samples)
+    assert all("LOCAL_HORIZON_BLOCKED" in sample.blockers for sample in plan.samples)
+    assert all("field-horizon-fixture" in sample.source_ids for sample in plan.samples)
 
 
 def test_planning_windows_are_bounded_to_prevent_accidental_huge_sampling():
