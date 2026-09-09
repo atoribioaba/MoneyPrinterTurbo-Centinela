@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from webui.product import pages, review  # noqa: E402
-from webui.product import mobile_pages, studio, ui  # noqa: E402
+from webui.product import mobile_pages, sky_planner, studio, ui  # noqa: E402
 from webui.product import mobile_patch_m1_1  # noqa: E402
 
 
@@ -87,7 +87,11 @@ PUBLICATION_PAGE = st.Page(
     title="Publicación",
     url_path="publicacion",
 )
-SKY_PAGE = studio.SKY_PAGE
+SKY_PAGE = st.Page(
+    sky_planner.sky_page,
+    title="Agenda y planificación",
+    url_path="cielo",
+)
 OBSERVATORY_PAGE = st.Page(
     mobile_pages.observatory_page,
     title="Observatorio",
