@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+import app.services.centinela.seven_timer_astro as seven_timer
 from app.models.observation import (
     ObservationObjectClass,
     ObservabilityRequest,
@@ -10,6 +11,7 @@ from app.services.centinela.observation_intelligence import evaluate_observabili
 from app.services.centinela.seven_timer_astro import (
     SEVEN_TIMER_TERMS_CLASSIFICATION,
     build_7timer_astro_url,
+    fetch_7timer_astro_snapshots,
     parse_7timer_astro_payload,
 )
 
@@ -38,6 +40,24 @@ def test_7timer_url_is_machine_readable_and_contains_no_secret_material():
     assert "key=" not in url.lower()
     assert "token=" not in url.lower()
     assert SEVEN_TIMER_TERMS_CLASSIFICATION == "FREE_TO_USE_TERMS_NON_SPDX"
+
+
+def test_7timer_fetch_uses_hardened_transport_once(monkeypatch):
+    calls = []
+
+    def fake_fetch(url, **kwargs):
+        calls.append((url, kwargs))
+        return _payload()
+
+    monkeypatch.setattr(seven_timer, "fetch_json_https", fake_fetch)
+    snapshots = fetch_7timer_astro_snapshots(
+        latitude=41.652,
+        longitude=-4.729,
+        retrieved_at=datetime(2026, 9, 8, 18, 10, tzinfo=UTC),
+    )
+    assert len(snapshots) == 1
+    assert len(calls) == 1
+    assert calls[0][1]["allowed_hosts"] == {"www.7timer.info"}
 
 
 def test_7timer_preserves_interior_forecast_bins_without_midpoint_fabrication():
