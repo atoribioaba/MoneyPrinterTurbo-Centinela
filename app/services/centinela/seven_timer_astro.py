@@ -7,9 +7,11 @@ from typing import Any
 from urllib.parse import urlencode
 
 from app.models.observation import AstronomyConditionsSnapshot, EvidenceKind
+from app.services.centinela.http_json import fetch_json_https
 
 
 SEVEN_TIMER_ASTRO_ENDPOINT = "https://www.7timer.info/bin/api.pl"
+SEVEN_TIMER_HOST = "www.7timer.info"
 SEVEN_TIMER_SOURCE_URL = "https://7timer.info/doc.php?lang=en"
 SEVEN_TIMER_TERMS_CLASSIFICATION = "FREE_TO_USE_TERMS_NON_SPDX"
 SEVEN_TIMER_TERMS_NOTE = (
@@ -161,3 +163,26 @@ def parse_7timer_astro_payload(
         )
 
     return snapshots
+
+
+def fetch_7timer_astro_snapshots(
+    *,
+    latitude: float,
+    longitude: float,
+    retrieved_at: datetime | None = None,
+    timeout_seconds: float = 15.0,
+    opener=None,
+) -> list[AstronomyConditionsSnapshot]:
+    """Fetch 7Timer ASTRO only on an explicit call; no automatic retry is used."""
+    retrieved = retrieved_at or datetime.now(UTC)
+    if retrieved.tzinfo is None or retrieved.utcoffset() is None:
+        raise ValueError("retrieved_at must be timezone-aware")
+    url = build_7timer_astro_url(latitude=latitude, longitude=longitude)
+    fetch_kwargs = {
+        "allowed_hosts": {SEVEN_TIMER_HOST},
+        "timeout_seconds": timeout_seconds,
+    }
+    if opener is not None:
+        fetch_kwargs["opener"] = opener
+    payload = fetch_json_https(url, **fetch_kwargs)
+    return parse_7timer_astro_payload(payload, retrieved_at=retrieved)
