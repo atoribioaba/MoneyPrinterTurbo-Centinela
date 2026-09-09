@@ -9,6 +9,7 @@ from app.models.observation_dashboard import (
     DashboardMetric,
     ObservationDashboard,
 )
+from app.models.sky_quality import SkyQualityIngestionResult
 from app.services.centinela.open_meteo_observation import weather_snapshot_is_stale
 
 
@@ -22,6 +23,24 @@ def _state_text(score: float) -> str:
     return "POOR"
 
 
+def _validate_sky_quality_evidence_binding(
+    request: ObservabilityRequest,
+    evidence: SkyQualityIngestionResult | None,
+) -> None:
+    if evidence is None:
+        return
+    if request.sky_quality is None:
+        raise ValueError("sky-quality evidence supplied without sky-quality context")
+    if evidence.source_id != request.sky_quality.source_id:
+        raise ValueError("sky-quality evidence source does not match scoring context")
+    if evidence.evidence_kind != request.sky_quality.evidence_kind:
+        raise ValueError("sky-quality evidence kind does not match scoring context")
+    if evidence.sqm_mag_arcsec2 != request.sky_quality.sqm_mag_arcsec2:
+        raise ValueError("sky-quality SQM evidence does not match scoring context")
+    if evidence.bortle_class != request.sky_quality.bortle_class:
+        raise ValueError("sky-quality Bortle evidence does not match scoring context")
+
+
 def build_observation_dashboard(
     *,
     title: str,
@@ -30,10 +49,12 @@ def build_observation_dashboard(
     now: datetime,
     weather_max_age_hours: float = 3.0,
     framing: FramingResult | None = None,
+    sky_quality_evidence: SkyQualityIngestionResult | None = None,
 ) -> ObservationDashboard:
     """Convert science results into a UI contract without recomputing science."""
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("dashboard now must be timezone-aware")
+    _validate_sky_quality_evidence_binding(request, sky_quality_evidence)
 
     evidence: list[DashboardEvidence] = []
     attention: list[str] = []
@@ -72,6 +93,17 @@ def build_observation_dashboard(
             DashboardEvidence(
                 source_id=request.sky_quality.source_id,
                 evidence_kind=request.sky_quality.evidence_kind.value,
+                valid_at=(
+                    sky_quality_evidence.observed_at
+                    if sky_quality_evidence is not None
+                    else None
+                ),
+                retrieved_at=(
+                    sky_quality_evidence.retrieved_at
+                    if sky_quality_evidence is not None
+                    else None
+                ),
+                stale=None,
             )
         )
 
