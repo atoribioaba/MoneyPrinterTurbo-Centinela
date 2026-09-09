@@ -17,6 +17,20 @@ from app.services.centinela.quality_to_10_gate import (
 
 _SHA40 = "a" * 40
 _SHA256 = "b" * 64
+_CANONICAL_DIMENSIONS = {
+    "astronomy_general",
+    "practical_observation",
+    "astrophotography",
+    "voice_audio_design",
+    "voice_audio_real",
+    "video_render_real",
+    "windows_physical",
+    "ai_visual_real",
+    "ux_product",
+    "governance",
+    "backup_recovery",
+    "oss_supply_chain",
+}
 
 
 def _evidence(kind, *, physical=False, human=False):
@@ -107,6 +121,14 @@ def test_report_rejects_auto_publication_and_false_summary():
         )
 
 
+def test_canonical_requirements_define_exactly_12_unique_dimensions():
+    requirements = canonical_quality_requirements()
+    dimension_ids = [item.dimension for item in requirements]
+    assert len(requirements) == 12
+    assert len(dimension_ids) == len(set(dimension_ids))
+    assert set(dimension_ids) == _CANONICAL_DIMENSIONS
+
+
 def test_canonical_requirements_keep_runtime_dimensions_physical():
     requirements = {item.dimension: item for item in canonical_quality_requirements()}
     for dimension in (
@@ -117,6 +139,16 @@ def test_canonical_requirements_keep_runtime_dimensions_physical():
         "backup_recovery",
     ):
         assert requirements[dimension].requires_physical_pc is True
+
+
+def test_voice_audio_design_remains_distinct_from_real_runtime_dimension():
+    requirements = {item.dimension: item for item in canonical_quality_requirements()}
+    design = requirements["voice_audio_design"]
+    runtime = requirements["voice_audio_real"]
+    assert design.requires_physical_pc is False
+    assert design.requires_human_review is True
+    assert runtime.requires_physical_pc is True
+    assert runtime.requires_human_review is True
 
 
 def test_quality_report_computes_summary_from_evidence():
