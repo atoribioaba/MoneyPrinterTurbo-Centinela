@@ -17,6 +17,7 @@ from app.models.sky_planning import (
     MeteorWindowSample,
 )
 from app.services.astronomy_core import ENGINE_SOURCE_ID
+from app.services.centinela.horizon import horizon_altitude_deg
 from app.services.centinela.observation_intelligence import angular_separation_deg
 from app.services.centinela.sky_geometry import fixed_j2000_local_position
 
@@ -188,6 +189,9 @@ def plan_meteor_window(request: MeteorWindowRequest) -> MeteorWindowPlan:
 
 def plan_landscape_window(request: LandscapeWindowRequest) -> LandscapeWindowPlan:
     samples: list[LandscapeWindowSample] = []
+    horizon_sources = (
+        request.horizon_profile.source_ids if request.horizon_profile is not None else []
+    )
 
     for moment in _sample_times(request.start_utc, request.end_utc, request.step_minutes):
         target_position = fixed_j2000_local_position(request.target, request.observer, moment)
@@ -204,9 +208,21 @@ def plan_landscape_window(request: LandscapeWindowRequest) -> LandscapeWindowPla
             moon_dec,
         )
 
+        local_horizon = None
+        if request.horizon_profile is not None:
+            local_horizon = horizon_altitude_deg(
+                request.horizon_profile,
+                target_position.azimuth_deg,
+            )
+
         blockers: list[str] = []
         if target_position.altitude_apparent_deg < request.minimum_target_altitude_deg:
             blockers.append("TARGET_ALTITUDE_BELOW_THRESHOLD")
+        if (
+            local_horizon is not None
+            and target_position.altitude_apparent_deg <= local_horizon
+        ):
+            blockers.append("LOCAL_HORIZON_BLOCKED")
         if sun_alt > request.maximum_sun_altitude_deg:
             blockers.append("SUN_TOO_HIGH")
         if (
@@ -234,10 +250,11 @@ def plan_landscape_window(request: LandscapeWindowRequest) -> LandscapeWindowPla
                 moon_altitude_deg=moon_alt,
                 moon_illumination_fraction=moon_illumination,
                 moon_target_separation_deg=separation,
+                local_horizon_altitude_deg=local_horizon,
                 eligible=not blockers,
                 blockers=sorted(blockers),
                 geometry_score=round(max(0.0, min(100.0, score)), 6),
-                source_ids=_source_union(request.target.source_ids),
+                source_ids=_source_union(request.target.source_ids, horizon_sources),
             )
         )
 
@@ -247,6 +264,6 @@ def plan_landscape_window(request: LandscapeWindowRequest) -> LandscapeWindowPla
         target_id=request.target.target_id,
         samples=samples,
         best_sample=best,
-        source_ids=_source_union(request.target.source_ids),
+        source_ids=_source_union(request.target.source_ids, horizon_sources),
         scientific_status=ScientificStatus.INFERENCIA,
     )
